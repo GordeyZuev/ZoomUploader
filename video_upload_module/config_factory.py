@@ -101,7 +101,6 @@ class UploadConfig:
     supported_formats: list[str] | None = None
     retry_attempts: int = 3
     retry_delay: int = 5
-    verbose: bool = False
 
     def __post_init__(self):
         if self.supported_formats is None:
@@ -164,6 +163,4 @@ class UploadConfigFactory:
             supported_formats=upload_settings.supported_formats,
             retry_attempts=upload_settings.retry_attempts,
             retry_delay=upload_settings.retry_delay,
-            # verbose берём из конфигурации как базовое, CLI может перекрыть в PipelineManager
-            verbose=bool(upload_settings.verbose),
         )

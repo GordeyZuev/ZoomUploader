@@ -35,8 +35,6 @@ class PipelineManager:
         self,
         db_manager: DatabaseManager,
         app_config: AppConfig | None = None,
-        *,
-        verbose: bool = False,
     ):
         self.db_manager = db_manager
         self.logger = get_logger()
@@ -44,7 +42,6 @@ class PipelineManager:
         self.title_mapper = TitleMapper(self.app_config)
         self.interactive_mapper = get_interactive_mapper()
         self.console = Console(force_terminal=True, color_system="auto")
-        self.verbose = verbose
 
     async def list_recordings(
         self, from_date: str, to_date: str | None = None, status: ProcessingStatus | None = None
@@ -228,15 +225,10 @@ class PipelineManager:
         if not recordings:
             return 0
 
-        config = ProcessingConfig()
-        # Перекрываем verbose из CLI
-        config.verbose = bool(self.verbose)
-        processor = VideoProcessor(config)
-
         # Обрабатываем записи без общего прогресс-бара (используем только индивидуальные)
         success_count = 0
         for recording in recordings:
-            if await self._process_single_recording(recording, processor):
+            if await self._process_single_recording(recording):
                 success_count += 1
 
         self.logger.info(f"✅ Обработано записей: {success_count}/{len(recordings)}")
@@ -249,14 +241,11 @@ class PipelineManager:
         if not recordings:
             return 0
 
-        upload_config = self._create_upload_config_from_app_config()
-        upload_manager = UploadManager(upload_config)
-
         success_count = 0
         uploaded_recordings = []
 
         for recording in recordings:
-            if await self._upload_single_recording(recording, platforms, upload_manager):
+            if await self._upload_single_recording(recording, platforms):
                 success_count += 1
                 uploaded_recordings.append(recording)
 
@@ -280,19 +269,14 @@ class PipelineManager:
 
         return success_count
 
-    def _create_upload_config_from_app_config(self, *, verbose_override: bool | None = None):
+    def _create_upload_config_from_app_config(self):
         """Создание конфигурации загрузки из конфигурации приложения"""
-        from video_upload_module import UploadConfig
+        from video_upload_module.config_factory import UploadConfigFactory
 
-        verbose = verbose_override if verbose_override is not None else self.verbose
-
-        return UploadConfig(
-            youtube_api_key=self.app_config.youtube.api_key,
-            youtube_oauth_credentials=self.app_config.youtube.oauth_credentials,
-            vk_access_token=self.app_config.vk.access_token,
-            vk_group_id=self.app_config.vk.group_id,
-            verbose=verbose,
-        )
+        # Используем фабрику для создания конфигурации
+        upload_config = UploadConfigFactory.from_app_config(self.app_config)
+            
+        return upload_config
 
     async def get_recordings_by_selection(
         self, select_all: bool, recordings: list[str], from_date: str, to_date: str | None = None
@@ -363,16 +347,10 @@ class PipelineManager:
                 # Есть маппинг - устанавливаем статус INITIALIZED
                 recording.is_mapped = True
                 recording.status = ProcessingStatus.INITIALIZED
-                if self.verbose:
-                    self.logger.info(
-                        f"   ✅ Маппинг найден: '{recording.topic}' → '{mapping_result.youtube_title}'"
-                    )
             else:
                 # Нет маппинга - устанавливаем статус SKIPPED
                 recording.is_mapped = False
                 recording.status = ProcessingStatus.SKIPPED
-                if self.verbose:
-                    self.logger.info(f"   ⚠️ Маппинг не найден: '{recording.topic}' → SKIPPED")
 
         except Exception as e:
             # В случае ошибки - считаем, что маппинга нет
@@ -474,160 +452,7 @@ class PipelineManager:
 
             return success
 
-    async def _process_single_recording(
-        self, recording: MeetingRecording, processor: VideoProcessor
-    ) -> bool:
-        """Обработка одной записи"""
-        if not recording.local_video_path or not os.path.exists(recording.local_video_path):
-            self.logger.error(f"❌ Локальный файл не найден: {recording.local_video_path}")
-            recording.update_status(ProcessingStatus.FAILED, "Локальный файл не найден")
-            return False
 
-        recording.update_status(ProcessingStatus.PROCESSING)
-
-        with Progress(
-            SpinnerColumn(style="yellow"),
-            TextColumn("[bold yellow]Обработка видео[/bold yellow]"),
-            TimeElapsedColumn(),
-            transient=False,
-            console=self.console,
-        ) as progress:
-            task_id = progress.add_task("Обработка", total=None)
-
-            try:
-                result = await processor.process_video(recording, progress, task_id)
-                if result:
-                    recording.update_status(ProcessingStatus.PROCESSED)
-                    await self.db_manager.update_recording(recording)
-                    return True
-                else:
-                    recording.update_status(ProcessingStatus.FAILED, "Ошибка обработки")
-                    return False
-            except Exception as e:
-                self.logger.error(f"❌ Ошибка обработки записи {recording.topic}: {e}")
-                recording.update_status(ProcessingStatus.FAILED, str(e))
-                return False
-
-    async def _upload_single_recording(
-        self, recording: MeetingRecording, platforms: list[str], upload_manager: UploadManager
-    ) -> bool:
-        """Загрузка одной записи на платформы"""
-        if not recording.processed_video_path or not os.path.exists(recording.processed_video_path):
-            self.logger.error(f"❌ Обработанный файл не найден: {recording.processed_video_path}")
-            recording.update_status(ProcessingStatus.FAILED, "Обработанный файл не найден")
-            return False
-
-        recording.update_status(ProcessingStatus.UPLOADING)
-
-        for platform in platforms:
-            try:
-                mapping_result = self.title_mapper.map_title(
-                    original_title=recording.topic,
-                    start_time=recording.start_time,
-                    duration=recording.duration,
-                )
-
-                common_metadata = {}
-                if not mapping_result.matched_rule:
-                    self.console.print(
-                        f"\n[yellow]⚠️ Правило маппинга не найдено для '{recording.topic}'[/yellow]"
-                    )
-                    self.console.print("[cyan]📤 Требуется ввод метаданных для загрузки[/cyan]")
-                    common_metadata = self._get_common_metadata(recording)
-
-                if not mapping_result.matched_rule:
-                    title = common_metadata['title']
-                    description = common_metadata.get('description', '')
-                    thumbnail_path = common_metadata.get('thumbnail_path')
-                    privacy_status = common_metadata.get('privacy_status', 'unlisted')
-
-                    platform_specific = self._get_platform_specific_metadata(recording, platform)
-
-                    upload_kwargs = {
-                        'title': title,
-                        'description': description,
-                        'privacy_status': privacy_status,
-                    }
-
-                    if platform == 'youtube' and platform_specific.get('playlist_id'):
-                        upload_kwargs['playlist_id'] = platform_specific['playlist_id']
-                    elif platform == 'vk' and platform_specific.get('album_id'):
-                        upload_kwargs['album_id'] = platform_specific['album_id']
-
-                    if thumbnail_path:
-                        upload_kwargs['thumbnail_path'] = thumbnail_path
-                else:
-                    title = mapping_result.youtube_title
-                    description = mapping_result.description or ''
-                    privacy_status = 'unlisted'  # По умолчанию unlisted
-
-                    upload_kwargs = {
-                        'title': title,
-                        'description': description,
-                        'privacy_status': privacy_status,
-                    }
-
-                    if platform == 'youtube' and mapping_result.youtube_playlist_id:
-                        upload_kwargs['playlist_id'] = mapping_result.youtube_playlist_id
-                    elif platform == 'vk' and mapping_result.vk_album_id:
-                        upload_kwargs['album_id'] = mapping_result.vk_album_id
-
-                    if mapping_result.thumbnail_path:
-                        upload_kwargs['thumbnail_path'] = mapping_result.thumbnail_path
-
-                with Progress(
-                    SpinnerColumn(style="green"),
-                    TextColumn(f"[bold green]Загрузка на {platform.upper()}[/bold green]"),
-                    TimeElapsedColumn(),
-                    transient=False,
-                    console=self.console,
-                ) as progress:
-                    task_id = progress.add_task("Загрузка", total=None)
-
-                    result = await upload_manager.upload_to_platform(
-                        platform,
-                        recording.processed_video_path,
-                        upload_kwargs.get('title', recording.topic),
-                        upload_kwargs.get('description', ''),
-                        progress=progress,
-                        task_id=task_id,
-                        **upload_kwargs,
-                    )
-
-                    if result:
-                        if platform == 'youtube':
-                            recording.youtube_url = result.video_url
-                            recording.youtube_status = PlatformStatus.UPLOADED
-                        elif platform == 'vk':
-                            recording.vk_url = result.video_url
-                            recording.vk_status = PlatformStatus.UPLOADED
-
-                        await self.db_manager.update_recording(recording)
-                        self.logger.info(
-                            f"✅ Запись {recording.topic} успешно загружена на {platform}"
-                        )
-                    else:
-                        if platform == 'youtube':
-                            recording.youtube_status = PlatformStatus.FAILED
-                        elif platform == 'vk':
-                            recording.vk_status = PlatformStatus.FAILED
-
-                        await self.db_manager.update_recording(recording)
-                        self.logger.error(
-                            f"❌ Ошибка загрузки записи {recording.topic} на {platform}"
-                        )
-                        return False
-
-            except asyncio.CancelledError:
-                self.logger.info(f"⏹️ Загрузка записи {recording.topic} на {platform} отменена")
-                return False
-            except Exception as e:
-                self.logger.error(f"❌ Ошибка загрузки записи {recording.topic} на {platform}: {e}")
-                return False
-
-        recording.update_status(ProcessingStatus.UPLOADED)
-        await self.db_manager.update_recording(recording)
-        return True
 
     async def clean_old_recordings(self, days_ago: int = 7) -> dict[str, Any]:
         """Очистка старых записей: удаление файлов и установка статуса EXPIRED"""
@@ -944,7 +769,6 @@ class PipelineManager:
             from video_processing_module.video_processor import ProcessingConfig, VideoProcessor
 
             config = ProcessingConfig()
-            config.verbose = bool(self.verbose)
             processor = VideoProcessor(config)
 
             # Проверяем существование файла
@@ -1039,8 +863,6 @@ class PipelineManager:
 
             # Создаем конфигурацию загрузки
             upload_config = UploadConfigFactory.from_app_config(self.app_config)
-            if self.verbose is not None:
-                upload_config.verbose = bool(self.verbose)
             upload_manager = UploadManager(upload_config)
 
             # Аутентификация на платформах

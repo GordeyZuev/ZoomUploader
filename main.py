@@ -120,7 +120,6 @@ def common_options(f):
         '--config-file', type=str, default='config/zoom_creds.json', help='Файл конфигурации'
     )(f)
     f = click.option('--use-db/--no-db', default=True, help='Использовать базу данных')(f)
-    f = click.option('--verbose', is_flag=True, help='Подробный вывод (перекрывает конфиг)')(f)
     return f
 
 
@@ -169,11 +168,11 @@ def cli():
 )
 @click.option('--export', type=click.Choice(['json', 'csv', 'summary']), help='Экспорт результатов')
 @click.option('--output', type=str, help='Имя выходного файла')
-def list(from_date, to_date, last, account, config_file, use_db, export, output, verbose):
+def list(from_date, to_date, last, account, config_file, use_db, export, output):
     """Показать записи из базы данных"""
     asyncio.run(
         _list_command(
-            from_date, to_date, last, account, config_file, use_db, export, output, verbose
+            from_date, to_date, last, account, config_file, use_db, export, output
         )
     )
 
@@ -186,9 +185,9 @@ def list(from_date, to_date, last, account, config_file, use_db, export, output,
     default=14,
     help='Последние N дней (0 = сегодня, 1 = вчера, 7 = неделя, 14 = две недели)',
 )
-def sync(from_date, to_date, last, account, config_file, use_db, verbose):
+def sync(from_date, to_date, last, account, config_file, use_db):
     """Синхронизировать данные из Zoom в базу данных"""
-    asyncio.run(_sync_command(from_date, to_date, last, account, config_file, use_db, verbose))
+    asyncio.run(_sync_command(from_date, to_date, last, account, config_file, use_db))
 
 
 @cli.command()
@@ -214,7 +213,6 @@ def download(
     select_all,
     recordings,
     force,
-    verbose,
     allow_skipped,
 ):
     """Скачать записи"""
@@ -229,7 +227,6 @@ def download(
             select_all,
             recordings,
             force,
-            verbose,
             allow_skipped,
         )
     )
@@ -245,13 +242,11 @@ def download(
     help='Последние N дней (0 = сегодня, 1 = вчера, 7 = неделя, 14 = две недели)',
 )
 def process(
-    from_date, to_date, last, account, config_file, use_db, select_all, recordings, verbose
-):
+    from_date, to_date, last, account, config_file, use_db, select_all, recordings):
     """Обработать записи"""
     asyncio.run(
         _process_command(
-            from_date, to_date, last, account, config_file, use_db, select_all, recordings, verbose
-        )
+            from_date, to_date, last, account, config_file, use_db, select_all, recordings        )
     )
 
 
@@ -277,7 +272,6 @@ def upload(
     youtube,
     vk,
     all_platforms,
-    verbose,
 ):
     """Загрузить записи на платформы"""
     asyncio.run(
@@ -293,7 +287,6 @@ def upload(
             youtube,
             vk,
             all_platforms,
-            verbose,
         )
     )
 
@@ -325,7 +318,6 @@ def full_process(
     youtube,
     vk,
     all_platforms,
-    verbose,
     allow_skipped,
 ):
     """Полный пайплайн: скачать + обработать + загрузить записи"""
@@ -342,7 +334,6 @@ def full_process(
             youtube,
             vk,
             all_platforms,
-            verbose,
             allow_skipped,
         )
     )
@@ -359,8 +350,7 @@ def full_process(
 )
 @click.option('--full', is_flag=True, help='Полная очистка базы данных и удаление всех видео')
 def reset(
-    from_date, to_date, last, account, config_file, use_db, select_all, recordings, full, verbose
-):
+    from_date, to_date, last, account, config_file, use_db, select_all, recordings, full):
     """Сбросить статусы записей (кроме загруженных)"""
     asyncio.run(
         _reset_command(
@@ -373,7 +363,6 @@ def reset(
             select_all,
             recordings,
             full,
-            verbose,
         )
     )
 
@@ -386,9 +375,9 @@ def reset(
     default=7,
     help='Количество дней назад для очистки записей (по умолчанию: 7)',
 )
-def clean(from_date, to_date, account, config_file, use_db, verbose, days):
+def clean(from_date, to_date, account, config_file, use_db,  days):
     """Очистить старые записи (удалить файлы и пометить как EXPIRED)"""
-    asyncio.run(_clean_command(from_date, to_date, account, config_file, use_db, verbose, days))
+    asyncio.run(_clean_command(from_date, to_date, account, config_file, use_db,  days))
 
 
 def main():
@@ -418,8 +407,7 @@ def _parse_dates(from_date, to_date, last):
 
 
 async def _list_command(
-    from_date, to_date, last, account, config_file, use_db, export, output, verbose
-):
+    from_date, to_date, last, account, config_file, use_db, export, output):
     """Команда list - показать записи из БД"""
     from_date, to_date = _parse_dates(from_date, to_date, last)
 
@@ -440,7 +428,7 @@ async def _list_command(
         from config.unified_config import load_app_config
 
         app_config = load_app_config()
-        pipeline = PipelineManager(db_manager, app_config, verbose=verbose)
+        pipeline = PipelineManager(db_manager, app_config, )
 
         # Получаем записи из БД
         recordings = await pipeline.get_recordings_from_db(from_date, to_date)
@@ -465,7 +453,7 @@ async def _list_command(
         sys.exit(1)
 
 
-async def _sync_command(from_date, to_date, last, account, config_file, use_db, verbose):
+async def _sync_command(from_date, to_date, last, account, config_file, use_db):
     """Команда sync - синхронизировать данные из Zoom в БД"""
     from_date, to_date = _parse_dates(from_date, to_date, last)
 
@@ -496,7 +484,7 @@ async def _sync_command(from_date, to_date, last, account, config_file, use_db, 
         from config.unified_config import load_app_config
 
         app_config = load_app_config()
-        pipeline = PipelineManager(db_manager, app_config, verbose=verbose)
+        pipeline = PipelineManager(db_manager, app_config, )
 
         # Используем спиннер для синхронизации
         from utils.spinner import spinner_manager
@@ -529,7 +517,6 @@ async def _download_command(
     select_all,
     recordings,
     force,
-    verbose,
     allow_skipped,
 ):
     """Команда download - скачать записи"""
@@ -562,7 +549,7 @@ async def _download_command(
         from config.unified_config import load_app_config
 
         app_config = load_app_config()
-        pipeline = PipelineManager(db_manager, app_config, verbose=verbose)
+        pipeline = PipelineManager(db_manager, app_config, )
 
         if recordings:
             # Если указаны конкретные записи, ищем их напрямую в БД
@@ -643,8 +630,7 @@ async def _download_command(
 
 
 async def _process_command(
-    from_date, to_date, last, account, config_file, use_db, select_all, recordings, verbose
-):
+    from_date, to_date, last, account, config_file, use_db, select_all, recordings):
     """Команда process - обработать записи"""
     from_date, to_date = _parse_dates(from_date, to_date, last)
 
@@ -665,7 +651,7 @@ async def _process_command(
         from config.unified_config import load_app_config
 
         app_config = load_app_config()
-        pipeline = PipelineManager(db_manager, app_config, verbose=verbose)
+        pipeline = PipelineManager(db_manager, app_config, )
 
         if recordings:
             # Если указаны конкретные записи, ищем их по ID
@@ -715,7 +701,6 @@ async def _upload_command(
     youtube,
     vk,
     all_platforms,
-    verbose,
 ):
     """Команда upload - загрузить записи на платформы"""
     from_date, to_date = _parse_dates(from_date, to_date, last)
@@ -737,7 +722,7 @@ async def _upload_command(
         from config.unified_config import load_app_config
 
         app_config = load_app_config()
-        pipeline = PipelineManager(db_manager, app_config, verbose=verbose)
+        pipeline = PipelineManager(db_manager, app_config, )
 
         # Определяем платформы для загрузки
         platforms = []
@@ -781,8 +766,7 @@ async def _upload_command(
 
 
 async def _reset_command(
-    from_date, to_date, last, account, config_file, use_db, select_all, recordings, full, verbose
-):
+    from_date, to_date, last, account, config_file, use_db, select_all, recordings, full):
     """Команда reset - сбросить статусы записей"""
     from_date, to_date = _parse_dates(from_date, to_date, last)
 
@@ -803,7 +787,7 @@ async def _reset_command(
         from config.unified_config import load_app_config
 
         app_config = load_app_config()
-        pipeline = PipelineManager(db_manager, app_config, verbose=verbose)
+        pipeline = PipelineManager(db_manager, app_config, )
 
         # Полная очистка БД и удаление всех видео
         if full:
@@ -938,7 +922,7 @@ async def _reset_command(
         sys.exit(1)
 
 
-async def _clean_command(from_date, to_date, account, config_file, use_db, verbose, days):
+async def _clean_command(from_date, to_date, account, config_file, use_db,  days):
     """Команда clean - очистить старые записи"""
     # Для команды clean мы не используем from_date и to_date, только days
 
@@ -959,7 +943,7 @@ async def _clean_command(from_date, to_date, account, config_file, use_db, verbo
         from config.unified_config import load_app_config
 
         app_config = load_app_config()
-        pipeline = PipelineManager(db_manager, app_config, verbose=verbose)
+        pipeline = PipelineManager(db_manager, app_config, )
 
         # Используем спиннер для очистки
         from utils.spinner import spinner_manager
@@ -1003,7 +987,6 @@ async def _full_process_command(
     youtube,
     vk,
     all_platforms,
-    verbose,
     allow_skipped,
 ):
     """Команда full-process - полный пайплайн: скачать + обработать + загрузить"""
@@ -1026,7 +1009,7 @@ async def _full_process_command(
         from config.unified_config import load_app_config
 
         app_config = load_app_config()
-        pipeline = PipelineManager(db_manager, app_config, verbose=verbose)
+        pipeline = PipelineManager(db_manager, app_config, )
 
         # Загружаем конфигурации всех аккаунтов
         if os.path.exists(config_file):
@@ -1072,11 +1055,11 @@ async def _full_process_command(
         print("\n" + "=" * 60)
         print("📊 ИТОГИ ПОЛНОГО ПАЙПЛАЙНА")
         print("=" * 60)
-        print(f"✅ Скачано записей: {results['downloaded']}")
-        print(f"🎬 Обработано записей: {results['processed']}")
-        print(f"📤 Загружено записей: {results['uploaded']}")
+        print(f"✅ Скачано записей: {results['download_count']}")
+        print(f"🎬 Обработано записей: {results['process_count']}")
+        print(f"📤 Загружено записей: {results['upload_count']}")
 
-        if results['errors']:
+        if results.get('errors'):
             print(f"❌ Ошибок: {len(results['errors'])}")
             for error in results['errors']:
                 print(f"   • {error}")

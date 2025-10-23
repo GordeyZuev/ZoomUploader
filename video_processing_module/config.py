@@ -51,7 +51,6 @@ class ProcessingConfig:
         self.outro_duration: int = processing_settings.outro_duration
 
         # Логирование
-        self.verbose: bool = True
         self.keep_temp_files: bool = processing_settings.keep_temp_files
 
     def __post_init__(self):

@@ -103,7 +103,6 @@ class UploadSettings:
     supported_formats: list[str] = None
     retry_attempts: int = 3
     retry_delay: int = 5
-    verbose: bool = True
     interactive_mode: bool = True
     default_privacy: str = "private"
 
@@ -307,7 +306,6 @@ class UnifiedConfigLoader:
             supported_formats=upload_data.get("supported_formats", ['mp4', 'avi', 'mov']),
             retry_attempts=upload_data.get("retry_attempts", 3),
             retry_delay=upload_data.get("retry_delay", 5),
-            verbose=upload_data.get("verbose", True),
             interactive_mode=upload_data.get("interactive_mode", True),
             default_privacy=upload_data.get("default_privacy", "unlisted"),
         )
@@ -334,7 +332,6 @@ class UnifiedConfigLoader:
                     "supported_formats": config.upload_settings.supported_formats,
                     "retry_attempts": config.upload_settings.retry_attempts,
                     "retry_delay": config.upload_settings.retry_delay,
-                    "verbose": config.upload_settings.verbose,
                     "interactive_mode": config.upload_settings.interactive_mode,
                     "default_privacy": config.upload_settings.default_privacy,
                 },
