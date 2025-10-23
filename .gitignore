@@ -1,0 +1,66 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+*.so
+*.egg
+
+# Virtual environments
+.venv
+venv/
+env/
+ENV/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Credentials and sensitive files
+config/app_config.json
+config/vk_creds.json
+config/youtube_creds.json
+config/zoom_creds.json
+config/*_creds.json
+.env
+.env.local
+.env.*.local
+
+# Video files (too large for git)
+video/unprocessed_video/*.mp4
+video/processing/*.mp4
+video/processed_video/*.mp4
+video/temp_processing/*
+
+# Logs
+logs/*.log
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# UV lock file (optional - you might want to keep it)
+# uv.lock
+
+config/accounts.py

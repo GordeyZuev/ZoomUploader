@@ -1,0 +1,45 @@
+# Zoom Manager Dependencies
+
+# HTTP клиент для работы с API
+httpx>=0.24.0
+
+# Логирование
+loguru>=0.7.0
+
+# CLI
+click>=8.0.0
+
+# Progress bar and rich UI
+rich>=13.0.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# База данных
+sqlalchemy>=2.0.0
+asyncpg>=0.29.0
+alembic>=1.13.0
+
+# Обработка видео
+ffmpeg-python>=0.2.0
+
+# YouTube API
+google-api-python-client>=2.0.0
+google-auth-httplib2>=0.1.0
+google-auth-oauthlib>=1.0.0
+google-auth>=2.0.0
+
+# VK API (используется aiohttp из httpx)
+
+# Для работы с асинхронным кодом
+asyncio
+
+# Стандартные библиотеки Python (входят в состав Python)
+# - json
+# - base64
+# - datetime
+# - enum
+# - typing
+# - csv
+# - os
+# - sys

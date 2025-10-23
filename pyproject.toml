@@ -1,0 +1,56 @@
+[project]
+name = "zoomtest"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "aiohttp>=3.13.1",
+    "alembic>=1.13.0",
+    "asyncio>=4.0.0",
+    "asyncpg>=0.29.0",
+    "click>=8.0.0",
+    "ffmpeg>=1.4",
+    "ffmpeg-python>=0.2.0",
+    "google-api-python-client>=2.0.0",
+    "google-auth>=2.0.0",
+    "google-auth-httplib2>=0.1.0",
+    "google-auth-oauthlib>=1.0.0",
+    "greenlet>=3.2.4",
+    "httpx>=0.24.0",
+    "loguru>=0.7.0",
+    "pydantic-settings>=2.11.0",
+    "python-dotenv>=1.1.1",
+    "rich>=14.2.0",
+    "ruff>=0.14.1",
+    "sqlalchemy>=2.0.0",
+    "vk-api>=11.10.0",
+]
+
+[tool.ruff]
+line-length = 100
+indent-width = 4
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = ["E203", "E501"]
+
+[tool.ruff.format]
+quote-style = "preserve"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "api",
+    "config",
+    "database",
+    "models",
+    "utils",
+    "video_download_module",
+    "video_processing_module",
+    "video_upload_module",
+]
+force-single-line = false
+combine-as-imports = true
