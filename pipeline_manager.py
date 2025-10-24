@@ -236,10 +236,10 @@ class PipelineManager:
 
     async def upload_recordings(
         self, recordings: list[MeetingRecording], platforms: list[str]
-    ) -> int:
+    ) -> tuple[int, list[MeetingRecording]]:
         """Загрузка записей на платформы"""
         if not recordings:
-            return 0
+            return 0, []
 
         success_count = 0
         uploaded_recordings = []
@@ -249,25 +249,31 @@ class PipelineManager:
                 success_count += 1
                 uploaded_recordings.append(recording)
 
-        if success_count > 0:
-            self.console.print("\n[bold white]📹 ЗАГРУЖЕННЫЕ ВИДЕО:[/bold white]")
-            for i, recording in enumerate(uploaded_recordings, 1):
-                if recording.youtube_url or recording.vk_url:
+        return success_count, uploaded_recordings
+
+    def display_uploaded_videos(self, uploaded_recordings: list[MeetingRecording]) -> None:
+        """Отображение списка загруженных видео с ссылками"""
+        if not uploaded_recordings:
+            return
+
+        self.console.print("\n[bold white]📹 ЗАГРУЖЕННЫЕ ВИДЕО:[/bold white]")
+        self.console.print("[dim]" + "=" * 60 + "[/dim]")
+        
+        for i, recording in enumerate(uploaded_recordings, 1):
+            if recording.youtube_url or recording.vk_url:
+                self.console.print(
+                    f"\n[bold cyan]{i}.[/bold cyan] [bold white]{recording.topic}[/bold white]"
+                )
+
+                if recording.youtube_url:
                     self.console.print(
-                        f"\n[bold cyan]{i}.[/bold cyan] [bold white]{recording.topic}[/bold white]"
+                        f"    [bold red]📺 YouTube:[/bold red] [link={recording.youtube_url}]{recording.youtube_url}[/link]"
                     )
 
-                    if recording.youtube_url:
-                        self.console.print(
-                            f"    [bold red]📺 YouTube:[/bold red] [link={recording.youtube_url}]{recording.youtube_url}[/link]"
-                        )
-
-                    if recording.vk_url:
-                        self.console.print(
-                            f"    [bold blue]📘 VK:[/bold blue] [link={recording.vk_url}]{recording.vk_url}[/link]"
-                        )
-
-        return success_count
+                if recording.vk_url:
+                    self.console.print(
+                        f"    [bold blue]📘 VK:[/bold blue] [link={recording.vk_url}]{recording.vk_url}[/link]"
+                    )
 
     def _create_upload_config_from_app_config(self):
         """Создание конфигурации загрузки из конфигурации приложения"""
@@ -416,20 +422,33 @@ class PipelineManager:
         self.logger.info(f"🚀 Запуск полного пайплайна для {len(target_recordings)} записей")
 
         download_count = await self.download_recordings(target_recordings)
-        if download_count == 0:
-            return {"success": False, "message": "Не удалось загрузить записи"}
+        
+        # Проверяем, есть ли записи для обработки (скачанные или уже имеющиеся)
+        recordings_to_process = [r for r in target_recordings if r.status == ProcessingStatus.DOWNLOADED]
+        if not recordings_to_process:
+            return {
+                "success": False, 
+                "message": "Нет записей для обработки (ничего не скачано)",
+                "download_count": download_count,
+                "process_count": 0,
+                "upload_count": 0
+            }
 
-        process_count = await self.process_recordings(target_recordings)
-        if process_count == 0:
-            return {"success": False, "message": "Не удалось обработать записи"}
-
-        upload_count = await self.upload_recordings(target_recordings, platforms)
+        process_count = await self.process_recordings(recordings_to_process)
+        
+        # Проверяем, есть ли записи для загрузки (обработанные)
+        recordings_to_upload = [r for r in target_recordings if r.status == ProcessingStatus.PROCESSED]
+        upload_count = 0
+        uploaded_recordings = []
+        if recordings_to_upload:
+            upload_count, uploaded_recordings = await self.upload_recordings(recordings_to_upload, platforms)
 
         return {
             "success": True,
             "download_count": download_count,
             "process_count": process_count,
             "upload_count": upload_count,
+            "uploaded_recordings": uploaded_recordings,
         }
 
     async def _download_single_recording(self, recording: MeetingRecording) -> bool:
@@ -961,6 +980,14 @@ class PipelineManager:
                         )
                         if result and result.status == 'uploaded':
                             success_count += 1
+                            # Обновляем статус и URL записи
+                            if platform == 'youtube':
+                                recording.update_platform_status('youtube', PlatformStatus.UPLOADED_YOUTUBE, result.video_url)
+                            elif platform == 'vk':
+                                recording.update_platform_status('vk', PlatformStatus.UPLOADED_VK, result.video_url)
+                            
+                            # Сохраняем изменения в базе данных
+                            await self.db_manager.update_recording(recording)
 
                 except asyncio.CancelledError:
                     self.console.print(

@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from logger import get_logger
-from models.recording import MeetingRecording, ProcessingStatus
+from models.recording import MeetingRecording, ProcessingStatus, PlatformStatus
 from utils.formatting import normalize_datetime_string
 
 from .config import DatabaseConfig
@@ -152,13 +152,24 @@ class DatabaseManager:
         existing.account = recording.account
         existing.meeting_id = str(recording.meeting_id)
         existing.is_mapped = recording.is_mapped
-        existing.status = recording.status
+        
+        # Сохраняем статус только если запись еще не была загружена
+        # Если запись уже загружена (UPLOADED), не сбрасываем статус
+        if existing.status != ProcessingStatus.UPLOADED:
+            existing.status = recording.status
+        
         existing.local_video_path = recording.local_video_path
         existing.processed_video_path = recording.processed_video_path
         existing.downloaded_at = recording.downloaded_at
-        existing.youtube_status = recording.youtube_status
+        
+        # Сохраняем статусы платформ только если они еще не были загружены
+        # Если платформа уже загружена (UPLOADED), не сбрасываем статус
+        if existing.youtube_status != PlatformStatus.UPLOADED:
+            existing.youtube_status = recording.youtube_status
+        if existing.vk_status != PlatformStatus.UPLOADED:
+            existing.vk_status = recording.vk_status
+            
         existing.youtube_url = recording.youtube_url
-        existing.vk_status = recording.vk_status
         existing.vk_url = recording.vk_url
         existing.processing_notes = recording.processing_notes
         existing.processing_time = recording.processing_time
@@ -276,7 +287,19 @@ class DatabaseManager:
                     logger.error(f"❌ Запись с ID {recording.db_id} не найдена")
                     return
 
-                # Обновляем только те поля, которые есть в модели
+                # Обновляем все поля записи
+                db_recording.topic = recording.topic
+                db_recording.start_time = _parse_start_time(recording.start_time)
+                db_recording.duration = recording.duration
+                db_recording.video_file_size = recording.video_file_size
+                db_recording.video_file_download_url = recording.video_file_download_url
+                db_recording.download_access_token = recording.download_access_token
+                db_recording.password = recording.password
+                db_recording.recording_play_passcode = recording.recording_play_passcode
+                db_recording.account = recording.account
+                db_recording.meeting_id = str(recording.meeting_id)
+                db_recording.is_mapped = recording.is_mapped
+                db_recording.status = recording.status
                 db_recording.local_video_path = recording.local_video_path
                 db_recording.processed_video_path = recording.processed_video_path
                 db_recording.downloaded_at = recording.downloaded_at
@@ -286,7 +309,6 @@ class DatabaseManager:
                 db_recording.vk_url = recording.vk_url
                 db_recording.processing_notes = recording.processing_notes
                 db_recording.processing_time = recording.processing_time
-                db_recording.status = recording.status
                 db_recording.updated_at = datetime.now()
 
                 session.add(db_recording)

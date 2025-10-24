@@ -92,21 +92,45 @@ class MeetingRecording:
         Args:
             recording_files: Список файлов записи из API
         """
+        # Приоритеты для выбора MP4 файла (чем выше приоритет, тем лучше)
+        mp4_priorities = {
+            'shared_screen_with_speaker_view': 3,  # Лучший вариант - экран + спикер
+            'shared_screen': 2,                    # Хороший вариант - только экран
+            'active_speaker': 1,                   # Базовый вариант - только спикер
+        }
+        
+        best_mp4_file = None
+        best_priority = 0
+        
         for file_data in recording_files:
             file_type = file_data.get('file_type', '')
             file_size = file_data.get('file_size', 0)
             download_url = file_data.get('download_url', '')
+            recording_type = file_data.get('recording_type', '')
 
             if file_type == 'MP4':
-                # Основное видео
-                self.video_file_size = file_size
-                self.video_file_download_url = download_url
+                # Определяем приоритет этого MP4 файла
+                priority = mp4_priorities.get(recording_type, 0)
+                
+                # Если это лучший файл, сохраняем его
+                if priority > best_priority:
+                    best_priority = priority
+                    best_mp4_file = {
+                        'file_size': file_size,
+                        'download_url': download_url,
+                        'recording_type': recording_type
+                    }
             elif file_type == 'CHAT':
                 # Файл чата (пока не обрабатываем)
                 pass
             elif file_type == 'TRANSCRIPT':
                 # Транскрипт (пока не обрабатываем)
                 pass
+        
+        # Сохраняем лучший MP4 файл
+        if best_mp4_file:
+            self.video_file_size = best_mp4_file['file_size']
+            self.video_file_download_url = best_mp4_file['download_url']
 
     def update_status(self, new_status: ProcessingStatus, notes: str = "") -> None:
         """

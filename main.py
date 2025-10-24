@@ -738,21 +738,28 @@ async def _upload_command(
                 return
 
             if select_all:
-                target_recordings = await pipeline.get_recordings_by_selection(
-                    select_all, recordings.split() if recordings else [], ProcessingStatus.PROCESSED
-                )
+                all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
+                target_recordings = [r for r in all_recordings if r.status == ProcessingStatus.PROCESSED]
             elif recordings:
-                target_recordings = await pipeline.get_recordings_by_selection(
-                    False, recordings.split(','), ProcessingStatus.PROCESSED
-                )
+                # Если указаны конкретные записи, ищем их по ID
+                try:
+                    recording_ids = [int(r.strip()) for r in recordings.split(',')]
+                    found_recordings = await pipeline.db_manager.get_recordings_by_ids(recording_ids)
+                    target_recordings = [r for r in found_recordings if r.status == ProcessingStatus.PROCESSED]
+                except ValueError:
+                    logger.error("❌ Ошибка: ID записей должны быть числами")
+                    return
             else:
-                target_recordings = await pipeline.get_recordings_by_selection(
-                    True, [], ProcessingStatus.PROCESSED
-                )
+                all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
+                target_recordings = [r for r in all_recordings if r.status == ProcessingStatus.PROCESSED]
 
             if target_recordings:
-                success_count = await pipeline.upload_recordings(target_recordings, platforms)
+                success_count, uploaded_recordings = await pipeline.upload_recordings(target_recordings, platforms)
                 logger.info(f"✅ Загрузка завершена: {success_count}/{len(target_recordings)}")
+                
+                # Отображаем список загруженных видео с ссылками
+                if uploaded_recordings:
+                    pipeline.display_uploaded_videos(uploaded_recordings)
             else:
                 logger.warning("❌ Нет записей для загрузки")
 
@@ -1055,9 +1062,18 @@ async def _full_process_command(
         print("\n" + "=" * 60)
         print("📊 ИТОГИ ПОЛНОГО ПАЙПЛАЙНА")
         print("=" * 60)
-        print(f"✅ Скачано записей: {results['download_count']}")
-        print(f"🎬 Обработано записей: {results['process_count']}")
-        print(f"📤 Загружено записей: {results['upload_count']}")
+        
+        if results.get('success', True):  # По умолчанию считаем успешным
+            print(f"✅ Скачано записей: {results.get('download_count', 0)}")
+            print(f"🎬 Обработано записей: {results.get('process_count', 0)}")
+            print(f"📤 Загружено записей: {results.get('upload_count', 0)}")
+            
+            # Отображаем список загруженных видео с ссылками
+            uploaded_recordings = results.get('uploaded_recordings', [])
+            if uploaded_recordings:
+                pipeline.display_uploaded_videos(uploaded_recordings)
+        else:
+            print(f"❌ Пайплайн завершился с ошибкой: {results.get('message', 'Неизвестная ошибка')}")
 
         if results.get('errors'):
             print(f"❌ Ошибок: {len(results['errors'])}")
