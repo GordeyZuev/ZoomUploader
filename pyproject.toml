@@ -1,9 +1,13 @@
 [project]
 name = "zoomtest"
 version = "0.1.0"
-description = "Add your description here"
+description = "Zoom video processing pipeline for automatic video downloads and uploads"
 readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.13"
+authors = [
+    {name = "Gordey Zuev", email = "gordey.zuev@gmail.com"}
+]
 dependencies = [
     "aiohttp>=3.13.1",
     "alembic>=1.13.0",
