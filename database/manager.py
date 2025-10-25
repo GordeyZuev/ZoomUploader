@@ -139,7 +139,6 @@ class DatabaseManager:
     ):
         """Обновление существующей записи."""
         existing.topic = recording.topic
-        existing.start_time = _parse_start_time(recording.start_time)
         existing.duration = recording.duration
         existing.video_file_size = recording.video_file_size
         existing.video_file_download_url = recording.video_file_download_url
@@ -148,27 +147,17 @@ class DatabaseManager:
         existing.recording_play_passcode = recording.recording_play_passcode
         existing.account = recording.account
         existing.meeting_id = str(recording.meeting_id)
-        existing.is_mapped = recording.is_mapped
 
-
-        if existing.status != ProcessingStatus.UPLOADED:
+        if existing.status == ProcessingStatus.INITIALIZED:
+            existing.is_mapped = recording.is_mapped
             existing.status = recording.status
-
-        existing.local_video_path = recording.local_video_path
-        existing.processed_video_path = recording.processed_video_path
-        existing.downloaded_at = recording.downloaded_at
 
         if existing.youtube_status != PlatformStatus.UPLOADED_YOUTUBE:
             existing.youtube_status = recording.youtube_status
         if existing.vk_status != PlatformStatus.UPLOADED_VK:
             existing.vk_status = recording.vk_status
 
-        existing.youtube_url = recording.youtube_url
-        existing.vk_url = recording.vk_url
-        existing.processing_notes = recording.processing_notes
-        existing.processing_time = recording.processing_time
         existing.updated_at = datetime.now()
-
         session.add(existing)
 
     async def _create_new_recording(self, session: AsyncSession, recording: MeetingRecording):
@@ -282,7 +271,6 @@ class DatabaseManager:
                     return
 
                 db_recording.topic = recording.topic
-                db_recording.start_time = _parse_start_time(recording.start_time)
                 db_recording.duration = recording.duration
                 db_recording.video_file_size = recording.video_file_size
                 db_recording.video_file_download_url = recording.video_file_download_url
