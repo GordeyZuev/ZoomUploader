@@ -1,7 +1,3 @@
-"""
-Основной загрузчик VK
-"""
-
 import asyncio
 import os
 from typing import Any

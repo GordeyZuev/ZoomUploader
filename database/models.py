@@ -1,7 +1,3 @@
-"""
-SQLAlchemy модели для базы данных
-"""
-
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Enum, Identity, Integer, String, Text, UniqueConstraint

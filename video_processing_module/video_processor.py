@@ -1,7 +1,3 @@
-"""
-Основной процессор видео с использованием FFmpeg
-"""
-
 import asyncio
 import json
 import os

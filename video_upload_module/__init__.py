@@ -1,7 +1,3 @@
-"""
-Модуль для загрузки видео на платформы
-"""
-
 from .config_factory import (
     PlatformConfig,
     UploadConfig,

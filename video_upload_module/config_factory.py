@@ -1,7 +1,3 @@
-"""
-Фабрика конфигураций для системы загрузки
-"""
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 

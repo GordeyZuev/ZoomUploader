@@ -1,7 +1,3 @@
-"""
-Менеджер миниатюр YouTube
-"""
-
 import asyncio
 import os
 from typing import Any

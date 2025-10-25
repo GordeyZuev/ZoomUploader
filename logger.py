@@ -1,7 +1,3 @@
-"""
-Простой логгер для Zoom Manager на основе loguru
-"""
-
 import os
 import sys
 from pathlib import Path

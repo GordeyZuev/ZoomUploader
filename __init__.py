@@ -1,14 +1,3 @@
-"""
-Video Processing Pipeline - система обработки видео
-
-Основной модуль для работы с видео:
-- Получение записей через Zoom API
-- Структурированное хранение в БД
-- Обработка и сегментация видео
-- Загрузка на платформы (YouTube, VK)
-- Управление статусами обработки
-"""
-
 from .api import ZoomAPI
 from .config import ZoomConfig, get_config_by_account, load_config_from_file
 from .database import DatabaseConfig, DatabaseManager, RecordingModel

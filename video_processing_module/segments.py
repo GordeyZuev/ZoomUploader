@@ -1,7 +1,3 @@
-"""
-Модуль для работы с сегментами видео
-"""
-
 import os
 from dataclasses import dataclass
 from datetime import datetime

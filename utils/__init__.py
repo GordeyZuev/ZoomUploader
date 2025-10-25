@@ -1,7 +1,3 @@
-"""
-Утилиты для Zoom Manager
-"""
-
 from .data_processing import (
     filter_available_recordings,
     filter_ready_for_processing,

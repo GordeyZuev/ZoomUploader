@@ -1,7 +1,3 @@
-"""
-Конфигурация базы данных (совместимость с Pydantic Settings)
-"""
-
 from config.settings import settings
 
 

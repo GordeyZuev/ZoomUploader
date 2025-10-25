@@ -1,7 +1,3 @@
-"""
-Функции форматирования данных
-"""
-
 from datetime import datetime
 
 

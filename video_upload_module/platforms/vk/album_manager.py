@@ -1,7 +1,3 @@
-"""
-Менеджер альбомов VK
-"""
-
 from typing import Any
 
 import aiohttp

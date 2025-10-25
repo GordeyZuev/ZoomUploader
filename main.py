@@ -1,46 +1,3 @@
-#!/usr/bin/env python3
-"""
-Основной скрипт для работы с Zoom Manager
-
-Использование:
-    python main.py list                              # Показать записи из БД за сегодня (по умолчанию)
-    python main.py list --last 1                     # Показать записи за вчера
-    python main.py list --last 7                     # Показать записи за последние 7 дней
-    python main.py list --last 14                    # Показать записи за последние 14 дней
-    python main.py list --from 2024-10-01            # Показать записи с даты (YYYY-MM-DD)
-    python main.py list --from 01-10-2024            # Показать записи с даты (DD-MM-YYYY)
-    python main.py list --from 01/10/2024            # Показать записи с даты (DD/MM/YYYY)
-    python main.py list --from 16-10-25              # Показать записи с даты (DD-MM-YY)
-
-    python main.py sync                              # Синхронизировать данные из Zoom в БД за последние 14 дней (по умолчанию)
-    python main.py sync --last 7                     # Синхронизировать за последние 7 дней
-    python main.py sync --last 0                     # Синхронизировать за сегодня
-
-    python main.py download --all                    # Скачать все записи >30 мин
-    python main.py download --recordings "1,4,7"     # Скачать записи по ID
-    python main.py download -f --all                 # Принудительно скачать все записи
-
-    python main.py process --all                     # Обработать все скачанные
-    python main.py process --recordings "1,4,7"      # Обработать записи по ID
-
-    python main.py upload --youtube --all            # Загрузить на YouTube
-    python main.py upload --youtube --recordings "1,4,7"  # Загрузить записи по ID
-    python main.py upload --all-platforms --all      # Загрузить на все платформы
-    python main.py upload --youtube --all -i         # Интерактивная загрузка на YouTube
-
-    python main.py full-process --all                # Полный пайплайн: скачать + обработать + загрузить
-    python main.py full-process --recordings "1,4,7" # Полный пайплайн для конкретных записей
-    python main.py full-process --youtube --all      # Полный пайплайн с загрузкой на YouTube
-    python main.py full-process --youtube --all -i   # Интерактивный полный пайплайн
-
-    python main.py reset                             # Сбросить статусы записей (кроме загруженных)
-    python main.py reset --recordings "1,4,7"        # Сбросить конкретные записи
-    python main.py reset --full                      # Полная очистка БД и удаление всех видео
-
-    python main.py clean                             # Очистить записи старше 7 дней
-    python main.py clean --days 14                   # Очистить записи старше 14 дней
-"""
-
 import asyncio
 import os
 import sys
@@ -756,7 +713,7 @@ async def _upload_command(
             if target_recordings:
                 success_count, uploaded_recordings = await pipeline.upload_recordings(target_recordings, platforms)
                 logger.info(f"✅ Загрузка завершена: {success_count}/{len(target_recordings)}")
-                
+
                 # Отображаем список загруженных видео с ссылками
                 if uploaded_recordings:
                     pipeline.display_uploaded_videos(uploaded_recordings)
@@ -1062,12 +1019,12 @@ async def _full_process_command(
         print("\n" + "=" * 60)
         print("📊 ИТОГИ ПОЛНОГО ПАЙПЛАЙНА")
         print("=" * 60)
-        
+
         if results.get('success', True):  # По умолчанию считаем успешным
             print(f"✅ Скачано записей: {results.get('download_count', 0)}")
             print(f"🎬 Обработано записей: {results.get('process_count', 0)}")
             print(f"📤 Загружено записей: {results.get('upload_count', 0)}")
-            
+
             # Отображаем список загруженных видео с ссылками
             uploaded_recordings = results.get('uploaded_recordings', [])
             if uploaded_recordings:

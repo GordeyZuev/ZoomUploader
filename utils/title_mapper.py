@@ -1,7 +1,3 @@
-"""
-Модуль для маппинга названий записей Zoom в названия для YouTube
-"""
-
 import re
 from dataclasses import dataclass
 from datetime import datetime

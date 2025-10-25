@@ -1,7 +1,3 @@
-"""
-Конфигурация для обработки видео (совместимость с Pydantic Settings)
-"""
-
 from config.settings import settings
 
 

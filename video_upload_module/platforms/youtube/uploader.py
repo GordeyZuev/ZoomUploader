@@ -1,7 +1,3 @@
-"""
-Основной загрузчик YouTube
-"""
-
 import asyncio
 import json
 import os

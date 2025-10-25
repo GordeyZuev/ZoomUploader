@@ -22,8 +22,6 @@ from utils.formatting import normalize_datetime_string
 from utils.interactive_mapper import get_interactive_mapper
 from utils.title_mapper import TitleMapper
 from video_download_module import ZoomDownloader
-from video_processing_module import ProcessingConfig, VideoProcessor
-from video_upload_module import UploadManager
 
 logger = get_logger()
 
@@ -258,7 +256,7 @@ class PipelineManager:
 
         self.console.print("\n[bold white]📹 ЗАГРУЖЕННЫЕ ВИДЕО:[/bold white]")
         self.console.print("[dim]" + "=" * 60 + "[/dim]")
-        
+
         for i, recording in enumerate(uploaded_recordings, 1):
             if recording.youtube_url or recording.vk_url:
                 self.console.print(
@@ -281,7 +279,7 @@ class PipelineManager:
 
         # Используем фабрику для создания конфигурации
         upload_config = UploadConfigFactory.from_app_config(self.app_config)
-            
+
         return upload_config
 
     async def get_recordings_by_selection(
@@ -413,7 +411,9 @@ class PipelineManager:
                     if r.topic in recordings and r.status in allowed_statuses
                 ]
         else:
-            target_recordings = []
+            # Если не указаны ни --all, ни записи - обрабатываем все за указанный период
+            all_recordings = await self.get_recordings_from_db(from_date, to_date)
+            target_recordings = [r for r in all_recordings if r.status in allowed_statuses]
 
         if not target_recordings:
             self.logger.warning("❌ Нет записей для обработки")
@@ -422,12 +422,12 @@ class PipelineManager:
         self.logger.info(f"🚀 Запуск полного пайплайна для {len(target_recordings)} записей")
 
         download_count = await self.download_recordings(target_recordings)
-        
+
         # Проверяем, есть ли записи для обработки (скачанные или уже имеющиеся)
         recordings_to_process = [r for r in target_recordings if r.status == ProcessingStatus.DOWNLOADED]
         if not recordings_to_process:
             return {
-                "success": False, 
+                "success": False,
                 "message": "Нет записей для обработки (ничего не скачано)",
                 "download_count": download_count,
                 "process_count": 0,
@@ -435,7 +435,7 @@ class PipelineManager:
             }
 
         process_count = await self.process_recordings(recordings_to_process)
-        
+
         # Проверяем, есть ли записи для загрузки (обработанные)
         recordings_to_upload = [r for r in target_recordings if r.status == ProcessingStatus.PROCESSED]
         upload_count = 0
@@ -985,7 +985,7 @@ class PipelineManager:
                                 recording.update_platform_status('youtube', PlatformStatus.UPLOADED_YOUTUBE, result.video_url)
                             elif platform == 'vk':
                                 recording.update_platform_status('vk', PlatformStatus.UPLOADED_VK, result.video_url)
-                            
+
                             # Сохраняем изменения в базе данных
                             await self.db_manager.update_recording(recording)
 

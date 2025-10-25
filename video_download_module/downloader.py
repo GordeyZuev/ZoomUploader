@@ -1,7 +1,3 @@
-"""
-Модуль для загрузки видео файлов Zoom
-"""
-
 import asyncio
 from datetime import datetime
 from pathlib import Path

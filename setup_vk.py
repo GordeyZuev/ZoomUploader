@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-Настройка VK токена
-"""
-
 import asyncio
 import json
 import os

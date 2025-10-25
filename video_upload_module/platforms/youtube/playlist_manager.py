@@ -1,7 +1,3 @@
-"""
-Менеджер плейлистов YouTube
-"""
-
 from typing import Any
 
 from googleapiclient.errors import HttpError

@@ -1,7 +1,3 @@
-"""
-Конфигурация приложения с использованием Pydantic Settings
-"""
-
 from typing import Literal
 
 from pydantic import Field

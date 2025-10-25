@@ -1,7 +1,3 @@
-"""
-Интерактивный модуль для обработки неизвестных названий видео
-"""
-
 from datetime import datetime
 
 from logger import get_logger

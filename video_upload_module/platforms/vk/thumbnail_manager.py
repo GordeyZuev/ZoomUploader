@@ -1,7 +1,3 @@
-"""
-Менеджер миниатюр VK
-"""
-
 import os
 
 import aiohttp

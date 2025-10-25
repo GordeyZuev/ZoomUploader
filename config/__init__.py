@@ -1,7 +1,3 @@
-"""
-Конфигурационный модуль для Zoom Manager
-"""
-
 from .accounts import ZOOM_ACCOUNTS
 from .settings import ZoomConfig, get_config_by_account, load_config_from_file
 

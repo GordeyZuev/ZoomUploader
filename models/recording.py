@@ -1,7 +1,3 @@
-"""
-Модель записи Zoom встречи
-"""
-
 from datetime import datetime
 from enum import Enum
 from typing import Any
@@ -98,10 +94,10 @@ class MeetingRecording:
             'shared_screen': 2,                    # Хороший вариант - только экран
             'active_speaker': 1,                   # Базовый вариант - только спикер
         }
-        
+
         best_mp4_file = None
         best_priority = 0
-        
+
         for file_data in recording_files:
             file_type = file_data.get('file_type', '')
             file_size = file_data.get('file_size', 0)
@@ -111,7 +107,7 @@ class MeetingRecording:
             if file_type == 'MP4':
                 # Определяем приоритет этого MP4 файла
                 priority = mp4_priorities.get(recording_type, 0)
-                
+
                 # Если это лучший файл, сохраняем его
                 if priority > best_priority:
                     best_priority = priority
@@ -126,7 +122,7 @@ class MeetingRecording:
             elif file_type == 'TRANSCRIPT':
                 # Транскрипт (пока не обрабатываем)
                 pass
-        
+
         # Сохраняем лучший MP4 файл
         if best_mp4_file:
             self.video_file_size = best_mp4_file['file_size']

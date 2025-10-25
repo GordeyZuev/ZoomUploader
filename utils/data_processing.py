@@ -1,7 +1,3 @@
-"""
-Функции для обработки данных записей
-"""
-
 from datetime import datetime, time
 from typing import Any
 

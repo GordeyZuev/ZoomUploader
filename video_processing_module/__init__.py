@@ -1,7 +1,3 @@
-"""
-Модуль для обработки видео
-"""
-
 from .audio_detector import AudioDetector
 from .config import ProcessingConfig
 from .segments import SegmentProcessor, VideoSegment
