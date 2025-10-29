@@ -26,8 +26,22 @@ class VKUploader(BaseUploader):
     async def authenticate(self) -> bool:
         """Аутентификация в VK API."""
         if not self.config.access_token:
-            self.logger.error("VK access_token не настроен")
-            return False
+            # Пытаемся интерактивно получить токен как в setup_vk.py
+            try:
+                from setup_vk import VKTokenSetup  # импортируем лениво
+
+                self.logger.info("VK access_token не найден. Запускаю интерактивную настройку...")
+                setup = VKTokenSetup(app_id=getattr(self.config, 'app_id', '54249533'))
+                token = await setup.get_token_interactive(getattr(self.config, 'scope', 'video,groups,wall'))
+                if token:
+                    # setup_vk уже сохранил токен в config/vk_creds.json, протянем его в текущую конфигурацию
+                    self.config.access_token = token
+                else:
+                    self.logger.error("Не удалось получить VK access_token интерактивно")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Не удалось запустить интерактивную настройку VK: {e}")
+                return False
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -36,8 +50,30 @@ class VKUploader(BaseUploader):
                     if response.status == 200:
                         data = await response.json()
                         if 'error' in data:
+                            # Если токен недействителен — попробуем один раз получить новый через setup_vk
                             self.logger.error(f"VK API Error: {data['error']}")
-                            return False
+                            try:
+                                from setup_vk import VKTokenSetup
+
+                                self.logger.info("Пробую переавторизоваться через setup_vk...")
+                                setup = VKTokenSetup(app_id=getattr(self.config, 'app_id', '54249533'))
+                                token = await setup.get_token_interactive(getattr(self.config, 'scope', 'video,groups,wall'))
+                                if token:
+                                    self.config.access_token = token
+                                    # Повторно валидируем
+                                    params = {'access_token': self.config.access_token, 'v': '5.131'}
+                                    async with session.get(f"{self.base_url}/users.get", params=params) as recheck:
+                                        if recheck.status == 200:
+                                            again = await recheck.json()
+                                            if 'error' not in again:
+                                                self._authenticated = True
+                                                self.logger.info("Аутентификация VK успешна после переавторизации")
+                                                return True
+                                self.logger.error("Переавторизация VK не удалась")
+                                return False
+                            except Exception as e:
+                                self.logger.error(f"Сбой переавторизации VK: {e}")
+                                return False
                         self._authenticated = True
                         self.logger.info("Аутентификация VK успешна")
                         return True

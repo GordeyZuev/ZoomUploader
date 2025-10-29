@@ -22,12 +22,9 @@ def _parse_start_time(start_time_str: str) -> datetime:
     if not start_time_str:
         raise ValueError("start_time не может быть пустым")
 
-    try:
-        # Нормализуем строку даты
+    try: # TODO fix
         normalized_time = normalize_datetime_string(start_time_str)
-        # Парсим в datetime
         dt = datetime.fromisoformat(normalized_time)
-        # Убираем timezone info если есть, так как PostgreSQL ожидает naive datetime
         if dt.tzinfo is not None:
             dt = dt.replace(tzinfo=None)
         return dt
@@ -93,13 +90,10 @@ class DatabaseManager:
             try:
                 for recording in recordings:
                     try:
-                        # Проверяем, существует ли запись по meeting_id и start_time
                         existing = await self._find_existing_recording(session, recording)
                         if existing:
-                            # Обновляем существующую запись
                             await self._update_existing_recording(session, existing, recording)
                         else:
-                            # Создаем новую запись
                             await self._create_new_recording(session, recording)
                         saved_count += 1
                     except IntegrityError as e:

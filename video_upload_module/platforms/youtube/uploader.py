@@ -50,9 +50,17 @@ class YouTubeUploader(BaseUploader):
                             self.credentials = None
 
             if not self.credentials or not self.credentials.valid:
-                if self.credentials and self.credentials.expired and self.credentials.refresh_token:
-                    self.credentials.refresh(Request())
-                else:
+                refreshed_successfully = False
+                if self.credentials and self.credentials.refresh_token:
+                    try:
+                        self.credentials.refresh(Request())
+                        refreshed_successfully = True
+                    except Exception as e:
+                        # Если рефреш провалился (например invalid_grant), сбрасываем креды и идем по интерактивному флоу
+                        self.logger.warning(f"Не удалось обновить токен, запускаю интерактивную авторизацию: {e}")
+                        self.credentials = None
+
+                if not refreshed_successfully or not self.credentials or not self.credentials.valid:
                     flow = None
 
                     try:
