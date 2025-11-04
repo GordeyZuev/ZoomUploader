@@ -41,8 +41,9 @@ class ZoomDownloader:
         return url
 
     def _get_filename(self, recording: MeetingRecording) -> str:
+        topic = recording.topic.strip() if recording.topic else ""
         safe_topic = "".join(
-            c for c in recording.topic if c.isalnum() or c in (' ', '-', '_', '(', ')')
+            c for c in topic if c.isalnum() or c in (' ', '-', '_', '(', ')')
         ).strip()
         if len(safe_topic) > 60:
             safe_topic = safe_topic[:60].rstrip()

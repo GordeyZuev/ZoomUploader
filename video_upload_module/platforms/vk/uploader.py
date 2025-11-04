@@ -26,15 +26,13 @@ class VKUploader(BaseUploader):
     async def authenticate(self) -> bool:
         """Аутентификация в VK API."""
         if not self.config.access_token:
-            # Пытаемся интерактивно получить токен как в setup_vk.py
             try:
-                from setup_vk import VKTokenSetup  # импортируем лениво
+                from setup_vk import VKTokenSetup
 
                 self.logger.info("VK access_token не найден. Запускаю интерактивную настройку...")
                 setup = VKTokenSetup(app_id=getattr(self.config, 'app_id', '54249533'))
                 token = await setup.get_token_interactive(getattr(self.config, 'scope', 'video,groups,wall'))
                 if token:
-                    # setup_vk уже сохранил токен в config/vk_creds.json, протянем его в текущую конфигурацию
                     self.config.access_token = token
                 else:
                     self.logger.error("Не удалось получить VK access_token интерактивно")
@@ -50,7 +48,6 @@ class VKUploader(BaseUploader):
                     if response.status == 200:
                         data = await response.json()
                         if 'error' in data:
-                            # Если токен недействителен — попробуем один раз получить новый через setup_vk
                             self.logger.error(f"VK API Error: {data['error']}")
                             try:
                                 from setup_vk import VKTokenSetup
@@ -60,7 +57,6 @@ class VKUploader(BaseUploader):
                                 token = await setup.get_token_interactive(getattr(self.config, 'scope', 'video,groups,wall'))
                                 if token:
                                     self.config.access_token = token
-                                    # Повторно валидируем
                                     params = {'access_token': self.config.access_token, 'v': '5.131'}
                                     async with session.get(f"{self.base_url}/users.get", params=params) as recheck:
                                         if recheck.status == 200:
@@ -127,13 +123,12 @@ class VKUploader(BaseUploader):
                 )
                 result.metadata['owner_id'] = owner_id
 
-                # Устанавливаем миниатюру если есть
                 if thumbnail_path and os.path.exists(thumbnail_path):
                     try:
                         from .thumbnail_manager import VKThumbnailManager
 
                         thumbnail_manager = VKThumbnailManager(self.config)
-                        await asyncio.sleep(3)  # Небольшая задержка после загрузки видео
+                        await asyncio.sleep(3)
                         success = await thumbnail_manager.set_video_thumbnail(
                             video_id, owner_id, thumbnail_path
                         )
@@ -188,7 +183,7 @@ class VKUploader(BaseUploader):
 
         params = {
             'video_id': video_id,
-            'owner_id': None,  # Должен быть передан из метаданных
+            'owner_id': None,
         }
 
         response = await self._make_request('video.delete', params)
@@ -232,7 +227,6 @@ class VKUploader(BaseUploader):
     ) -> dict[str, Any] | None:
         """Загрузка файла видео."""
         try:
-            # Получаем размер файла для прогресс-бара
             os.path.getsize(video_path)
 
             with open(video_path, 'rb') as video_file:
@@ -246,13 +240,12 @@ class VKUploader(BaseUploader):
                                 self.logger.error(f"VK Upload Error: {data['error']}")
                                 return None
 
-                            # Обновляем прогресс-бар до 100%
                             if progress and task_id is not None:
                                 try:
                                     if task_id in progress.task_ids:
                                         progress.update(task_id, completed=100, total=100)
                                 except Exception:
-                                    pass  # Игнорируем ошибки обновления прогресса
+                                    pass
 
                             return data
                         else:

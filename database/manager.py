@@ -145,6 +145,23 @@ class DatabaseManager:
         if existing.status == ProcessingStatus.INITIALIZED:
             existing.is_mapped = recording.is_mapped
             existing.status = recording.status
+            logger.debug(
+                f"Обновление записи {existing.id}: статус INITIALIZED -> is_mapped={recording.is_mapped}, status={recording.status.value}"
+            )
+        elif existing.status == ProcessingStatus.SKIPPED:
+            if recording.status == ProcessingStatus.INITIALIZED:
+                # Найден маппинг - обновляем статус
+                logger.info(
+                    f"🔄 Обновление записи {existing.id}: SKIPPED -> INITIALIZED (is_mapped: {existing.is_mapped} -> {recording.is_mapped})"
+                )
+                existing.is_mapped = recording.is_mapped
+                existing.status = recording.status
+            elif recording.is_mapped != existing.is_mapped:
+                # Обновляем только is_mapped если изменился
+                logger.debug(
+                    f"Обновление записи {existing.id}: is_mapped {existing.is_mapped} -> {recording.is_mapped}"
+                )
+                existing.is_mapped = recording.is_mapped
 
         if existing.youtube_status != PlatformStatus.UPLOADED_YOUTUBE:
             existing.youtube_status = recording.youtube_status

@@ -54,15 +54,19 @@ class TitleMapper:
 
     def _find_matching_rule(self, title: str) -> dict[str, Any] | None:
         """Поиск подходящего правила для названия."""
+        normalized_title = title.strip()
+
         for rule in self.mapping_config.mapping_rules:
             pattern = rule.get("pattern", "")
 
-            if pattern == title:
+            normalized_pattern = pattern.strip()
+
+            if normalized_pattern == normalized_title:
                 return rule
 
             if pattern.startswith("^") and pattern.endswith("$"):
                 try:
-                    if re.match(pattern, title):
+                    if re.match(pattern, title) or re.match(pattern, normalized_title):
                         return rule
                 except re.error:
                     continue

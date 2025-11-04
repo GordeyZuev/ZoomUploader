@@ -86,16 +86,18 @@ class PipelineManager:
         for recording in recordings:
             if recording.duration < 30:
                 filtered_count += 1
+                topic = recording.topic.strip() if recording.topic else "Без названия"
                 self.logger.info(
-                    f"⏭️ Запись '{recording.topic}' пропущена (длительность {recording.duration} мин < 30 мин)"
+                    f"⏭️ Запись '{topic}' пропущена (длительность {recording.duration} мин < 30 мин)"
                 )
                 continue
 
             size_mb = recording.video_file_size / (1024 * 1024) if recording.video_file_size else 0
             if size_mb < 40:
                 filtered_count += 1
+                topic = recording.topic.strip() if recording.topic else "Без названия"
                 self.logger.info(
-                    f"⏭️ Запись '{recording.topic}' пропущена (размер {size_mb:.1f} МБ < 40 МБ)"
+                    f"⏭️ Запись '{topic}' пропущена (размер {size_mb:.1f} МБ < 40 МБ)"
                 )
                 continue
 
@@ -342,25 +344,83 @@ class PipelineManager:
     def _check_and_set_mapping(self, recording: MeetingRecording) -> None:
         """Проверка маппинга записи и установка соответствующего статуса"""
         try:
+            topic = recording.topic.strip() if recording.topic else ""
             # Проверяем, есть ли маппинг для этой записи
             mapping_result = self.title_mapper.map_title(
-                recording.topic, recording.start_time, recording.duration
+                topic, recording.start_time, recording.duration
             )
 
             if mapping_result.youtube_title:
                 # Есть маппинг - устанавливаем статус INITIALIZED
                 recording.is_mapped = True
                 recording.status = ProcessingStatus.INITIALIZED
+                self.logger.debug(
+                    f"✅ Маппинг найден для '{topic}' -> '{mapping_result.youtube_title}'"
+                )
             else:
                 # Нет маппинга - устанавливаем статус SKIPPED
                 recording.is_mapped = False
                 recording.status = ProcessingStatus.SKIPPED
+                self.logger.debug(f"⏭️ Маппинг не найден для '{topic}'")
 
         except Exception as e:
             # В случае ошибки - считаем, что маппинга нет
             recording.is_mapped = False
             recording.status = ProcessingStatus.SKIPPED
             self.logger.warning(f"   ❌ Ошибка проверки маппинга для '{recording.topic}': {e}")
+
+    async def _check_and_update_skipped_recordings(
+        self, from_date: str, to_date: str | None = None
+    ) -> int:
+        """Проверка существующих записей со статусом SKIPPED и обновление их статуса если появился маппинг"""
+        from utils.data_processing import filter_recordings_by_date_range
+
+        skipped_recordings = await self.db_manager.get_recordings(ProcessingStatus.SKIPPED)
+
+        if not skipped_recordings:
+            return 0
+
+        filtered_skipped = filter_recordings_by_date_range(skipped_recordings, from_date, to_date)
+
+        if not filtered_skipped:
+            return 0
+
+        self.logger.info(
+            f"🔍 Проверка {len(filtered_skipped)} пропущенных записей на наличие нового маппинга..."
+        )
+
+        updated_count = 0
+        recordings_to_update = []
+
+        for recording in filtered_skipped:
+            old_status = recording.status
+            old_is_mapped = recording.is_mapped
+            topic = recording.topic.strip() if recording.topic else "Без названия"
+
+            self.logger.debug(
+                f"🔍 Проверка записи: «{topic}» (статус: {old_status.value}, is_mapped: {old_is_mapped})"
+            )
+
+            self._check_and_set_mapping(recording)
+
+            if old_status == ProcessingStatus.SKIPPED and recording.status == ProcessingStatus.INITIALIZED:
+                self.logger.info(
+                    f"✅ Найден маппинг для пропущенной записи: «{topic}» - статус обновлён на INITIALIZED (is_mapped: {recording.is_mapped})"
+                )
+                recordings_to_update.append(recording)
+                updated_count += 1
+            elif old_is_mapped != recording.is_mapped:
+                self.logger.info(
+                    f"🔄 Изменён is_mapped для записи: «{topic}»: {old_is_mapped} -> {recording.is_mapped}"
+                )
+                recordings_to_update.append(recording)
+                updated_count += 1
+
+        if recordings_to_update:
+            await self.db_manager.save_recordings(recordings_to_update)
+            self.logger.info(f"✅ Обновлено пропущенных записей: {updated_count}")
+
+        return updated_count
 
     def _format_duration(self, minutes: int) -> str:
         """Форматирование длительности в читаемый вид"""
@@ -572,8 +632,15 @@ class PipelineManager:
                 continue
 
         # Синхронизируем все записи с БД (включая дедупликацию)
+        synced_count = 0
         if all_recordings:
-            return await self.sync_recordings_to_db(all_recordings)
+            synced_count = await self.sync_recordings_to_db(all_recordings)
+
+        updated_skipped_count = await self._check_and_update_skipped_recordings(from_date, to_date)
+
+        total_count = synced_count + updated_skipped_count
+        if total_count > 0:
+            return total_count
         else:
             self.logger.info("📋 Записи не найдены")
             return 0
@@ -657,8 +724,9 @@ class PipelineManager:
                 if recording.has_video():
                     size_str = f"{recording.video_file_size / (1024 * 1024):.1f} МБ"
 
-                    # Формируем строку с названием
-                    title_with_link = f"[bold blue]{recording.topic}[/bold blue]"
+                    # Формируем строку с названием (с кавычками и strip)
+                    topic = recording.topic.strip() if recording.topic else "Без названия"
+                    title_with_link = f"[bold blue]«{topic}»[/bold blue]"
 
                     # Основная строка с ID и названием
                     self.console.print(f"[bold blue][{display_id}][/bold blue] {title_with_link}")
@@ -671,8 +739,9 @@ class PipelineManager:
                     self.console.print(f"     🔐 {recording.account or 'Unknown'}")
                     self.console.print(f"     {status_text}")
                 else:
-                    # Формируем строку с названием
-                    title_with_link = f"[bold blue]{recording.topic}[/bold blue]"
+                    # Формируем строку с названием (с кавычками и strip)
+                    topic = recording.topic.strip() if recording.topic else "Без названия"
+                    title_with_link = f"[bold blue]«{topic}»[/bold blue]"
 
                     # Основная строка с ID и названием
                     self.console.print(f"[bold blue][{display_id}][/bold blue] {title_with_link}")
