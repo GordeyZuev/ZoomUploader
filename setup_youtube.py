@@ -106,8 +106,7 @@ class YouTubeTokenSetup:
 
         # Пробуем прочитать файл как plain credentials.json
         try:
-            with open(self.bundle_path, encoding='utf-8') as f:
-                return Credentials.from_authorized_user_file(self.bundle_path, scopes)
+            return Credentials.from_authorized_user_file(self.bundle_path, scopes)
         except Exception:
             return None
 
