@@ -1263,6 +1263,16 @@ class PipelineManager:
                         if album_id:
                             upload_kwargs['album_id'] = album_id
 
+                    upload_time_str = datetime.now().strftime('%d.%m.%Y %H:%M')
+                    parts = [title]
+                    if description:
+                        parts.append(description)
+                    if topics_description:
+                        parts.append(topics_description)
+                    parts.append(f"Видео выложено: {upload_time_str}")
+                    parts.append("P.S. Сформировано автоматически, возможны неточности.")
+                    final_description = "\n\n".join([p for p in parts if p])
+
                     # Теперь запускаем загрузку со спиннером
                     with Progress(
                         SpinnerColumn(style="green"),
@@ -1277,7 +1287,7 @@ class PipelineManager:
                             platform=platform,
                             video_path=recording.processed_video_path,
                             title=title,
-                            description=description,
+                            description=final_description,
                             **upload_kwargs,
                         )
                         if result and result.status == 'uploaded':
@@ -1396,7 +1406,7 @@ class PipelineManager:
         max_length = 5000 if platform == 'youtube' else 2000
 
         # Формируем заголовок
-        lines = ["📚 Оглавление лекции:", ""]
+        lines = ["🔹 Темы лекции:", ""]
         current_length = len('\n'.join(lines))
 
         # Фильтруем только топики с непустым названием
@@ -1415,8 +1425,8 @@ class PipelineManager:
             seconds = int(start % 60)
             time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-            # Формируем строку топика
-            topic_line = f"{time_str} - {topic}"
+            # Формируем строку топика с длинным тире
+            topic_line = f"{time_str} — {topic}"
 
             # Проверяем, не превысим ли лимит
             new_length = current_length + len(topic_line) + 1  # +1 для \n

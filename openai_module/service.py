@@ -50,10 +50,10 @@ class TranscriptionService:
     def _format_timestamp(seconds: float) -> str:
         """
         Форматирование времени в секундах в формат HH:MM:SS
-        
+
         Args:
             seconds: Время в секундах (может быть float)
-            
+
         Returns:
             Строка в формате HH:MM:SS
         """
@@ -64,7 +64,11 @@ class TranscriptionService:
         return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
     async def process_audio(
-        self, audio_path: str, recording_id: int | None = None, recording_topic: str | None = None
+        self,
+        audio_path: str,
+        recording_id: int | None = None,
+        recording_topic: str | None = None,
+        granularity: str = "normal",  # "normal" | "coarse"
     ) -> dict[str, Any]:
         """
         Полная обработка аудио: сжатие, транскрибация, извлечение тем.
@@ -306,7 +310,7 @@ class TranscriptionService:
             # Шаг 3: Извлечение тем
             logger.info("🔍 Извлечение тем через DeepSeek...")
             topics_result = await self.topic_extractor.extract_topics(
-                transcription_text, segments, recording_topic=recording_topic
+                transcription_text, segments, recording_topic=recording_topic, granularity=granularity
             )
 
             logger.info("✅ Извлечение тем завершено")
@@ -349,7 +353,7 @@ class TranscriptionService:
     async def _prepare_audio(self, audio_path: str) -> tuple[str | list[str], list[str]]:
         """
         Подготовка аудио: сжатие и разбиение, если нужно.
-        
+
         Returns:
             tuple: (путь к файлу или список путей к частям, список временных файлов для удаления)
         """
@@ -393,13 +397,13 @@ class TranscriptionService:
     ) -> str:
         """
         Сохранение транскрипции в файл с временными метками.
-        
+
         Args:
             transcription_text: Полный текст транскрипции
             segments: Список сегментов с временными метками
             recording_id: ID записи (для именования файлов)
             recording_topic: Название записи (для именования файлов)
-            
+
         Returns:
             Относительный путь к сохраненному файлу
         """
