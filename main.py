@@ -210,6 +210,25 @@ def process(
 @cli.command()
 @common_options
 @selection_options
+@click.option(
+    '--last',
+    type=int,
+    default=14,
+    help='Последние N дней (0 = сегодня, 1 = вчера, 7 = неделя, 14 = две недели)',
+)
+def transcribe(
+    from_date, to_date, last, account, config_file, use_db, select_all, recordings):
+    """Транскрибировать записи"""
+    asyncio.run(
+        _transcribe_command(
+            from_date, to_date, last, account, config_file, use_db, select_all, recordings
+        )
+    )
+
+
+@cli.command()
+@common_options
+@selection_options
 @platform_options
 @click.option(
     '--last',
@@ -263,6 +282,11 @@ def upload(
     is_flag=True,
     help='Разрешить обработку записей со статусом SKIPPED (с интерактивным вводом метаданных)',
 )
+@click.option(
+    '--no-transcription',
+    is_flag=True,
+    help='Пропустить шаг транскрибации (не вызывать транскрибацию и извлечение тем)',
+)
 def full_process(
     from_date,
     to_date,
@@ -276,6 +300,7 @@ def full_process(
     vk,
     all_platforms,
     allow_skipped,
+    no_transcription,
 ):
     """Полный пайплайн: скачать + обработать + загрузить записи"""
     asyncio.run(
@@ -292,6 +317,7 @@ def full_process(
             vk,
             all_platforms,
             allow_skipped,
+            no_transcription,
         )
     )
 
@@ -335,6 +361,13 @@ def reset(
 def clean(from_date, to_date, account, config_file, use_db,  days):
     """Очистить старые записи (удалить файлы и пометить как EXPIRED)"""
     asyncio.run(_clean_command(from_date, to_date, account, config_file, use_db,  days))
+
+
+@cli.command()
+@click.option('--force', is_flag=True, help='Пропустить подтверждение (использовать с осторожностью)')
+def recreate_db(force):
+    """Полностью пересоздать базу данных (удалить и создать заново)"""
+    asyncio.run(_recreate_db_command(force))
 
 
 def main():
@@ -614,21 +647,28 @@ async def _process_command(
             # Если указаны конкретные записи, ищем их по ID
             try:
                 recording_ids = [int(r.strip()) for r in recordings.split(',')]
-                target_recordings = await pipeline.get_recordings_by_numbers(
-                    recording_ids, from_date, to_date
-                )
+                # Получаем записи по ID из БД напрямую
+                found_recordings = await pipeline.db_manager.get_recordings_by_ids(recording_ids)
+                # Фильтруем по статусу DOWNLOADED и наличию файла
+                target_recordings = [
+                    r for r in found_recordings
+                    if r.status == ProcessingStatus.DOWNLOADED and r.local_video_path
+                ]
             except ValueError:
                 logger.error("❌ Ошибка: ID записей должны быть числами")
                 return
         elif select_all:
-            target_recordings = await pipeline.get_recordings_by_selection(
-                True, [], from_date, to_date
-            )
+            all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
+            target_recordings = [
+                r for r in all_recordings
+                if r.status == ProcessingStatus.DOWNLOADED and r.local_video_path
+            ]
         else:
             # По умолчанию берем все записи со статусом DOWNLOADED
             all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
             target_recordings = [
-                r for r in all_recordings if r.status == ProcessingStatus.DOWNLOADED
+                r for r in all_recordings
+                if r.status == ProcessingStatus.DOWNLOADED and r.local_video_path
             ]
 
         if target_recordings:
@@ -636,6 +676,72 @@ async def _process_command(
             logger.info(f"✅ Обработка завершена: {success_count}/{len(target_recordings)}")
         else:
             logger.warning("❌ Нет записей для обработки")
+
+        # Закрываем соединение с БД
+        if db_manager:
+            await db_manager.close()
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+        sys.exit(1)
+
+
+async def _transcribe_command(
+    from_date, to_date, last, account, config_file, use_db, select_all, recordings
+):
+    """Команда transcribe - транскрибировать записи"""
+    from_date, to_date = _parse_dates(from_date, to_date, last)
+
+    setup_logger()
+    logger = get_logger()
+
+    try:
+        # Инициализация БД
+        db_manager = None
+        if use_db:
+            db_config = DatabaseConfig.from_env()
+            db_manager = DatabaseManager(db_config)
+            await db_manager.create_database_if_not_exists()
+            await db_manager.create_tables()
+            print("🗄️ \033[1;34mПодключение к базе данных...\033[0m")
+
+        # Загружаем унифицированную конфигурацию
+        from config.unified_config import load_app_config
+
+        app_config = load_app_config()
+        pipeline = PipelineManager(db_manager, app_config, )
+
+        if recordings:
+            # Если указаны конкретные записи, ищем их по ID
+            try:
+                recording_ids = [int(r.strip()) for r in recordings.split(',')]
+                found_recordings = await pipeline.db_manager.get_recordings_by_ids(recording_ids)
+                target_recordings = [
+                    r for r in found_recordings
+                    if r.status == ProcessingStatus.PROCESSED and r.processed_audio_path
+                ]
+            except ValueError:
+                logger.error("❌ Ошибка: ID записей должны быть числами")
+                return
+        elif select_all:
+            all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
+            target_recordings = [
+                r for r in all_recordings
+                if r.status == ProcessingStatus.PROCESSED and r.processed_audio_path
+            ]
+        else:
+            # По умолчанию берем все записи со статусом PROCESSED и с аудио файлом
+            all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
+            target_recordings = [
+                r for r in all_recordings
+                if r.status == ProcessingStatus.PROCESSED and r.processed_audio_path
+            ]
+
+        if target_recordings:
+            success_count = await pipeline.transcribe_recordings(target_recordings)
+            logger.info(f"✅ Транскрибация завершена: {success_count}/{len(target_recordings)}")
+        else:
+            logger.warning("❌ Нет записей для транскрибации (нужны записи со статусом PROCESSED и аудио файлом)")
 
         # Закрываем соединение с БД
         if db_manager:
@@ -683,42 +789,53 @@ async def _upload_command(
 
         # Определяем платформы для загрузки
         platforms = []
-        if youtube:
-            platforms.append('youtube')
-        if vk:
-            platforms.append('vk')
         if all_platforms:
             platforms = ['youtube', 'vk']
+        else:
+            if youtube:
+                platforms.append('youtube')
+            if vk:
+                platforms.append('vk')
 
-            if not platforms:
-                logger.error("❌ Не указаны платформы для загрузки")
+        if not platforms:
+            logger.error("❌ Не указаны платформы для загрузки")
+            return
+
+        # Выбираем записи для загрузки
+        if select_all:
+            all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
+            target_recordings = [
+                r for r in all_recordings
+                if r.status in [ProcessingStatus.PROCESSED, ProcessingStatus.TRANSCRIBED]
+            ]
+        elif recordings:
+            # Если указаны конкретные записи, ищем их по ID
+            try:
+                recording_ids = [int(r.strip()) for r in recordings.split(',')]
+                found_recordings = await pipeline.db_manager.get_recordings_by_ids(recording_ids)
+                target_recordings = [
+                    r for r in found_recordings
+                    if r.status in [ProcessingStatus.PROCESSED, ProcessingStatus.TRANSCRIBED]
+                ]
+            except ValueError:
+                logger.error("❌ Ошибка: ID записей должны быть числами")
                 return
+        else:
+            all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
+            target_recordings = [
+                r for r in all_recordings
+                if r.status in [ProcessingStatus.PROCESSED, ProcessingStatus.TRANSCRIBED]
+            ]
 
-            if select_all:
-                all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
-                target_recordings = [r for r in all_recordings if r.status == ProcessingStatus.PROCESSED]
-            elif recordings:
-                # Если указаны конкретные записи, ищем их по ID
-                try:
-                    recording_ids = [int(r.strip()) for r in recordings.split(',')]
-                    found_recordings = await pipeline.db_manager.get_recordings_by_ids(recording_ids)
-                    target_recordings = [r for r in found_recordings if r.status == ProcessingStatus.PROCESSED]
-                except ValueError:
-                    logger.error("❌ Ошибка: ID записей должны быть числами")
-                    return
-            else:
-                all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
-                target_recordings = [r for r in all_recordings if r.status == ProcessingStatus.PROCESSED]
+        if target_recordings:
+            success_count, uploaded_recordings = await pipeline.upload_recordings(target_recordings, platforms)
+            logger.info(f"✅ Загрузка завершена: {success_count}/{len(target_recordings)}")
 
-            if target_recordings:
-                success_count, uploaded_recordings = await pipeline.upload_recordings(target_recordings, platforms)
-                logger.info(f"✅ Загрузка завершена: {success_count}/{len(target_recordings)}")
-
-                # Отображаем список загруженных видео с ссылками
-                if uploaded_recordings:
-                    pipeline.display_uploaded_videos(uploaded_recordings)
-            else:
-                logger.warning("❌ Нет записей для загрузки")
+            # Отображаем список загруженных видео с ссылками
+            if uploaded_recordings:
+                pipeline.display_uploaded_videos(uploaded_recordings)
+        else:
+            logger.warning("❌ Нет записей для загрузки")
 
         # Закрываем соединение с БД
         if db_manager:
@@ -791,18 +908,19 @@ async def _reset_command(
 
                     await session.commit()
 
-                # Удаляем все видео файлы
-                video_dirs = [
+                # Удаляем все видео и аудио файлы
+                media_dirs = [
                     'video/processed_video',
                     'video/unprocessed_video',
+                    'video/processed_audio',
                     'video/temp_processing',
                 ]
                 deleted_files = 0
 
-                for video_dir in video_dirs:
-                    if os.path.exists(video_dir):
-                        for filename in os.listdir(video_dir):
-                            file_path = os.path.join(video_dir, filename)
+                for media_dir in media_dirs:
+                    if os.path.exists(media_dir):
+                        for filename in os.listdir(media_dir):
+                            file_path = os.path.join(media_dir, filename)
                             if os.path.isfile(file_path):
                                 os.remove(file_path)
                                 deleted_files += 1
@@ -811,7 +929,7 @@ async def _reset_command(
                 print("📊 РЕЗУЛЬТАТЫ ОЧИСТКИ")
                 print("=" * 60)
                 print(f"✅ Удалено записей: {deleted_count}")
-                print(f"✅ Удалено видео файлов: {deleted_files}")
+                print(f"✅ Удалено медиа файлов: {deleted_files}")
                 print("🔄 Сброшена последовательность ID")
                 print("🗑️  База данных и видео полностью очищены")
 
@@ -939,6 +1057,68 @@ async def _clean_command(from_date, to_date, account, config_file, use_db,  days
         sys.exit(1)
 
 
+async def _recreate_db_command(force):
+    """Команда recreate-db - полное пересоздание базы данных"""
+    setup_logger()
+    logger = get_logger()
+
+    try:
+        if not force:
+            print("⚠️  ВНИМАНИЕ: Это действие УДАЛИТ всю базу данных и создаст её заново!")
+            print("⚠️  ВСЕ данные будут потеряны безвозвратно!")
+            print("⚠️  Это действие НЕОБРАТИМО!")
+            print()
+
+            # Двойное подтверждение
+            confirm1 = (
+                input("Вы уверены, что хотите полностью пересоздать БД? (yes/NO): ")
+                .strip()
+                .lower()
+            )
+            if confirm1 not in ['yes', 'да']:
+                print("❌ Пересоздание БД отменено")
+                return
+
+            confirm2 = input("Последний шанс! Введите 'RECREATE DB' для подтверждения: ").strip()
+            if confirm2 != 'RECREATE DB':
+                print("❌ Пересоздание БД отменено")
+                return
+
+        # Инициализация конфигурации БД
+        db_config = DatabaseConfig.from_env()
+
+        # Создаем временный менеджер для пересоздания
+        # (не нужно создавать БД заранее, т.к. recreate_database сделает это)
+        db_manager = DatabaseManager(db_config)
+
+        print("🗄️  Пересоздание базы данных...")
+
+        # Используем спиннер для пересоздания
+        from utils.spinner import spinner_manager
+
+        async def recreate_database():
+            await db_manager.recreate_database()
+            return {"success": True}
+
+        await spinner_manager.run_with_spinner(
+            "Пересоздание базы данных...", recreate_database, style="yellow"
+        )
+
+        print("\n" + "=" * 60)
+        print("📊 РЕЗУЛЬТАТЫ ПЕРЕСОЗДАНИЯ БД")
+        print("=" * 60)
+        print("✅ База данных успешно пересоздана")
+        print("✅ Все таблицы созданы заново")
+        print("🔄 База данных готова к использованию")
+
+        # Закрываем соединение с БД
+        await db_manager.close()
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка пересоздания БД: {e}")
+        sys.exit(1)
+
+
 async def _full_process_command(
     from_date,
     to_date,
@@ -952,6 +1132,7 @@ async def _full_process_command(
     vk,
     all_platforms,
     allow_skipped,
+    no_transcription,
 ):
     """Команда full-process - полный пайплайн: скачать + обработать + загрузить"""
     from_date, to_date = _parse_dates(from_date, to_date, last)
@@ -1013,6 +1194,7 @@ async def _full_process_command(
             recordings=recordings_list,
             platforms=platforms,
             allow_skipped=allow_skipped,
+            no_transcription=no_transcription,
         )
 
         # Выводим итоговую статистику
@@ -1023,6 +1205,7 @@ async def _full_process_command(
         if results.get('success', True):  # По умолчанию считаем успешным
             print(f"✅ Скачано записей: {results.get('download_count', 0)}")
             print(f"🎬 Обработано записей: {results.get('process_count', 0)}")
+            print(f"🎤 Транскрибировано записей: {results.get('transcribe_count', 0)}")
             print(f"📤 Загружено записей: {results.get('upload_count', 0)}")
 
             # Отображаем список загруженных видео с ссылками

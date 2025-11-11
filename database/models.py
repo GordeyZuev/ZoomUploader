@@ -1,6 +1,8 @@
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Enum, Identity, Integer, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from models.recording import PlatformStatus, ProcessingStatus
@@ -44,6 +46,7 @@ class RecordingModel(Base):
     # Локальные файлы
     local_video_path: Mapped[str | None] = mapped_column(String(1000))
     processed_video_path: Mapped[str | None] = mapped_column(String(1000))
+    processed_audio_path: Mapped[str | None] = mapped_column(String(1000))
     downloaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Маппинг и статусы
@@ -65,6 +68,11 @@ class RecordingModel(Base):
     # Метаданные обработки
     processing_notes: Mapped[str | None] = mapped_column(Text)
     processing_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Транскрипция и темы
+    transcription_file_path: Mapped[str | None] = mapped_column(String(1000))
+    topic_timestamps: Mapped[Any | None] = mapped_column(JSONB, nullable=True)  # JSON: [{"topic": str, "start": float, "end": float}, ...]
+    main_topics: Mapped[Any | None] = mapped_column(JSONB, nullable=True)  # JSON: [str, ...] максимум 2 темы
 
     # Временные метки
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

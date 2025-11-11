@@ -31,12 +31,21 @@ class TitleMapper:
         self.app_config = app_config or load_app_config()
         self.mapping_config = self.app_config.video_title_mapping
 
-    def map_title(self, original_title: str, start_time: str, duration: int = 0) -> MappingResult:
-        """Маппинг названия записи в название для YouTube."""
+    def map_title(
+        self, original_title: str, start_time: str, duration: int = 0, main_topic: str | None = None
+    ) -> MappingResult:
+        """Маппинг названия записи в название для YouTube.
+
+        Args:
+            original_title: Исходное название записи
+            start_time: Время начала записи
+            duration: Длительность в минутах
+            main_topic: Основная тема из транскрибации (опционально)
+        """
         matched_rule = self._find_matching_rule(original_title)
 
         if matched_rule:
-            result = self._apply_rule(matched_rule, original_title, start_time, duration)
+            result = self._apply_rule(matched_rule, original_title, start_time, duration, main_topic)
             self.logger.info(
                 f"Найдено правило для '{original_title}': {matched_rule['pattern']} -> '{result.youtube_title}'"
             )
@@ -74,11 +83,11 @@ class TitleMapper:
         return None
 
     def _apply_rule(
-        self, rule: dict[str, Any], original_title: str, start_time: str, duration: int
+        self, rule: dict[str, Any], original_title: str, start_time: str, duration: int, main_topic: str | None = None
     ) -> MappingResult:
         """Применение правила маппинга."""
 
-        variables = self._prepare_variables(original_title, start_time, duration)
+        variables = self._prepare_variables(original_title, start_time, duration, main_topic)
 
         youtube_title = self._format_template(
             rule.get("youtube_title_template", "{original_title} ({date})"), variables
@@ -101,7 +110,7 @@ class TitleMapper:
         )
 
     def _prepare_variables(
-        self, original_title: str, start_time: str, duration: int
+        self, original_title: str, start_time: str, duration: int, main_topic: str | None = None
     ) -> dict[str, str]:
         """Подготовка переменных для подстановки в шаблоны."""
 
@@ -120,12 +129,37 @@ class TitleMapper:
         else:
             duration_str = f"{minutes}м"
 
-        return {"date": date_str, "original_title": original_title, "duration": duration_str}
+        # Подготовка темы: если есть, используем её, иначе пустая строка
+        topic = main_topic if main_topic else ""
+
+        # Если тема есть, добавляем " - " перед ней для шаблона
+        # Если темы нет, оставляем пустую строку (шаблон должен обработать это)
+        topic_suffix = f" - {topic}" if topic else ""
+
+        return {
+            "date": date_str,
+            "original_title": original_title,
+            "duration": duration_str,
+            "topic": topic,
+            "topic_suffix": topic_suffix,
+        }
 
     def _format_template(self, template: str, variables: dict[str, str]) -> str:
         """Форматирование шаблона с подстановкой переменных."""
         try:
-            return template.format(**variables)
+            result = template.format(**variables)
+
+            # Если темы нет, убираем " - " из результата
+            # Это нужно для шаблонов типа "Прикладной Python - {topic} ({date})"
+            # Если {topic} пустой, получается "Прикладной Python -  ({date})"
+            # Нужно убрать " - "
+            if not variables.get('topic'):
+                # Заменяем " - " (с пробелами) на пустую строку
+                result = result.replace(' - ', '')
+                # Также убираем возможные двойные пробелы
+                result = ' '.join(result.split())
+
+            return result
         except KeyError as e:
             self.logger.warning(f"Неизвестная переменная в шаблоне: {e}")
             return template

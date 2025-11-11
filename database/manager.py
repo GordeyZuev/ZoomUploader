@@ -70,6 +70,75 @@ class DatabaseManager:
             logger.error(f"❌ Ошибка создания базы данных: {e}")
             raise
 
+    async def recreate_database(self):
+        """Полное пересоздание базы данных: удаление и создание заново."""
+        try:
+            parsed = urlparse(self.config.url)
+
+            # Закрываем все активные соединения с текущей БД (если они есть)
+            try:
+                await self.close()
+            except Exception:
+                # Игнорируем ошибки при закрытии, если engine еще не использовался
+                pass
+
+            # Подключаемся к системной базе данных postgres
+            conn = await asyncpg.connect(
+                host=parsed.hostname,
+                port=parsed.port or 5432,
+                user=parsed.username,
+                password=parsed.password,
+                database='postgres',
+            )
+
+            # Проверяем, существует ли база данных
+            db_exists = await conn.fetchval(
+                "SELECT 1 FROM pg_database WHERE datname = $1", self.config.database
+            )
+
+            if db_exists:
+                # Завершаем все активные соединения к целевой БД
+                # Используем параметризованный запрос для безопасности
+                try:
+                    await conn.execute("""
+                        SELECT pg_terminate_backend(pg_stat_activity.pid)
+                        FROM pg_stat_activity
+                        WHERE pg_stat_activity.datname = $1
+                        AND pid <> pg_backend_pid()
+                    """, self.config.database)
+                except Exception as e:
+                    # Игнорируем ошибки при завершении соединений
+                    logger.warning(f"⚠️  Не удалось завершить все соединения: {e}")
+
+                # Удаляем базу данных
+                # Экранируем двойные кавычки для идентификатора
+                db_name_quoted = self.config.database.replace('"', '""')
+                await conn.execute(f'DROP DATABASE IF EXISTS "{db_name_quoted}"')
+                logger.info(f"🗑️  База данных '{self.config.database}' удалена")
+
+            # Создаем базу данных заново
+            # Экранируем двойные кавычки для идентификатора
+            db_name_quoted = self.config.database.replace('"', '""')
+            await conn.execute(f'CREATE DATABASE "{db_name_quoted}"')
+            logger.info(f"✅ База данных '{self.config.database}' создана")
+
+            await conn.close()
+
+            # Пересоздаем engine для новой БД
+            self.engine = create_async_engine(self.config.url, echo=False)
+            self.async_session = async_sessionmaker(
+                self.engine, class_=AsyncSession, expire_on_commit=False
+            )
+
+            # Создаем таблицы
+            await self.create_tables()
+
+            logger.info("✅ База данных полностью пересоздана")
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка пересоздания базы данных: {e}")
+            raise
+
     async def create_tables(self):
         """Создание таблиц в базе данных."""
         try:
@@ -188,6 +257,7 @@ class DatabaseManager:
             status=recording.status,
             local_video_path=recording.local_video_path,
             processed_video_path=recording.processed_video_path,
+            processed_audio_path=recording.processed_audio_path,
             downloaded_at=recording.downloaded_at,
             youtube_status=recording.youtube_status,
             youtube_url=recording.youtube_url,
@@ -195,6 +265,9 @@ class DatabaseManager:
             vk_url=recording.vk_url,
             processing_notes=recording.processing_notes,
             processing_time=recording.processing_time,
+            transcription_file_path=recording.transcription_file_path,
+            topic_timestamps=recording.topic_timestamps,
+            main_topics=recording.main_topics,
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
@@ -294,6 +367,7 @@ class DatabaseManager:
                 db_recording.status = recording.status
                 db_recording.local_video_path = recording.local_video_path
                 db_recording.processed_video_path = recording.processed_video_path
+                db_recording.processed_audio_path = recording.processed_audio_path
                 db_recording.downloaded_at = recording.downloaded_at
                 db_recording.youtube_status = recording.youtube_status
                 db_recording.youtube_url = recording.youtube_url
@@ -301,6 +375,9 @@ class DatabaseManager:
                 db_recording.vk_url = recording.vk_url
                 db_recording.processing_notes = recording.processing_notes
                 db_recording.processing_time = recording.processing_time
+                db_recording.transcription_file_path = recording.transcription_file_path
+                db_recording.topic_timestamps = recording.topic_timestamps
+                db_recording.main_topics = recording.main_topics
                 db_recording.updated_at = datetime.now()
 
                 session.add(db_recording)
@@ -337,6 +414,7 @@ class DatabaseManager:
         recording.status = db_recording.status
         recording.local_video_path = db_recording.local_video_path
         recording.processed_video_path = db_recording.processed_video_path
+        recording.processed_audio_path = db_recording.processed_audio_path
         recording.downloaded_at = db_recording.downloaded_at
         recording.youtube_status = db_recording.youtube_status
         recording.youtube_url = db_recording.youtube_url
@@ -344,10 +422,123 @@ class DatabaseManager:
         recording.vk_url = db_recording.vk_url
         recording.processing_notes = db_recording.processing_notes
         recording.processing_time = db_recording.processing_time
+        recording.transcription_file_path = db_recording.transcription_file_path
+        recording.topic_timestamps = db_recording.topic_timestamps
+        recording.main_topics = db_recording.main_topics
 
         return recording
 
+    async def reset_recordings(self, keep_uploaded: bool = True) -> dict:
+        """Сброс всех записей к статусу INITIALIZED (кроме загруженных).
+
+        Args:
+            keep_uploaded: Если True, не сбрасывать записи со статусом UPLOADED
+
+        Returns:
+            Словарь с результатами сброса
+        """
+        import os
+
+        reset_count = 0
+        by_status = {}
+
+        async with self.async_session() as session:
+            try:
+                # Получаем все записи для сброса
+                query = select(RecordingModel)
+                if keep_uploaded:
+                    # Исключаем записи, которые уже загружены хотя бы на одну платформу
+                    query = query.where(
+                        ~(
+                            (RecordingModel.youtube_status == PlatformStatus.UPLOADED_YOUTUBE)
+                            | (RecordingModel.vk_status == PlatformStatus.UPLOADED_VK)
+                        )
+                    )
+
+                result = await session.execute(query)
+                db_recordings = result.scalars().all()
+
+                # Удаляем файлы и сбрасываем записи
+                for db_recording in db_recordings:
+                    # Удаляем физические файлы
+                    if db_recording.local_video_path and os.path.exists(db_recording.local_video_path):
+                        try:
+                            os.remove(db_recording.local_video_path)
+                            logger.info(f"🗑️ Удален файл: {db_recording.local_video_path}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Не удалось удалить файл {db_recording.local_video_path}: {e}")
+
+                    if db_recording.processed_video_path and os.path.exists(db_recording.processed_video_path):
+                        try:
+                            os.remove(db_recording.processed_video_path)
+                            logger.info(f"🗑️ Удален файл: {db_recording.processed_video_path}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Не удалось удалить файл {db_recording.processed_video_path}: {e}")
+
+                    if db_recording.processed_audio_path and os.path.exists(db_recording.processed_audio_path):
+                        try:
+                            os.remove(db_recording.processed_audio_path)
+                            logger.info(f"🗑️ Удален файл: {db_recording.processed_audio_path}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Не удалось удалить файл {db_recording.processed_audio_path}: {e}")
+
+                    # Удаляем файл транскрипции, если он существует
+                    if db_recording.transcription_file_path and os.path.exists(db_recording.transcription_file_path):
+                        try:
+                            os.remove(db_recording.transcription_file_path)
+                            logger.info(f"🗑️ Удален файл транскрипции: {db_recording.transcription_file_path}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Не удалось удалить файл транскрипции {db_recording.transcription_file_path}: {e}")
+
+                    # Подсчитываем по статусам
+                    old_status = db_recording.status.value if hasattr(db_recording.status, 'value') else str(db_recording.status)
+                    by_status[old_status] = by_status.get(old_status, 0) + 1
+
+                    # Сбрасываем запись
+                    if db_recording.is_mapped:
+                        db_recording.status = ProcessingStatus.INITIALIZED
+                    else:
+                        db_recording.status = ProcessingStatus.SKIPPED
+
+                    db_recording.local_video_path = None
+                    db_recording.processed_video_path = None
+                    db_recording.processed_audio_path = None
+                    db_recording.downloaded_at = None
+
+                    # Сбрасываем транскрипцию и темы
+                    db_recording.transcription_file_path = None
+                    db_recording.topic_timestamps = None
+                    db_recording.main_topics = None
+
+                    # Сбрасываем статусы загрузки на платформы (если не загружено)
+                    if db_recording.youtube_status != PlatformStatus.UPLOADED_YOUTUBE:
+                        db_recording.youtube_status = PlatformStatus.NOT_UPLOADED
+                        db_recording.youtube_url = None
+                    if db_recording.vk_status != PlatformStatus.UPLOADED_VK:
+                        db_recording.vk_status = PlatformStatus.NOT_UPLOADED
+                        db_recording.vk_url = None
+
+                    db_recording.processing_notes = ""
+                    db_recording.processing_time = None
+                    db_recording.updated_at = datetime.now()
+
+                    reset_count += 1
+
+                await session.commit()
+                logger.info(f"✅ Сброшено записей: {reset_count}")
+
+                return {
+                    'total_reset': reset_count,
+                    'by_status': by_status,
+                }
+
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"❌ Ошибка сброса записей: {e}")
+                raise
+
     async def close(self):
         """Закрытие соединения с базой данных."""
-        await self.engine.dispose()
-        logger.info("🔌 Соединение с БД закрыто")
+        if hasattr(self, 'engine') and self.engine is not None:
+            await self.engine.dispose()
+            logger.info("🔌 Соединение с БД закрыто")

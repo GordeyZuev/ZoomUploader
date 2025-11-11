@@ -11,6 +11,8 @@ class ProcessingStatus(Enum):
     DOWNLOADED = "downloaded"  # Загружено
     PROCESSING = "processing"  # В процессе обработки
     PROCESSED = "processed"  # Обработано
+    TRANSCRIBING = "transcribing"  # В процессе транскрибации
+    TRANSCRIBED = "transcribed"  # Транскрибировано
     UPLOADING = "uploading"  # В процессе выгрузки
     UPLOADED = "uploaded"  # Выгружено в API
     FAILED = "failed"  # Ошибка обработки
@@ -66,6 +68,7 @@ class MeetingRecording:
         self.status: ProcessingStatus = ProcessingStatus.INITIALIZED
         self.local_video_path: str | None = None
         self.processed_video_path: str | None = None
+        self.processed_audio_path: str | None = None
         self.downloaded_at: datetime | None = None
 
         # Статусы загрузки на платформы
@@ -77,6 +80,11 @@ class MeetingRecording:
         # Метаданные обработки
         self.processing_notes: str = ""
         self.processing_time: datetime | None = None
+
+        # Транскрипция и темы
+        self.transcription_file_path: str | None = None
+        self.topic_timestamps: list[dict[str, Any]] | None = None  # [{"topic": str, "start": float, "end": float}, ...]
+        self.main_topics: list[str] | None = None  # Максимум 2 темы
 
         # Обрабатываем файлы записи
         self._process_recording_files(meeting_data.get('recording_files', []))
@@ -216,6 +224,16 @@ class MeetingRecording:
             progress['local_file'] = self.local_video_path
         if self.processed_video_path:
             progress['processed_file'] = self.processed_video_path
+        if self.processed_audio_path:
+            progress['processed_audio'] = self.processed_audio_path
+        if self.transcription_file_path:
+            progress['transcription_file'] = self.transcription_file_path
+
+        # Добавляем информацию о транскрипции
+        if self.topic_timestamps:
+            progress['topics_count'] = len(self.topic_timestamps)
+        if self.main_topics:
+            progress['main_topics'] = self.main_topics
 
         # Добавляем URL, если они есть
         if self.youtube_url:
@@ -229,6 +247,7 @@ class MeetingRecording:
         """Сброс записи к начальному состоянию"""
         self.local_video_path = None
         self.processed_video_path = None
+        self.processed_audio_path = None
         self.downloaded_at = None
         self.youtube_status = PlatformStatus.NOT_UPLOADED
         self.youtube_url = None
@@ -236,6 +255,9 @@ class MeetingRecording:
         self.vk_url = None
         self.processing_notes = ""
         self.processing_time = None
+        self.transcription_file_path = None
+        self.topic_timestamps = None
+        self.main_topics = None
 
     @staticmethod
     def format_duration(minutes: int) -> str:

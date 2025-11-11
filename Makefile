@@ -39,6 +39,7 @@ help:
 	@echo "  make clean-logs     - Очистить логи"
 	@echo "  make clean          - Очистить кэши и логи"
 	@echo "  make reset          - Сбросить статусы записей"
+	@echo "  make recreate-db    - Полностью пересоздать БД (УДАЛИТ ВСЕ ДАННЫЕ!)"
 	@echo ""
 	@echo "ℹ️ Справка:"
 	@echo "  make run-help       - Показать help приложения"
@@ -118,11 +119,14 @@ full-all:
 	@uv run python main.py full-process --all-platforms --all
 
 # Очистка и сброс
-.PHONY: clean-old reset
+.PHONY: clean-old reset recreate-db
 clean-old:
 	@uv run python main.py clean
 
 reset:
 	@uv run python main.py reset
+
+recreate-db:
+	@uv run python main.py recreate-db
 
 

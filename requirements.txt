@@ -31,6 +31,9 @@ google-auth>=2.0.0
 
 # VK API (используется aiohttp из httpx)
 
+# OpenAI API
+openai>=1.0.0
+
 # Для работы с асинхронным кодом
 asyncio
 

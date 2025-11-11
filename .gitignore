@@ -44,10 +44,15 @@ config/*_creds.json
 video/unprocessed_video/*.mp4
 video/processing/*.mp4
 video/processed_video/*.mp4
+video/processed_audio/*
 video/temp_processing/*
 
+# Transcriptions
+transcriptions/
+
 # Logs
-logs/*.log
+logs/
+*.log
 
 # Database
 *.db
