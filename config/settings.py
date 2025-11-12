@@ -179,6 +179,7 @@ class AppSettings(BaseSettings):
     app_name: str = Field(default="Zoom Manager", description="Название приложения")
     version: str = Field(default="1.0.0", description="Версия приложения")
     debug: bool = Field(default=False, description="Режим отладки")
+    timezone: str = Field(default="Europe/Moscow", description="Часовой пояс для отображения времени")
 
 
 # Глобальный экземпляр настроек

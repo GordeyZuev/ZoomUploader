@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from logger import get_logger
 from models.recording import MeetingRecording, PlatformStatus, ProcessingStatus
-from utils.formatting import normalize_datetime_string
 
 from .config import DatabaseConfig
 from .models import Base, RecordingModel
@@ -17,15 +16,23 @@ logger = get_logger()
 
 
 def _parse_start_time(start_time_str: str) -> datetime:
-    """Парсинг строки start_time в datetime объект."""
+    """Парсинг строки start_time в datetime объект (формат Zoom: 2021-03-18T05:41:36Z)."""
     if not start_time_str:
         raise ValueError("start_time не может быть пустым")
 
-    try: # TODO fix
-        normalized_time = normalize_datetime_string(start_time_str)
-        dt = datetime.fromisoformat(normalized_time)
-        if dt.tzinfo is not None:
-            dt = dt.replace(tzinfo=None)
+    try:
+        # Zoom всегда возвращает формат с 'Z' в конце (UTC)
+        # Заменяем 'Z' на '+00:00' для правильного парсинга
+        if start_time_str.endswith('Z'):
+            time_str = start_time_str[:-1] + '+00:00'
+        else:
+            time_str = start_time_str
+
+        dt = datetime.fromisoformat(time_str)
+        # Убеждаемся, что timezone установлен (должен быть UTC)
+        if dt.tzinfo is None:
+            from zoneinfo import ZoneInfo
+            dt = dt.replace(tzinfo=ZoneInfo("UTC"))
         return dt
     except Exception as e:
         logger.error(f"Ошибка парсинга start_time '{start_time_str}': {e}")
@@ -391,11 +398,27 @@ class DatabaseManager:
 
     def _convert_db_to_model(self, db_recording: RecordingModel) -> MeetingRecording:
         """Преобразование записи из БД в модель."""
+        # Конвертируем datetime из БД в формат Zoom API (2021-03-18T05:41:36Z)
+        if isinstance(db_recording.start_time, datetime):
+            from zoneinfo import ZoneInfo
+
+            dt = db_recording.start_time
+            # Конвертируем в UTC (PostgreSQL хранит в UTC, но может вернуть в timezone сессии)
+            if dt.tzinfo is not None:
+                dt_utc = dt.astimezone(ZoneInfo("UTC"))
+            else:
+                # Если timezone нет, считаем что это UTC
+                dt_utc = dt.replace(tzinfo=ZoneInfo("UTC"))
+
+            # Форматируем в формат Zoom API (с 'Z' в конце)
+            start_time_str = dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+        else:
+            # Если это не datetime (не должно быть), преобразуем в строку
+            start_time_str = str(db_recording.start_time)
+
         meeting_data = {
             'topic': db_recording.topic,
-            'start_time': db_recording.start_time.isoformat()
-            if isinstance(db_recording.start_time, datetime)
-            else str(db_recording.start_time),
+            'start_time': start_time_str,
             'duration': db_recording.duration,
             'id': db_recording.meeting_id,
             'account': db_recording.account,

@@ -502,7 +502,7 @@ class TopicExtractor:
 
         # Если не нашли тему перед секцией, проверяем первые строки ответа
         if not found_main_topic_before_section:
-            for i, line in enumerate(lines[:10]):
+            for _, line in enumerate(lines[:10]):
                 line_stripped = line.strip()
                 if not line_stripped or line_stripped.startswith('##') or line_stripped.startswith('#'):
                     continue
@@ -520,7 +520,6 @@ class TopicExtractor:
                         break
 
         for i, line in enumerate(lines):
-            line_original = line
             line = line.strip()
             if not line:
                 continue

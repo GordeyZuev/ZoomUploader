@@ -1,4 +1,7 @@
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from config.settings import settings
 
 
 def normalize_datetime_string(date_string: str) -> str:
@@ -50,14 +53,44 @@ def format_file_size(size_bytes: int) -> str:
         return f"{size_bytes:.1f} {size_names[i]}"
 
 
-def format_date(date_string: str, input_format: str = "%Y-%m-%dT%H:%M:%SZ") -> str:
-    """Форматирование даты в удобочитаемый вид."""
+def format_date(date_input: str | datetime) -> str:
+    """Форматирование даты в удобочитаемый вид с конвертацией в локальный часовой пояс.
+
+    Ожидает формат Zoom API: "2021-03-18T05:41:36Z" (UTC с 'Z' в конце).
+    """
     try:
-        normalized_time = normalize_datetime_string(date_string)
-        dt = datetime.fromisoformat(normalized_time)
-        return dt.strftime("%d.%m.%Y %H:%M:%S")
+        # Если передан datetime объект
+        if isinstance(date_input, datetime):
+            dt = date_input
+        else:
+            # Если передана строка, ожидаем формат Zoom API (с 'Z' в конце)
+            date_str = str(date_input).strip()
+
+            # Заменяем 'Z' на '+00:00' для правильного парсинга UTC
+            if date_str.endswith('Z'):
+                date_str = date_str[:-1] + '+00:00'
+            else:
+                # Если нет 'Z', добавляем UTC (для обратной совместимости)
+                if 'T' in date_str and '+' not in date_str and '-' not in date_str[-6:]:
+                    date_str = date_str + '+00:00'
+
+            dt = datetime.fromisoformat(date_str)
+
+        # Если datetime не имеет timezone, считаем что это UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+
+        # Конвертируем в локальный часовой пояс из настроек
+        try:
+            local_tz = ZoneInfo(settings.timezone)
+            dt_local = dt.astimezone(local_tz)
+        except Exception:
+            # Если не удалось получить часовой пояс из настроек, используем UTC
+            dt_local = dt.astimezone(ZoneInfo("UTC"))
+
+        return dt_local.strftime("%d.%m.%Y %H:%M:%S")
     except (ValueError, TypeError):
-        return date_string
+        return str(date_input) if date_input else ""
 
 
 def format_status(status: str) -> str:
