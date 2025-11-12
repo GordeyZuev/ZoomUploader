@@ -33,6 +33,7 @@ google-auth>=2.0.0
 
 # OpenAI API
 openai>=1.0.0
+fireworks-ai>=0.15.0
 
 # Для работы с асинхронным кодом
 asyncio

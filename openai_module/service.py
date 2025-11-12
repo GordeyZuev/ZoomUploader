@@ -1,12 +1,14 @@
 """Основной сервис для транскрибации и извлечения тем"""
 
 import asyncio
+import math
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from deepseek_module import DeepSeekConfig, TopicExtractor
+from fireworks_module import FireworksConfig, FireworksTranscriptionService
 from logger import get_logger
 
 from .audio_compressor import AudioCompressor
@@ -16,15 +18,31 @@ from .transcription_service import TranscriptionService as WhisperService
 logger = get_logger()
 
 
+TranscriptionProvider = Literal["fireworks", "whisper"]
+
+
 class TranscriptionService:
     """Основной сервис для транскрибации и обработки текста"""
 
-    def __init__(self, openai_config: OpenAIConfig | None = None, deepseek_config: DeepSeekConfig | None = None):
-        if openai_config is None:
-            openai_config = OpenAIConfig.from_file()
+    def __init__(
+        self,
+        openai_config: OpenAIConfig | None = None,
+        deepseek_config: DeepSeekConfig | None = None,
+        fireworks_config: FireworksConfig | None = None,
+    ):
+        self.openai_config = openai_config
+        if self.openai_config is None:
+            try:
+                self.openai_config = OpenAIConfig.from_file()
+            except Exception as exc:
+                logger.warning(
+                    f"⚠️ Не удалось загрузить конфигурацию OpenAI: {exc}. Whisper-бэкенд будет недоступен."
+                )
+                self.openai_config = None
 
-        if not openai_config.validate():
-            raise ValueError("Некорректная конфигурация OpenAI")
+        if self.openai_config and not self.openai_config.validate():
+            logger.warning("⚠️ Конфигурация OpenAI не валидна. Whisper-бэкенд будет отключён.")
+            self.openai_config = None
 
         if deepseek_config is None:
             deepseek_config = DeepSeekConfig.from_file()
@@ -32,14 +50,34 @@ class TranscriptionService:
         if not deepseek_config.validate():
             raise ValueError("Некорректная конфигурация DeepSeek")
 
-        self.openai_config = openai_config
         self.deepseek_config = deepseek_config
-        self.transcription_service = WhisperService(openai_config)
-        self.topic_extractor = TopicExtractor(deepseek_config)
+
+        if fireworks_config is None:
+            fireworks_config = FireworksConfig.from_file()
+
+        if not fireworks_config.validate():
+            raise ValueError("Некорректная конфигурация Fireworks")
+
+        self.fireworks_config = fireworks_config
+
+        self.whisper_service = WhisperService(self.openai_config) if self.openai_config else None
+        self.fireworks_service = FireworksTranscriptionService(self.fireworks_config)
+        self.topic_extractor = TopicExtractor(self.deepseek_config)
+
+        target_bitrate = self.fireworks_config.audio_bitrate
+        target_sample_rate = self.fireworks_config.audio_sample_rate
+        max_file_size_mb = self.fireworks_config.max_file_size_mb
+
+        if self.openai_config:
+            # Используем минимальные ограничения, чтобы файл подходил для обеих моделей
+            target_sample_rate = self.openai_config.audio_sample_rate or target_sample_rate
+            target_bitrate = self.openai_config.audio_bitrate or target_bitrate
+            max_file_size_mb = min(self.openai_config.max_file_size_mb, max_file_size_mb)
+
         self.audio_compressor = AudioCompressor(
-            target_bitrate=openai_config.audio_bitrate,
-            target_sample_rate=openai_config.audio_sample_rate,
-            max_file_size_mb=openai_config.max_file_size_mb,
+            target_bitrate=target_bitrate,
+            target_sample_rate=target_sample_rate,
+            max_file_size_mb=max_file_size_mb,
         )
 
         # Создаем директорию для транскрипций
@@ -63,11 +101,59 @@ class TranscriptionService:
         secs = total_seconds % 60
         return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
+    async def _transcribe_with_provider(
+        self,
+        audio_path: str,
+        provider: TranscriptionProvider,
+        language: str,
+        audio_duration: float | None = None,
+        prompt: str | None = None,
+    ) -> dict[str, Any]:
+        """Транскрибация аудио выбранным бэкендом."""
+        if provider == "fireworks":
+            return await self.fireworks_service.transcribe_audio(
+                audio_path=audio_path,
+                language=language,
+                audio_duration=audio_duration,
+                prompt=prompt,
+            )
+        if provider == "whisper":
+            if not self.whisper_service:
+                raise RuntimeError(
+                    "Whisper-бэкенд недоступен: отсутствует валидная конфигурация OpenAI."
+                )
+            return await self.whisper_service.transcribe_audio(
+                audio_path=audio_path,
+                language=language,
+                audio_duration=audio_duration,
+            )
+
+        raise ValueError(f"Неизвестный провайдер транскрибации: {provider}")
+
+    def _compose_fireworks_prompt(self, recording_topic: str | None) -> str:
+        """Формирование подсказки для Fireworks с учетом предмета."""
+        base_prompt = (self.fireworks_config.prompt or "").strip()
+        topic = (recording_topic or "").strip()
+
+        if base_prompt and topic:
+            # Объединяем базовый промпт с названием пары в связный текст
+            return f'{base_prompt} Название пары: "{topic}". Учитывай специфику этого курса при распознавании терминов.'
+        elif base_prompt:
+            # Только базовый промпт
+            return base_prompt
+        elif topic:
+            # Только название пары с базовыми инструкциями
+            return f'Это лекция магистратуры по Computer Science со специализацией в Machine Learning и Data Science. Название пары: "{topic}". Сохраняй правильное написание профильных терминов (включая английские), латинских обозначений, аббревиатур, элементов кода и имён собственных.'
+        else:
+            # Fallback - общие инструкции
+            return "Это лекция магистратуры по Computer Science со специализацией в Machine Learning и Data Science. Сохраняй правильное написание профильных терминов (включая английские), латинских обозначений, аббревиатур, элементов кода и имён собственных."
+
     async def process_audio(
         self,
         audio_path: str,
         recording_id: int | None = None,
         recording_topic: str | None = None,
+        provider: TranscriptionProvider = "fireworks",
         granularity: str = "normal",  # "normal" | "coarse"
     ) -> dict[str, Any]:
         """
@@ -77,6 +163,9 @@ class TranscriptionService:
             audio_path: Путь к аудио файлу
             recording_id: ID записи (для именования файлов)
             recording_topic: Название записи (для именования файлов)
+
+        provider:
+            Какой бэкенд использовать для транскрибации: "fireworks" (по умолчанию) или "whisper"
 
         Returns:
             Словарь с результатами:
@@ -90,10 +179,20 @@ class TranscriptionService:
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Аудио файл не найден: {audio_path}")
 
-        logger.info(f"🎬 Начало обработки аудио: {audio_path}")
+        logger.info(
+            f"🎬 Начало обработки аудио: {audio_path} "
+            f"(модель транскрибации: {provider})"
+        )
+
+        fireworks_prompt = None
+        if provider == "fireworks":
+            fireworks_prompt = self._compose_fireworks_prompt(recording_topic)
 
         # Шаг 1: Подготовка аудио (сжатие и разбиение, если нужно)
-        prepared_audio, temp_files_to_cleanup = await self._prepare_audio(audio_path)
+        prepared_audio, temp_files_to_cleanup = await self._prepare_audio(audio_path, provider=provider)
+        transcription_language = (
+            self.fireworks_config.language if provider == "fireworks" else "ru"
+        )
 
         # Определяем, это один файл или несколько частей
         is_multipart = isinstance(prepared_audio, list)
@@ -145,10 +244,12 @@ class TranscriptionService:
                     )
                     try:
                         # Передаем длительность для более точной оценки времени
-                        result = await self.transcription_service.transcribe_audio(
-                            part_path,
-                            language="ru",
-                            audio_duration=part_duration
+                        result = await self._transcribe_with_provider(
+                            audio_path=part_path,
+                            provider=provider,
+                            language=transcription_language,
+                            audio_duration=part_duration,
+                            prompt=fireworks_prompt,
                         )
                         part_elapsed_time = time.time() - part_start_time
                         logger.info(
@@ -305,8 +406,11 @@ class TranscriptionService:
                 )
             else:
                 logger.info("🎤 Транскрибация аудио через Whisper API...")
-                transcription_result = await self.transcription_service.transcribe_audio(
-                    prepared_audio, language="ru"
+                transcription_result = await self._transcribe_with_provider(
+                    audio_path=prepared_audio,
+                    provider=provider,
+                    language=transcription_language,
+                    prompt=fireworks_prompt,
                 )
 
                 transcription_text = transcription_result['text']
@@ -331,19 +435,43 @@ class TranscriptionService:
                 recording_topic=recording_topic,
             )
 
+            # Преобразуем паузы в формат временных меток
+            topic_timestamps = topics_result.get('topic_timestamps', [])
+            long_pauses = topics_result.get('long_pauses', [])
+
+            # Добавляем паузы как отдельные временные метки
+            pause_timestamps = [
+                {
+                    'topic': 'Перерыв',
+                    'start': pause['start'],
+                    'end': pause['end'],
+                    'type': 'pause',
+                    'duration_minutes': pause.get('duration_minutes', (pause['end'] - pause['start']) / 60),
+                }
+                for pause in long_pauses
+            ]
+
+            # Объединяем темы и паузы, сортируем по времени начала
+            all_timestamps = topic_timestamps + pause_timestamps
+            all_timestamps.sort(key=lambda x: x.get('start', 0))
+
             # Формируем результат
             result = {
                 'transcription_file_path': transcription_file_path,
                 'transcription_text': transcription_text,
-                'topic_timestamps': topics_result.get('topic_timestamps', []),
+                'topic_timestamps': all_timestamps,
                 'main_topics': topics_result.get('main_topics', []),
+                'long_pauses': long_pauses,  # Сохраняем также исходные данные о паузах
                 'language': transcription_language,
             }
 
             logger.info("✅ Обработка аудио завершена успешно")
+            topics_count = len(topic_timestamps)
+            pauses_count = len(long_pauses)
             logger.info(
-                f"📊 Результаты: {len(topics_result.get('topic_timestamps', []))} тем, "
-                f"{len(topics_result.get('main_topics', []))} основных тем"
+                f"📊 Результаты: {topics_count} тем, "
+                f"{len(topics_result.get('main_topics', []))} основных тем, "
+                f"{pauses_count} пауз"
             )
 
             return result
@@ -358,10 +486,16 @@ class TranscriptionService:
                     except Exception as e:
                         logger.warning(f"⚠️ Не удалось удалить временный файл {temp_file}: {e}")
 
-    async def _prepare_audio(self, audio_path: str) -> tuple[str | list[str], list[str]]:
+    async def _prepare_audio(
+        self, audio_path: str, provider: TranscriptionProvider = "fireworks"
+    ) -> tuple[str | list[str], list[str]]:
         """
         Подготовка аудио: сжатие и разбиение, если нужно.
         Может работать как с аудио, так и с видео файлами (извлекает аудио автоматически).
+
+        Args:
+            audio_path: Путь к аудио файлу
+            provider: Провайдер транскрибации ("fireworks" или "whisper")
 
         Returns:
             tuple: (путь к файлу или список путей к частям, список временных файлов для удаления)
@@ -370,16 +504,38 @@ class TranscriptionService:
         file_size_mb = file_size / (1024 * 1024)
         temp_files = []
 
+        # Для Fireworks не разбиваем файлы, так как API поддерживает большие файлы
+        if provider == "fireworks":
+            logger.info(
+                f"🎆 Fireworks поддерживает большие файлы, разбиение не требуется "
+                f"({file_size_mb:.2f} МБ)"
+            )
+            # Для Fireworks все равно может потребоваться сжатие/извлечение аудио из видео
+            # но разбиение на части не нужно
+
+        # Для Fireworks просто возвращаем файл как есть (без разбиения)
+        if provider == "fireworks":
+            # Проверяем, является ли файл видео (нужно извлечь аудио)
+            is_video = audio_path.lower().endswith(('.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv', '.m4v'))
+            if is_video:
+                logger.info("🎬 Обнаружен видео файл, извлечение аудио для Fireworks...")
+                # Извлекаем аудио из видео (но не разбиваем)
+                compressed_path = await self.audio_compressor.compress_audio(audio_path)
+                temp_files.append(compressed_path)
+                return compressed_path, [compressed_path]
+            # Если это уже аудио файл, возвращаем как есть
+            return audio_path, []
+
+        # Для Whisper - стандартная логика с разбиением
         # Проверяем, является ли файл видео (нужно всегда извлекать аудио)
         is_video = audio_path.lower().endswith(('.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv', '.m4v'))
-        
+
         # Если файл видео, всегда извлекаем аудио (даже если маленький)
         if is_video:
-            logger.info(f"🎬 Обнаружен видео файл, извлечение аудио...")
-        
+            logger.info("🎬 Обнаружен видео файл, извлечение аудио...")
+
         # Проверяем параметры аудио файла, чтобы понять, нужно ли сжатие
         # Если файл уже имеет оптимальные параметры (64k, 16kHz, моно) и достаточно мал, сжатие не требуется
-        needs_compression = True
         if not is_video:
             try:
                 audio_info = await self.audio_compressor.get_audio_info(audio_path)
@@ -387,18 +543,18 @@ class TranscriptionService:
                 sample_rate = audio_info.get('sample_rate', 0)
                 bitrate = audio_info.get('bitrate', 0)
                 channels = audio_info.get('channels', 0)
-                
+
                 # Если аудио уже имеет оптимальные параметры для Whisper (64k битрейт, 16kHz, моно)
                 # и размер меньше лимита, сжатие не требуется
                 optimal_bitrate = 64000  # 64k в битах в секунду
                 optimal_sample_rate = 16000
                 optimal_channels = 1
-                
+
                 # Проверяем, что параметры близки к оптимальным (с допуском)
                 bitrate_ok = abs(bitrate - optimal_bitrate) < optimal_bitrate * 0.2  # ±20%
                 sample_rate_ok = sample_rate == optimal_sample_rate
                 channels_ok = channels == optimal_channels
-                
+
                 if bitrate_ok and sample_rate_ok and channels_ok:
                     logger.info(
                         f"✅ Аудио файл уже имеет оптимальные параметры для Whisper "
@@ -483,14 +639,21 @@ class TranscriptionService:
                 logger.info(f"📝 Сохранение транскрипции с {len(segments)} сегментами и временными метками")
 
                 for seg in segments:
-                    start_time = seg.get('start', 0)
-                    end_time = seg.get('end', 0)
+                    start_time = seg.get('start', 0) or 0.0
+                    end_time = seg.get('end', 0) or 0.0
                     text = seg.get('text', '').strip()
 
                     if text:
+                        # Используем floor/ceil, чтобы визуальные метки не сжимались до одного значения
+                        start_seconds = int(math.floor(float(start_time)))
+                        end_seconds = int(math.ceil(float(end_time)))
+
+                        if end_seconds <= start_seconds:
+                            end_seconds = start_seconds + 1
+
                         # Форматируем временные метки
-                        start_formatted = self._format_timestamp(start_time)
-                        end_formatted = self._format_timestamp(end_time)
+                        start_formatted = self._format_timestamp(start_seconds)
+                        end_formatted = self._format_timestamp(end_seconds)
 
                         # Записываем сегмент с метками: [HH:MM:SS - HH:MM:SS] текст
                         f.write(f"[{start_formatted} - {end_formatted}] {text}\n")

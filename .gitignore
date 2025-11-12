@@ -32,9 +32,13 @@ Thumbs.db
 
 # Credentials and sensitive files
 config/app_config.json
+config/accounts.py
 config/vk_creds.json
 config/youtube_creds.json
 config/zoom_creds.json
+config/openai_creds.json
+config/deepseek_creds.json
+config/fireworks_creds.json
 config/*_creds.json
 .env
 .env.local
@@ -67,5 +71,3 @@ tmp/
 
 # UV lock file (optional - you might want to keep it)
 # uv.lock
-
-config/accounts.py

@@ -14,6 +14,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from config.unified_config import AppConfig, load_app_config
 from database import DatabaseManager
+from fireworks_module import FireworksConfig
 from logger import get_logger
 from models import MeetingRecording, PlatformStatus, ProcessingStatus
 from utils import (
@@ -263,15 +264,25 @@ class PipelineManager:
         self.logger.info(f"✅ Обработано записей: {success_count}/{len(recordings)}")
         return success_count
 
-    async def transcribe_recordings(self, recordings: list[MeetingRecording]) -> int:
+    async def transcribe_recordings(
+        self,
+        recordings: list[MeetingRecording],
+        transcription_model: str = "fireworks",
+    ) -> int:
         """Транскрибация записей (параллельно)"""
         if not recordings:
             return 0
 
-        self.logger.info(f"🎤 Параллельная транскрибация {len(recordings)} записей...")
+        self.logger.info(
+            f"🎤 Параллельная транскрибация {len(recordings)} записей "
+            f"(модель: {transcription_model})..."
+        )
 
         # Запускаем все транскрибации параллельно
-        tasks = [self._transcribe_single_recording(recording) for recording in recordings]
+        tasks = [
+            self._transcribe_single_recording(recording, transcription_model=transcription_model)
+            for recording in recordings
+        ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         success_count = 0
@@ -508,6 +519,7 @@ class PipelineManager:
         platforms: list[str],
         allow_skipped: bool = False,
         no_transcription: bool = False,
+        transcription_model: str = "fireworks",
     ) -> dict:
         """Запуск полного пайплайна обработки"""
         allowed_statuses = [ProcessingStatus.INITIALIZED]
@@ -545,7 +557,7 @@ class PipelineManager:
             return {"success": False, "message": "Нет записей для обработки"}
 
         self.logger.info(f"🚀 Запуск полного пайплайна для {len(target_recordings)} записей")
-        
+
         # Начало отсчета общего времени выполнения пайплайна
         pipeline_start_time = time.time()
 
@@ -597,7 +609,7 @@ class PipelineManager:
         if not no_transcription:
             recordings_to_transcribe = [
                 r for r in target_recordings
-                if r.status == ProcessingStatus.PROCESSED 
+                if r.status == ProcessingStatus.PROCESSED
                 and (r.processed_audio_path or r.processed_video_path)
             ]
             if recordings_to_transcribe:
@@ -607,7 +619,10 @@ class PipelineManager:
                 self.console.print("[bold cyan]" + "=" * 70 + "[/bold cyan]")
                 self.console.print()
                 stage_start_time = time.time()
-                transcribe_count = await self.transcribe_recordings(recordings_to_transcribe)
+                transcribe_count = await self.transcribe_recordings(
+                    recordings_to_transcribe,
+                    transcription_model=transcription_model,
+                )
                 stage_elapsed = time.time() - stage_start_time
                 self.console.print()
                 self.console.print(
@@ -1074,7 +1089,7 @@ class PipelineManager:
                 # Обновляем статус на PROCESSED после успешной обработки
                 recording.status = ProcessingStatus.PROCESSED
                 recording.processed_video_path = processed_path
-                
+
                 # Извлекаем аудио из обработанного видео, если его еще нет
                 if not processed_audio_path:
                     try:
@@ -1084,7 +1099,7 @@ class PipelineManager:
                         os.makedirs(audio_dir, exist_ok=True)
                         audio_filename = f"{safe_title}_processed.mp3"
                         audio_path = os.path.join(audio_dir, audio_filename)
-                        
+
                         # Извлекаем аудио из обработанного видео с оптимальными параметрами для Whisper API
                         # Используем те же параметры, что и AudioCompressor (64k, 16kHz, моно)
                         # чтобы сразу получить файл подходящего размера
@@ -1100,14 +1115,14 @@ class PipelineManager:
                             '-y',  # Перезаписать, если существует
                             audio_path,
                         ]
-                        
+
                         extract_process = await asyncio.create_subprocess_exec(
                             *extract_cmd,
                             stdout=asyncio.subprocess.PIPE,
                             stderr=asyncio.subprocess.PIPE
                         )
                         await extract_process.wait()
-                        
+
                         if extract_process.returncode == 0 and os.path.exists(audio_path):
                             processed_audio_path = audio_path
                             self.logger.info(f"✅ Аудио извлечено: {audio_path}")
@@ -1115,7 +1130,7 @@ class PipelineManager:
                             self.logger.warning(f"⚠️ Не удалось извлечь аудио из видео: {recording.topic}")
                     except Exception as e:
                         self.logger.warning(f"⚠️ Ошибка при извлечении аудио: {e}")
-                
+
                 # Сохраняем путь к обработанному аудио, если оно было создано
                 if processed_audio_path:
                     # Используем относительный путь, если возможно
@@ -1151,19 +1166,23 @@ class PipelineManager:
             )
             return False
 
-    async def _transcribe_single_recording(self, recording: MeetingRecording) -> bool:
+    async def _transcribe_single_recording(
+        self,
+        recording: MeetingRecording,
+        transcription_model: str = "fireworks",
+    ) -> bool:
         """Транскрибация одной записи с прогресс-баром"""
         try:
+            # Проверяем наличие аудио или видео файла
+            # TranscriptionService может работать с видео файлами, извлекая аудио автоматически
+            import os
+
             from rich.progress import (
                 Progress,
                 SpinnerColumn,
                 TextColumn,
                 TimeElapsedColumn,
             )
-
-            # Проверяем наличие аудио или видео файла
-            # TranscriptionService может работать с видео файлами, извлекая аудио автоматически
-            import os
             audio_path = recording.processed_audio_path
             if not audio_path:
                 # Если нет отдельного аудио файла, используем видео файл
@@ -1201,11 +1220,18 @@ class PipelineManager:
                 from openai_module import TranscriptionService
                 from openai_module.config import OpenAIConfig
 
-                openai_config = OpenAIConfig.from_file()
+                openai_config = None
+                try:
+                    openai_config = OpenAIConfig.from_file()
+                except Exception as exc:
+                    self.logger.warning(f"⚠️ OpenAI конфигурация не загружена: {exc}")
+
                 deepseek_config = DeepSeekConfig.from_file()
+                fireworks_config = FireworksConfig.from_file()
                 transcription_service = TranscriptionService(
                     openai_config=openai_config,
-                    deepseek_config=deepseek_config
+                    deepseek_config=deepseek_config,
+                    fireworks_config=fireworks_config,
                 )
             except Exception as e:
                 self.logger.error(f"❌ Ошибка загрузки конфигурации: {e}")
@@ -1233,6 +1259,7 @@ class PipelineManager:
                         audio_path=audio_path,
                         recording_id=recording.db_id,
                         recording_topic=recording.topic,
+                        provider=transcription_model,
                     )
 
                     # Сохраняем результаты
@@ -1325,7 +1352,7 @@ class PipelineManager:
                 try:
                     # Формируем топики для добавления в описание (не добавляем в description, добавляем в parts позже)
                     topics_description = self._format_topics_description(recording.topic_timestamps, platform)
-                    
+
                     # Подготавливаем метаданные для конкретной платформы
                     if (
                         not recording.is_mapped
@@ -1532,15 +1559,25 @@ class PipelineManager:
         lines = ["🔹 Темы лекции:", ""]
         current_length = len('\n'.join(lines))
 
-        # Фильтруем только топики с непустым названием
-        valid_topics = [t for t in topic_timestamps if t.get('topic', '').strip()]
-        total_valid_count = len(valid_topics)
+        # Фильтруем только элементы с непустым названием или паузы
+        valid_items = [
+            t for t in topic_timestamps
+            if (t.get('type') == 'pause') or (t.get('topic', '').strip())
+        ]
+        total_valid_count = len(valid_items)
 
-        # Добавляем топики
+        # Добавляем все элементы (темы и паузы) в хронологическом порядке
         added_count = 0
-        for topic_data in valid_topics:
-            topic = topic_data.get('topic', '').strip()
-            start = topic_data.get('start', 0)
+        for item_data in valid_items:
+            # Определяем, это пауза или тема
+            is_pause = item_data.get('type') == 'pause'
+
+            if is_pause:
+                topic = 'Перерыв'
+            else:
+                topic = item_data.get('topic', '').strip()
+
+            start = item_data.get('start', 0)
 
             # Форматируем время в HH:MM:SS
             hours = int(start // 3600)
@@ -1548,11 +1585,11 @@ class PipelineManager:
             seconds = int(start % 60)
             time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-            # Формируем строку топика с длинным тире
-            topic_line = f"{time_str} — {topic}"
+            # Формируем строку с длинным тире
+            item_line = f"{time_str} — {topic}"
 
             # Проверяем, не превысим ли лимит
-            new_length = current_length + len(topic_line) + 1  # +1 для \n
+            new_length = current_length + len(item_line) + 1  # +1 для \n
             if new_length > max_length:
                 # Если превышаем лимит, добавляем сообщение и прекращаем
                 remaining_count = total_valid_count - added_count
@@ -1560,7 +1597,7 @@ class PipelineManager:
                     lines.append(f"... и еще {remaining_count} тем")
                 break
 
-            lines.append(topic_line)
+            lines.append(item_line)
             current_length = new_length
             added_count += 1
 

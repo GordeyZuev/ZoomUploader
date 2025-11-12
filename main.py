@@ -216,12 +216,36 @@ def process(
     default=14,
     help='Последние N дней (0 = сегодня, 1 = вчера, 7 = неделя, 14 = две недели)',
 )
+@click.option(
+    '--transcription-model',
+    type=click.Choice(['fireworks', 'whisper']),
+    default='fireworks',
+    show_default=True,
+    help='Выбор модели транскрибации (fireworks или whisper)',
+)
 def transcribe(
-    from_date, to_date, last, account, config_file, use_db, select_all, recordings):
+    from_date,
+    to_date,
+    last,
+    account,
+    config_file,
+    use_db,
+    select_all,
+    recordings,
+    transcription_model,
+):
     """Транскрибировать записи"""
     asyncio.run(
         _transcribe_command(
-            from_date, to_date, last, account, config_file, use_db, select_all, recordings
+            from_date,
+            to_date,
+            last,
+            account,
+            config_file,
+            use_db,
+            select_all,
+            recordings,
+            transcription_model,
         )
     )
 
@@ -287,6 +311,13 @@ def upload(
     is_flag=True,
     help='Пропустить шаг транскрибации (не вызывать транскрибацию и извлечение тем)',
 )
+@click.option(
+    '--transcription-model',
+    type=click.Choice(['fireworks', 'whisper']),
+    default='fireworks',
+    show_default=True,
+    help='Выбор модели транскрибации (fireworks или whisper)',
+)
 def full_process(
     from_date,
     to_date,
@@ -301,6 +332,7 @@ def full_process(
     all_platforms,
     allow_skipped,
     no_transcription,
+    transcription_model,
 ):
     """Полный пайплайн: скачать + обработать + загрузить записи"""
     asyncio.run(
@@ -318,6 +350,7 @@ def full_process(
             all_platforms,
             allow_skipped,
             no_transcription,
+            transcription_model,
         )
     )
 
@@ -687,7 +720,15 @@ async def _process_command(
 
 
 async def _transcribe_command(
-    from_date, to_date, last, account, config_file, use_db, select_all, recordings
+    from_date,
+    to_date,
+    last,
+    account,
+    config_file,
+    use_db,
+    select_all,
+    recordings,
+    transcription_model,
 ):
     """Команда transcribe - транскрибировать записи"""
     from_date, to_date = _parse_dates(from_date, to_date, last)
@@ -738,7 +779,9 @@ async def _transcribe_command(
             ]
 
         if target_recordings:
-            success_count = await pipeline.transcribe_recordings(target_recordings)
+            success_count = await pipeline.transcribe_recordings(
+                target_recordings, transcription_model=transcription_model
+            )
             logger.info(f"✅ Транскрибация завершена: {success_count}/{len(target_recordings)}")
         else:
             logger.warning("❌ Нет записей для транскрибации (нужны записи со статусом PROCESSED и аудио файлом)")
@@ -1133,6 +1176,7 @@ async def _full_process_command(
     all_platforms,
     allow_skipped,
     no_transcription,
+    transcription_model,
 ):
     """Команда full-process - полный пайплайн: скачать + обработать + загрузить"""
     from_date, to_date = _parse_dates(from_date, to_date, last)
@@ -1200,6 +1244,7 @@ async def _full_process_command(
             platforms=platforms,
             allow_skipped=allow_skipped,
             no_transcription=no_transcription,
+            transcription_model=transcription_model,
         )
 
         # Выводим итоговую статистику
@@ -1214,7 +1259,7 @@ async def _full_process_command(
             pipeline.console.print(f"🎬 [bold]Обработано записей:[/bold] {results.get('process_count', 0)}")
             pipeline.console.print(f"🎤 [bold]Транскрибировано записей:[/bold] {results.get('transcribe_count', 0)}")
             pipeline.console.print(f"📤 [bold]Загружено записей:[/bold] {results.get('upload_count', 0)}")
-            
+
             # Выводим общее время выполнения, если оно есть
             if results.get('total_time'):
                 total_time_formatted = pipeline._format_elapsed_time(results['total_time'])
@@ -1235,7 +1280,7 @@ async def _full_process_command(
             pipeline.console.print("[bold red]" + "=" * 70 + "[/bold red]")
             for error in results['errors']:
                 pipeline.console.print(f"   • [red]{error}[/red]")
-        
+
         pipeline.console.print()
         pipeline.console.print("[dim]" + "=" * 70 + "[/dim]")
 
