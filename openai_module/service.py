@@ -154,7 +154,7 @@ class TranscriptionService:
         recording_id: int | None = None,
         recording_topic: str | None = None,
         provider: TranscriptionProvider = "fireworks",
-        granularity: str = "normal",  # "normal" | "coarse"
+        granularity: str = "long",  # "short" | "long"
     ) -> dict[str, Any]:
         """
         Полная обработка аудио: сжатие, транскрибация, извлечение тем.
@@ -498,7 +498,7 @@ class TranscriptionService:
             provider: Провайдер транскрибации ("fireworks" или "whisper")
 
         Returns:
-            tuple: (путь к файлу или список путей к частям, список временных файлов для удаления)
+            Tuple: (путь к файлу или список путей к частям, список временных файлов для удаления)
         """
         file_size = os.path.getsize(audio_path)
         file_size_mb = file_size / (1024 * 1024)

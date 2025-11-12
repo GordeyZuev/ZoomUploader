@@ -24,12 +24,13 @@ help:
 	@echo "⬇️ Загрузка и обработка:"
 	@echo "  make download       - Скачать записи со статусом INITIALIZED"
 	@echo "  make process        - Обработать скачанные записи"
+	@echo "  make transcribe     - Транскрибировать обработанные записи"
 	@echo "  make upload-youtube - Загрузить на YouTube"
 	@echo "  make upload-vk      - Загрузить на VK"
 	@echo "  make upload-all     - Загрузить на все платформы"
 	@echo ""
 	@echo "🚀 Полный пайплайн:"
-	@echo "  make full-process   - Полный пайплайн (скачать + обработать)"
+	@echo "  make full-process   - Полный пайплайн (скачать + обработать + транскрибировать)"
 	@echo "  make full-youtube   - Полный пайплайн с YouTube"
 	@echo "  make full-all       - Полный пайплайн со всеми платформами"
 	@echo ""
@@ -91,12 +92,15 @@ sync-week:
 	@uv run python main.py sync --last 7
 
 # Команды загрузки и обработки
-.PHONY: download process upload-youtube upload-vk upload-all
+.PHONY: download process transcribe upload-youtube upload-vk upload-all
 download:
 	@uv run python main.py download --all
 
 process:
 	@uv run python main.py process --all
+
+transcribe:
+	@uv run python main.py transcribe --all
 
 upload-youtube:
 	@uv run python main.py upload --youtube --all

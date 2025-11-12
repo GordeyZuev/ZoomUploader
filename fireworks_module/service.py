@@ -1,7 +1,5 @@
 "\"\"\"Сервис транскрибации аудио через Fireworks Audio Inference API\"\"\""
 
-from __future__ import annotations
-
 import asyncio
 import os
 import time

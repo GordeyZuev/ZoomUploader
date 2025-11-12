@@ -268,6 +268,7 @@ class PipelineManager:
         self,
         recordings: list[MeetingRecording],
         transcription_model: str = "fireworks",
+        topic_mode: str = "long",
     ) -> int:
         """Транскрибация записей (параллельно)"""
         if not recordings:
@@ -275,12 +276,14 @@ class PipelineManager:
 
         self.logger.info(
             f"🎤 Параллельная транскрибация {len(recordings)} записей "
-            f"(модель: {transcription_model})..."
+            f"(модель: {transcription_model}, режим тем: {topic_mode})..."
         )
 
         # Запускаем все транскрибации параллельно
         tasks = [
-            self._transcribe_single_recording(recording, transcription_model=transcription_model)
+            self._transcribe_single_recording(
+                recording, transcription_model=transcription_model, topic_mode=topic_mode
+            )
             for recording in recordings
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -520,9 +523,17 @@ class PipelineManager:
         allow_skipped: bool = False,
         no_transcription: bool = False,
         transcription_model: str = "fireworks",
+        topic_mode: str = "long",
     ) -> dict:
         """Запуск полного пайплайна обработки"""
-        allowed_statuses = [ProcessingStatus.INITIALIZED]
+        # Разрешаем работу с записями в любом статусе (кроме UPLOADED и FAILED)
+        # Это позволяет продолжить обработку уже частично обработанных записей
+        allowed_statuses = [
+            ProcessingStatus.INITIALIZED,
+            ProcessingStatus.DOWNLOADED,
+            ProcessingStatus.PROCESSED,
+            ProcessingStatus.TRANSCRIBED,
+        ]
         if allow_skipped:
             allowed_statuses.append(ProcessingStatus.SKIPPED)
 
@@ -562,51 +573,82 @@ class PipelineManager:
         pipeline_start_time = time.time()
 
         # ЭТАП 1: СКАЧИВАНИЕ
-        self.console.print()
-        self.console.print("[bold blue]" + "=" * 70 + "[/bold blue]")
-        self.console.print("[bold blue]📥 ЭТАП 1: СКАЧИВАНИЕ ЗАПИСЕЙ[/bold blue]")
-        self.console.print("[bold blue]" + "=" * 70 + "[/bold blue]")
-        self.console.print()
-        stage_start_time = time.time()
-        download_count = await self.download_recordings(target_recordings)
-        stage_elapsed = time.time() - stage_start_time
-        self.console.print()
-        self.console.print(
-            f"[bold green]✅ Этап 1 завершен: скачано {download_count}/{len(target_recordings)} записей "
-            f"[dim](время выполнения: {self._format_elapsed_time(stage_elapsed)})[/dim][/bold green]"
-        )
+        # Скачиваем только записи со статусом INITIALIZED или SKIPPED
+        recordings_to_download = [
+            r for r in target_recordings
+            if r.status in [ProcessingStatus.INITIALIZED, ProcessingStatus.SKIPPED]
+        ]
+        download_count = 0
+        if recordings_to_download:
+            self.console.print()
+            self.console.print("[bold blue]" + "=" * 70 + "[/bold blue]")
+            self.console.print("[bold blue]📥 ЭТАП 1: СКАЧИВАНИЕ ЗАПИСЕЙ[/bold blue]")
+            self.console.print("[bold blue]" + "=" * 70 + "[/bold blue]")
+            self.console.print()
+            stage_start_time = time.time()
+            download_count = await self.download_recordings(recordings_to_download)
+            stage_elapsed = time.time() - stage_start_time
+            self.console.print()
+            self.console.print(
+                f"[bold green]✅ Этап 1 завершен: скачано {download_count}/{len(recordings_to_download)} записей "
+                f"[dim](время выполнения: {self._format_elapsed_time(stage_elapsed)})[/dim][/bold green]"
+            )
+        else:
+            self.logger.info("⏭️  Пропуск этапа скачивания: нет записей для скачивания")
+
+        # Обновляем список записей после скачивания (обновляем статусы)
+        # Получаем актуальные статусы записей из БД
+        if recordings_to_download:
+            updated_recordings = await self.db_manager.get_recordings_by_ids(
+                [r.db_id for r in recordings_to_download]
+            )
+            # Обновляем статусы в target_recordings
+            updated_dict = {r.db_id: r for r in updated_recordings}
+            for recording in target_recordings:
+                if recording.db_id in updated_dict:
+                    recording.status = updated_dict[recording.db_id].status
+                    recording.local_video_path = updated_dict[recording.db_id].local_video_path
 
         # Проверяем, есть ли записи для обработки (скачанные или уже имеющиеся)
-        recordings_to_process = [r for r in target_recordings if r.status == ProcessingStatus.DOWNLOADED]
-        if not recordings_to_process:
-            pipeline_total_time = time.time() - pipeline_start_time
-            return {
-                "success": False,
-                "message": "Нет записей для обработки (ничего не скачано)",
-                "download_count": download_count,
-                "process_count": 0,
-                "upload_count": 0,
-                "total_time": pipeline_total_time,
-            }
+        recordings_to_process = [
+            r for r in target_recordings
+            if r.status == ProcessingStatus.DOWNLOADED and r.local_video_path
+        ]
 
         # ЭТАП 2: ОБРАБОТКА
-        self.console.print()
-        self.console.print("[bold yellow]" + "=" * 70 + "[/bold yellow]")
-        self.console.print("[bold yellow]🎬 ЭТАП 2: ОБРАБОТКА ВИДЕО[/bold yellow]")
-        self.console.print("[bold yellow]" + "=" * 70 + "[/bold yellow]")
-        self.console.print()
-        stage_start_time = time.time()
-        process_count = await self.process_recordings(recordings_to_process)
-        stage_elapsed = time.time() - stage_start_time
-        self.console.print()
-        self.console.print(
-            f"[bold green]✅ Этап 2 завершен: обработано {process_count}/{len(recordings_to_process)} записей "
-            f"[dim](время выполнения: {self._format_elapsed_time(stage_elapsed)})[/dim][/bold green]"
-        )
+        process_count = 0
+        if recordings_to_process:
+            self.console.print()
+            self.console.print("[bold yellow]" + "=" * 70 + "[/bold yellow]")
+            self.console.print("[bold yellow]🎬 ЭТАП 2: ОБРАБОТКА ВИДЕО[/bold yellow]")
+            self.console.print("[bold yellow]" + "=" * 70 + "[/bold yellow]")
+            self.console.print()
+            stage_start_time = time.time()
+            process_count = await self.process_recordings(recordings_to_process)
+            stage_elapsed = time.time() - stage_start_time
+            self.console.print()
+            self.console.print(
+                f"[bold green]✅ Этап 2 завершен: обработано {process_count}/{len(recordings_to_process)} записей "
+                f"[dim](время выполнения: {self._format_elapsed_time(stage_elapsed)})[/dim][/bold green]"
+            )
+
+            # Обновляем статусы после обработки
+            updated_recordings = await self.db_manager.get_recordings_by_ids(
+                [r.db_id for r in recordings_to_process]
+            )
+            updated_dict = {r.db_id: r for r in updated_recordings}
+            for recording in target_recordings:
+                if recording.db_id in updated_dict:
+                    recording.status = updated_dict[recording.db_id].status
+                    recording.processed_video_path = updated_dict[recording.db_id].processed_video_path
+                    recording.processed_audio_path = updated_dict[recording.db_id].processed_audio_path
+        else:
+            self.logger.info("⏭️  Пропуск этапа обработки: нет записей для обработки")
 
         # ЭТАП 3: ТРАНСКРИБАЦИЯ
         transcribe_count = 0
         if not no_transcription:
+            # Транскрибируем только записи со статусом PROCESSED, которые еще не транскрибированы
             recordings_to_transcribe = [
                 r for r in target_recordings
                 if r.status == ProcessingStatus.PROCESSED
@@ -622,6 +664,7 @@ class PipelineManager:
                 transcribe_count = await self.transcribe_recordings(
                     recordings_to_transcribe,
                     transcription_model=transcription_model,
+                    topic_mode=topic_mode,
                 )
                 stage_elapsed = time.time() - stage_start_time
                 self.console.print()
@@ -630,10 +673,24 @@ class PipelineManager:
                     f"[dim](время выполнения: {self._format_elapsed_time(stage_elapsed)})[/dim][/bold green]"
                 )
 
+                # Обновляем статусы после транскрибации
+                updated_recordings = await self.db_manager.get_recordings_by_ids(
+                    [r.db_id for r in recordings_to_transcribe]
+                )
+                updated_dict = {r.db_id: r for r in updated_recordings}
+                for recording in target_recordings:
+                    if recording.db_id in updated_dict:
+                        recording.status = updated_dict[recording.db_id].status
+                        recording.transcription_file_path = updated_dict[recording.db_id].transcription_file_path
+            else:
+                self.logger.info("⏭️  Пропуск этапа транскрибации: нет записей для транскрибации")
+
         # ЭТАП 4: ЗАГРУЗКА НА ПЛАТФОРМЫ
+        # Загружаем записи со статусом PROCESSED или TRANSCRIBED, которые еще не загружены
         recordings_to_upload = [
             r for r in target_recordings
             if r.status in [ProcessingStatus.PROCESSED, ProcessingStatus.TRANSCRIBED]
+            and not (r.youtube_url or r.vk_url)  # Еще не загружены ни на одну платформу
         ]
         upload_count = 0
         uploaded_recordings = []
@@ -933,6 +990,8 @@ class PipelineManager:
             ProcessingStatus.DOWNLOADED: "[bold green]✅ Загружено[/bold green]",
             ProcessingStatus.PROCESSING: "[bold yellow]⚙️ Обрабатывается...[/bold yellow]",
             ProcessingStatus.PROCESSED: "[bold green]🎬 Обработано[/bold green]",
+            ProcessingStatus.TRANSCRIBING: "[bold yellow]🎤 Транскрибируется...[/bold yellow]",
+            ProcessingStatus.TRANSCRIBED: "[bold cyan]🎤 Транскрибировано[/bold cyan]",
             ProcessingStatus.UPLOADING: "[bold yellow]⬆️ Загружается на платформы...[/bold yellow]",
             ProcessingStatus.UPLOADED: "[bold blue]🚀 Загружено на платформы[/bold blue]",
             ProcessingStatus.FAILED: "[bold red]❌ Ошибка[/bold red]",
@@ -1170,6 +1229,7 @@ class PipelineManager:
         self,
         recording: MeetingRecording,
         transcription_model: str = "fireworks",
+        topic_mode: str = "long",
     ) -> bool:
         """Транскрибация одной записи с прогресс-баром"""
         try:
@@ -1260,6 +1320,7 @@ class PipelineManager:
                         recording_id=recording.db_id,
                         recording_topic=recording.topic,
                         provider=transcription_model,
+                        granularity="short" if topic_mode == "short" else "long",
                     )
 
                     # Сохраняем результаты
@@ -1437,9 +1498,6 @@ class PipelineManager:
                             elif platform == 'vk':
                                 recording.update_platform_status('vk', PlatformStatus.UPLOADED_VK, result.video_url)
 
-                            # Сохраняем изменения в базе данных
-                            await self.db_manager.update_recording(recording)
-
                 except asyncio.CancelledError:
                     self.console.print(
                         f"\n[bold red]❌ Загрузка на {platform} прервана пользователем[/bold red]"
@@ -1447,6 +1505,21 @@ class PipelineManager:
                     break
                 except Exception as e:
                     self.logger.error(f"Ошибка загрузки на {platform}: {e}")
+
+            # Обновляем основной статус записи на UPLOADED, если загружена хотя бы на одну платформу
+            if success_count > 0:
+                # Проверяем, загружена ли запись хотя бы на одну платформу
+                is_uploaded = (
+                    recording.youtube_status == PlatformStatus.UPLOADED_YOUTUBE
+                    or recording.vk_status == PlatformStatus.UPLOADED_VK
+                )
+                if is_uploaded and recording.status != ProcessingStatus.UPLOADED:
+                    recording.status = ProcessingStatus.UPLOADED
+                    self.logger.debug(f"Статус записи {recording.topic} обновлен на UPLOADED")
+
+            # Сохраняем изменения в базе данных после всех загрузок
+            if success_count > 0:
+                await self.db_manager.update_recording(recording)
 
             return success_count > 0
 

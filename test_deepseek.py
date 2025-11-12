@@ -54,13 +54,18 @@ def parse_transcription_file(file_path: str) -> tuple[str, list[dict]]:
     return full_text, segments
 
 
-async def test_deepseek_extraction(transcription_file: str, recording_topic: str | None = None):
+async def test_deepseek_extraction(
+    transcription_file: str,
+    recording_topic: str | None = None,
+    granularity: str = "long",
+):
     """
     Тестирование извлечения тем через DeepSeek на существующей транскрипции
 
     Args:
         transcription_file: Путь к файлу транскрипции
         recording_topic: Название курса/предмета (опционально)
+        granularity: Режим извлечения тем ("short" или "long")
     """
     setup_logger()
     logger = get_logger()
@@ -100,13 +105,14 @@ async def test_deepseek_extraction(transcription_file: str, recording_topic: str
         sys.exit(1)
 
     # Запускаем извлечение тем
-    logger.info("🚀 Начало извлечения тем через DeepSeek...")
+    logger.info(f"🚀 Начало извлечения тем через DeepSeek (режим: {granularity})...")
 
     try:
         result = await topic_extractor.extract_topics(
             transcription_text=transcription_text,
             segments=segments,
-            recording_topic=recording_topic
+            recording_topic=recording_topic,
+            granularity=granularity,
         )
 
         # Выводим результаты
@@ -164,9 +170,16 @@ if __name__ == "__main__":
     @click.command()
     @click.argument('transcription_file', type=click.Path(exists=True))
     @click.option('--topic', '-t', help='Название курса/предмета (опционально)')
-    def main(transcription_file, topic):
+    @click.option(
+        '--granularity', '-g',
+        type=click.Choice(['short', 'long']),
+        default='long',
+        show_default=True,
+        help='Режим извлечения тем: short (меньше тем, крупнее) или long (больше тем, детальнее)'
+    )
+    def main(transcription_file, topic, granularity):
         """Тестирование извлечения тем через DeepSeek на существующей транскрипции"""
-        asyncio.run(test_deepseek_extraction(transcription_file, topic))
+        asyncio.run(test_deepseek_extraction(transcription_file, topic, granularity))
 
     main()
 

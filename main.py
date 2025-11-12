@@ -1,4 +1,5 @@
 import asyncio
+import builtins
 import os
 import sys
 from datetime import datetime, timedelta
@@ -223,6 +224,13 @@ def process(
     show_default=True,
     help='Выбор модели транскрибации (fireworks или whisper)',
 )
+@click.option(
+    '--topic-mode',
+    type=click.Choice(['short', 'long']),
+    default='long',
+    show_default=True,
+    help='Режим извлечения тем: short (меньше тем, крупнее) или long (больше тем, детальнее)',
+)
 def transcribe(
     from_date,
     to_date,
@@ -233,6 +241,7 @@ def transcribe(
     select_all,
     recordings,
     transcription_model,
+    topic_mode,
 ):
     """Транскрибировать записи"""
     asyncio.run(
@@ -246,6 +255,7 @@ def transcribe(
             select_all,
             recordings,
             transcription_model,
+            topic_mode,
         )
     )
 
@@ -318,6 +328,13 @@ def upload(
     show_default=True,
     help='Выбор модели транскрибации (fireworks или whisper)',
 )
+@click.option(
+    '--topic-mode',
+    type=click.Choice(['short', 'long']),
+    default='long',
+    show_default=True,
+    help='Режим извлечения тем: short (меньше тем, крупнее) или long (больше тем, детальнее)',
+)
 def full_process(
     from_date,
     to_date,
@@ -333,6 +350,7 @@ def full_process(
     allow_skipped,
     no_transcription,
     transcription_model,
+    topic_mode,
 ):
     """Полный пайплайн: скачать + обработать + загрузить записи"""
     asyncio.run(
@@ -351,6 +369,7 @@ def full_process(
             allow_skipped,
             no_transcription,
             transcription_model,
+            topic_mode,
         )
     )
 
@@ -384,16 +403,16 @@ def reset(
 
 
 @cli.command()
-@common_options
+@click.option('--use-db/--no-db', default=True, help='Использовать базу данных')
 @click.option(
     '--days',
     type=int,
     default=7,
     help='Количество дней назад для очистки записей (по умолчанию: 7)',
 )
-def clean(from_date, to_date, account, config_file, use_db,  days):
+def clean(use_db, days):
     """Очистить старые записи (удалить файлы и пометить как EXPIRED)"""
-    asyncio.run(_clean_command(from_date, to_date, account, config_file, use_db,  days))
+    asyncio.run(_clean_command(use_db, days))
 
 
 @cli.command()
@@ -429,6 +448,134 @@ def _parse_dates(from_date, to_date, last):
     return from_date, to_date
 
 
+async def _setup_pipeline(use_db: bool) -> tuple[PipelineManager | None, DatabaseManager | None]:
+    """
+    Инициализация базы данных и pipeline.
+
+    Args:
+        use_db: Использовать ли базу данных
+
+    Returns:
+        tuple: (pipeline, db_manager)
+    """
+    db_manager = None
+    if use_db:
+        db_config = DatabaseConfig.from_env()
+        db_manager = DatabaseManager(db_config)
+        await db_manager.create_database_if_not_exists()
+        await db_manager.create_tables()
+        print("🗄️ \033[1;34mПодключение к базе данных...\033[0m")
+
+    # Загружаем унифицированную конфигурацию
+    from config.unified_config import load_app_config
+
+    app_config = load_app_config()
+    pipeline = PipelineManager(db_manager, app_config)
+
+    return pipeline, db_manager
+
+
+async def _get_target_recordings(
+    pipeline: PipelineManager,
+    from_date: str,
+    to_date: str | None,
+    select_all: bool,
+    recordings: str | None,
+    allowed_statuses: builtins.list[ProcessingStatus],
+    min_duration: int = 0,
+    min_size_mb: int = 0,
+    require_file_path: str | None = None,
+    filter_by_duration: bool = False,
+) -> builtins.list:
+    """
+    Универсальная функция для получения целевых записей.
+
+    Args:
+        pipeline: Экземпляр PipelineManager
+        from_date: Дата начала
+        to_date: Дата окончания
+        select_all: Выбрать все записи
+        recordings: Строка с ID записей через запятую
+        allowed_statuses: Список разрешенных статусов
+        min_duration: Минимальная длительность в минутах
+        min_size_mb: Минимальный размер в МБ
+        require_file_path: Требуемый путь к файлу ('local_video_path', 'processed_audio_path', 'processed_video_path')
+        filter_by_duration: Фильтровать ли по длительности
+
+    Returns:
+        list: Список целевых записей
+    """
+    if recordings:
+        # Если указаны конкретные записи, ищем их напрямую в БД
+        recordings_list = recordings.split(',')
+        try:
+            # Пытаемся интерпретировать как ID записей
+            recording_ids = [int(r.strip()) for r in recordings_list]
+            found_recordings = await pipeline.db_manager.get_recordings_by_ids(recording_ids)
+            target_recordings = []
+
+            for recording in found_recordings:
+                # Проверяем статус
+                if recording.status not in allowed_statuses:
+                    continue
+
+                # Проверяем длительность и размер, если указано
+                if filter_by_duration and recording.duration < min_duration:
+                    continue
+                if min_size_mb > 0 and recording.video_file_size < min_size_mb * 1024 * 1024:
+                    continue
+
+                # Проверяем наличие файла, если требуется
+                if require_file_path:
+                    file_path = getattr(recording, require_file_path, None)
+                    if not file_path:
+                        continue
+
+                target_recordings.append(recording)
+
+        except ValueError:
+            # Если не числа, ищем по именам в базе данных
+            all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
+            if filter_by_duration:
+                all_recordings = filter_recordings_by_duration(all_recordings, min_duration)
+
+            target_recordings = [
+                r
+                for r in all_recordings
+                if r.topic in recordings_list
+                and r.status in allowed_statuses
+                and (not require_file_path or getattr(r, require_file_path, None))
+            ]
+    elif select_all:
+        # Выбираем все записи за период
+        all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
+        if filter_by_duration:
+            all_recordings = filter_recordings_by_duration(all_recordings, min_duration)
+
+        target_recordings = [
+            r
+            for r in all_recordings
+            if r.status in allowed_statuses
+            and (not require_file_path or getattr(r, require_file_path, None))
+            and (min_size_mb == 0 or r.video_file_size >= min_size_mb * 1024 * 1024)
+        ]
+    else:
+        # По умолчанию берем все записи за период
+        all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
+        if filter_by_duration:
+            all_recordings = filter_recordings_by_duration(all_recordings, min_duration)
+
+        target_recordings = [
+            r
+            for r in all_recordings
+            if r.status in allowed_statuses
+            and (not require_file_path or getattr(r, require_file_path, None))
+            and (min_size_mb == 0 or r.video_file_size >= min_size_mb * 1024 * 1024)
+        ]
+
+    return target_recordings
+
+
 async def _list_command(
     from_date, to_date, last, account, config_file, use_db, export, output):
     """Команда list - показать записи из БД"""
@@ -438,20 +585,8 @@ async def _list_command(
     logger = get_logger()
 
     try:
-        # Инициализация БД
-        db_manager = None
-        if use_db:
-            db_config = DatabaseConfig.from_env()
-            db_manager = DatabaseManager(db_config)
-            await db_manager.create_database_if_not_exists()
-            await db_manager.create_tables()
-            print("🗄️ \033[1;34mПодключение к базе данных...\033[0m")
-
-        # Загружаем унифицированную конфигурацию
-        from config.unified_config import load_app_config
-
-        app_config = load_app_config()
-        pipeline = PipelineManager(db_manager, app_config, )
+        # Инициализация БД и pipeline
+        pipeline, db_manager = await _setup_pipeline(use_db)
 
         # Получаем записи из БД
         recordings = await pipeline.get_recordings_from_db(from_date, to_date)
@@ -484,30 +619,18 @@ async def _sync_command(from_date, to_date, last, account, config_file, use_db):
     logger = get_logger()
 
     try:
-        # Инициализация БД
-        db_manager = None
-        if use_db:
-            db_config = DatabaseConfig.from_env()
-            db_manager = DatabaseManager(db_config)
-            await db_manager.create_database_if_not_exists()
-            await db_manager.create_tables()
-            print("🗄️ \033[1;34mПодключение к базе данных...\033[0m")
+        # Инициализация БД и pipeline
+        pipeline, db_manager = await _setup_pipeline(use_db)
 
-            # Загружаем конфигурации всех аккаунтов
-            if os.path.exists(config_file):
-                configs = load_config_from_file(config_file)
-                if account:
-                    config = get_config_by_account(account, configs)
-                    configs = {account: config}
-            else:
-                logger.error(f"Файл конфигурации не найден: {config_file}")
-                return
-
-        # Загружаем унифицированную конфигурацию
-        from config.unified_config import load_app_config
-
-        app_config = load_app_config()
-        pipeline = PipelineManager(db_manager, app_config, )
+        # Загружаем конфигурации всех аккаунтов
+        if os.path.exists(config_file):
+            configs = load_config_from_file(config_file)
+            if account:
+                config = get_config_by_account(account, configs)
+                configs = {account: config}
+        else:
+            logger.error(f"Файл конфигурации не найден: {config_file}")
+            return
 
         # Используем спиннер для синхронизации
         from utils.spinner import spinner_manager
@@ -549,91 +672,51 @@ async def _download_command(
     logger = get_logger()
 
     try:
-        # Инициализация БД
-        db_manager = None
-        if use_db:
-            db_config = DatabaseConfig.from_env()
-            db_manager = DatabaseManager(db_config)
-            await db_manager.create_database_if_not_exists()
-            await db_manager.create_tables()
-            print("🗄️ \033[1;34mПодключение к базе данных...\033[0m")
+        # Инициализация БД и pipeline
+        pipeline, db_manager = await _setup_pipeline(use_db)
 
-            # Загружаем конфигурации всех аккаунтов
-            if os.path.exists(config_file):
-                configs = load_config_from_file(config_file)
-                if account:
-                    config = get_config_by_account(account, configs)
-                    configs = {account: config}
-            else:
-                logger.error(f"Файл конфигурации не найден: {config_file}")
-                return
+        # Загружаем конфигурации всех аккаунтов (нужны для синхронизации, но не для скачивания)
+        if os.path.exists(config_file):
+            configs = load_config_from_file(config_file)
+            if account:
+                config = get_config_by_account(account, configs)
+                configs = {account: config}
+        else:
+            logger.error(f"Файл конфигурации не найден: {config_file}")
+            return
 
-        # Загружаем унифицированную конфигурацию
-        from config.unified_config import load_app_config
+        # Определяем разрешенные статусы
+        allowed_statuses = [ProcessingStatus.INITIALIZED]
+        if allow_skipped:
+            allowed_statuses.append(ProcessingStatus.SKIPPED)
 
-        app_config = load_app_config()
-        pipeline = PipelineManager(db_manager, app_config, )
+        # Получаем целевые записи с фильтрацией по длительности и размеру
+        target_recordings = await _get_target_recordings(
+            pipeline=pipeline,
+            from_date=from_date,
+            to_date=to_date,
+            select_all=select_all,
+            recordings=recordings,
+            allowed_statuses=allowed_statuses,
+            min_duration=30,
+            min_size_mb=30,
+            filter_by_duration=True,
+        )
 
+        # Логируем предупреждения для записей, которые не прошли фильтрацию
         if recordings:
-            # Если указаны конкретные записи, ищем их напрямую в БД
-            recordings_list = recordings.split(',')
             try:
-                recording_ids = [int(r) for r in recordings_list]
-                target_recordings = []
-
-                # Ищем записи напрямую в базе данных по ID
+                recording_ids = [int(r.strip()) for r in recordings.split(',')]
                 found_recordings = await pipeline.db_manager.get_recordings_by_ids(recording_ids)
+                target_ids = {recording.db_id for recording in target_recordings}
                 found_ids = {recording.db_id for recording in found_recordings}
-
-                for recording in found_recordings:
-                    # Проверяем, что запись подходит для скачивания и имеет правильный статус
-                    allowed_statuses = [ProcessingStatus.INITIALIZED]
-                    if allow_skipped:
-                        allowed_statuses.append(ProcessingStatus.SKIPPED)
-
-                    if (
-                        recording.duration >= 30
-                        and recording.video_file_size >= 30 * 1024 * 1024
-                        and recording.status in allowed_statuses
-                    ):
-                        target_recordings.append(recording)
-                    else:
-                        if recording.status not in allowed_statuses:
-                            logger.warning(
-                                f"⚠️ Запись {recording.db_id} имеет статус {recording.status.value}, не подходит для загрузки"
-                            )
-                        else:
-                            logger.warning(
-                                f"⚠️ Запись {recording.db_id} не подходит для скачивания (длительность: {recording.duration} мин, размер: {recording.video_file_size / (1024 * 1024):.1f} МБ)"
-                            )
-
-                # Проверяем, какие ID не были найдены
                 for recording_id in recording_ids:
                     if recording_id not in found_ids:
                         logger.warning(f"⚠️ ID записи {recording_id} не найден в базе данных")
+                    elif recording_id not in target_ids:
+                        logger.warning(f"⚠️ ID записи {recording_id} не подходит для скачивания (статус, длительность или размер)")
             except ValueError:
-                # Если не числа, ищем по именам в базе данных
-                db_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
-                long_recordings = filter_recordings_by_duration(db_recordings, 30)
-                # Фильтруем записи по статусу и именам
-                allowed_statuses = [ProcessingStatus.INITIALIZED]
-                if allow_skipped:
-                    allowed_statuses.append(ProcessingStatus.SKIPPED)
-                target_recordings = [
-                    r
-                    for r in long_recordings
-                    if r.topic in recordings_list and r.status in allowed_statuses
-                ]
-        else:
-            # Получаем записи из базы данных за период
-            db_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
-            long_recordings = filter_recordings_by_duration(db_recordings, 30)
-
-            # Фильтруем записи по статусу
-            allowed_statuses = [ProcessingStatus.INITIALIZED]
-            if allow_skipped:
-                allowed_statuses.append(ProcessingStatus.SKIPPED)
-            target_recordings = [r for r in long_recordings if r.status in allowed_statuses]
+                pass  # Уже обработано в _get_target_recordings
 
         if target_recordings:
             success_count = await pipeline.download_recordings(
@@ -661,48 +744,19 @@ async def _process_command(
     logger = get_logger()
 
     try:
-        # Инициализация БД
-        db_manager = None
-        if use_db:
-            db_config = DatabaseConfig.from_env()
-            db_manager = DatabaseManager(db_config)
-            await db_manager.create_database_if_not_exists()
-            await db_manager.create_tables()
-            print("🗄️ \033[1;34mПодключение к базе данных...\033[0m")
+        # Инициализация БД и pipeline
+        pipeline, db_manager = await _setup_pipeline(use_db)
 
-        # Загружаем унифицированную конфигурацию
-        from config.unified_config import load_app_config
-
-        app_config = load_app_config()
-        pipeline = PipelineManager(db_manager, app_config, )
-
-        if recordings:
-            # Если указаны конкретные записи, ищем их по ID
-            try:
-                recording_ids = [int(r.strip()) for r in recordings.split(',')]
-                # Получаем записи по ID из БД напрямую
-                found_recordings = await pipeline.db_manager.get_recordings_by_ids(recording_ids)
-                # Фильтруем по статусу DOWNLOADED и наличию файла
-                target_recordings = [
-                    r for r in found_recordings
-                    if r.status == ProcessingStatus.DOWNLOADED and r.local_video_path
-                ]
-            except ValueError:
-                logger.error("❌ Ошибка: ID записей должны быть числами")
-                return
-        elif select_all:
-            all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
-            target_recordings = [
-                r for r in all_recordings
-                if r.status == ProcessingStatus.DOWNLOADED and r.local_video_path
-            ]
-        else:
-            # По умолчанию берем все записи со статусом DOWNLOADED
-            all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
-            target_recordings = [
-                r for r in all_recordings
-                if r.status == ProcessingStatus.DOWNLOADED and r.local_video_path
-            ]
+        # Получаем целевые записи со статусом DOWNLOADED и наличием файла
+        target_recordings = await _get_target_recordings(
+            pipeline=pipeline,
+            from_date=from_date,
+            to_date=to_date,
+            select_all=select_all,
+            recordings=recordings,
+            allowed_statuses=[ProcessingStatus.DOWNLOADED],
+            require_file_path='local_video_path',
+        )
 
         if target_recordings:
             success_count = await pipeline.process_recordings(target_recordings)
@@ -729,6 +783,7 @@ async def _transcribe_command(
     select_all,
     recordings,
     transcription_model,
+    topic_mode,
 ):
     """Команда transcribe - транскрибировать записи"""
     from_date, to_date = _parse_dates(from_date, to_date, last)
@@ -737,50 +792,23 @@ async def _transcribe_command(
     logger = get_logger()
 
     try:
-        # Инициализация БД
-        db_manager = None
-        if use_db:
-            db_config = DatabaseConfig.from_env()
-            db_manager = DatabaseManager(db_config)
-            await db_manager.create_database_if_not_exists()
-            await db_manager.create_tables()
-            print("🗄️ \033[1;34mПодключение к базе данных...\033[0m")
+        # Инициализация БД и pipeline
+        pipeline, db_manager = await _setup_pipeline(use_db)
 
-        # Загружаем унифицированную конфигурацию
-        from config.unified_config import load_app_config
-
-        app_config = load_app_config()
-        pipeline = PipelineManager(db_manager, app_config, )
-
-        if recordings:
-            # Если указаны конкретные записи, ищем их по ID
-            try:
-                recording_ids = [int(r.strip()) for r in recordings.split(',')]
-                found_recordings = await pipeline.db_manager.get_recordings_by_ids(recording_ids)
-                target_recordings = [
-                    r for r in found_recordings
-                    if r.status == ProcessingStatus.PROCESSED and r.processed_audio_path
-                ]
-            except ValueError:
-                logger.error("❌ Ошибка: ID записей должны быть числами")
-                return
-        elif select_all:
-            all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
-            target_recordings = [
-                r for r in all_recordings
-                if r.status == ProcessingStatus.PROCESSED and r.processed_audio_path
-            ]
-        else:
-            # По умолчанию берем все записи со статусом PROCESSED и с аудио файлом
-            all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
-            target_recordings = [
-                r for r in all_recordings
-                if r.status == ProcessingStatus.PROCESSED and r.processed_audio_path
-            ]
+        # Получаем целевые записи со статусом PROCESSED и наличием аудио файла
+        target_recordings = await _get_target_recordings(
+            pipeline=pipeline,
+            from_date=from_date,
+            to_date=to_date,
+            select_all=select_all,
+            recordings=recordings,
+            allowed_statuses=[ProcessingStatus.PROCESSED],
+            require_file_path='processed_audio_path',
+        )
 
         if target_recordings:
             success_count = await pipeline.transcribe_recordings(
-                target_recordings, transcription_model=transcription_model
+                target_recordings, transcription_model=transcription_model, topic_mode=topic_mode
             )
             logger.info(f"✅ Транскрибация завершена: {success_count}/{len(target_recordings)}")
         else:
@@ -815,20 +843,8 @@ async def _upload_command(
     logger = get_logger()
 
     try:
-        # Инициализация БД
-        db_manager = None
-        if use_db:
-            db_config = DatabaseConfig.from_env()
-            db_manager = DatabaseManager(db_config)
-            await db_manager.create_database_if_not_exists()
-            await db_manager.create_tables()
-            print("🗄️ \033[1;34mПодключение к базе данных...\033[0m")
-
-        # Загружаем унифицированную конфигурацию
-        from config.unified_config import load_app_config
-
-        app_config = load_app_config()
-        pipeline = PipelineManager(db_manager, app_config, )
+        # Инициализация БД и pipeline
+        pipeline, db_manager = await _setup_pipeline(use_db)
 
         # Определяем платформы для загрузки
         platforms = []
@@ -844,31 +860,15 @@ async def _upload_command(
             logger.error("❌ Не указаны платформы для загрузки")
             return
 
-        # Выбираем записи для загрузки
-        if select_all:
-            all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
-            target_recordings = [
-                r for r in all_recordings
-                if r.status in [ProcessingStatus.PROCESSED, ProcessingStatus.TRANSCRIBED]
-            ]
-        elif recordings:
-            # Если указаны конкретные записи, ищем их по ID
-            try:
-                recording_ids = [int(r.strip()) for r in recordings.split(',')]
-                found_recordings = await pipeline.db_manager.get_recordings_by_ids(recording_ids)
-                target_recordings = [
-                    r for r in found_recordings
-                    if r.status in [ProcessingStatus.PROCESSED, ProcessingStatus.TRANSCRIBED]
-                ]
-            except ValueError:
-                logger.error("❌ Ошибка: ID записей должны быть числами")
-                return
-        else:
-            all_recordings = await pipeline.get_recordings_from_db(from_date, to_date)
-            target_recordings = [
-                r for r in all_recordings
-                if r.status in [ProcessingStatus.PROCESSED, ProcessingStatus.TRANSCRIBED]
-            ]
+        # Получаем целевые записи со статусом PROCESSED или TRANSCRIBED
+        target_recordings = await _get_target_recordings(
+            pipeline=pipeline,
+            from_date=from_date,
+            to_date=to_date,
+            select_all=select_all,
+            recordings=recordings,
+            allowed_statuses=[ProcessingStatus.PROCESSED, ProcessingStatus.TRANSCRIBED],
+        )
 
         if target_recordings:
             success_count, uploaded_recordings = await pipeline.upload_recordings(target_recordings, platforms)
@@ -898,20 +898,8 @@ async def _reset_command(
     logger = get_logger()
 
     try:
-        # Инициализация БД
-        db_manager = None
-        if use_db:
-            db_config = DatabaseConfig.from_env()
-            db_manager = DatabaseManager(db_config)
-            await db_manager.create_database_if_not_exists()
-            await db_manager.create_tables()
-            print("🗄️ \033[1;34mПодключение к базе данных...\033[0m")
-
-        # Загружаем унифицированную конфигурацию
-        from config.unified_config import load_app_config
-
-        app_config = load_app_config()
-        pipeline = PipelineManager(db_manager, app_config, )
+        # Инициализация БД и pipeline
+        pipeline, db_manager = await _setup_pipeline(use_db)
 
         # Полная очистка БД и удаление всех видео
         if full:
@@ -1047,28 +1035,14 @@ async def _reset_command(
         sys.exit(1)
 
 
-async def _clean_command(from_date, to_date, account, config_file, use_db,  days):
+async def _clean_command(use_db: bool, days: int):
     """Команда clean - очистить старые записи"""
-    # Для команды clean мы не используем from_date и to_date, только days
-
     setup_logger()
     logger = get_logger()
 
     try:
-        # Инициализация БД
-        db_manager = None
-        if use_db:
-            db_config = DatabaseConfig.from_env()
-            db_manager = DatabaseManager(db_config)
-            await db_manager.create_database_if_not_exists()
-            await db_manager.create_tables()
-            print("🗄️ \033[1;34mПодключение к базе данных...\033[0m")
-
-        # Загружаем унифицированную конфигурацию
-        from config.unified_config import load_app_config
-
-        app_config = load_app_config()
-        pipeline = PipelineManager(db_manager, app_config, )
+        # Инициализация БД и pipeline
+        pipeline, db_manager = await _setup_pipeline(use_db)
 
         # Используем спиннер для очистки
         from utils.spinner import spinner_manager
@@ -1177,6 +1151,7 @@ async def _full_process_command(
     allow_skipped,
     no_transcription,
     transcription_model,
+    topic_mode,
 ):
     """Команда full-process - полный пайплайн: скачать + обработать + загрузить"""
     from_date, to_date = _parse_dates(from_date, to_date, last)
@@ -1185,20 +1160,8 @@ async def _full_process_command(
     logger = get_logger()
 
     try:
-        # Инициализация БД
-        db_manager = None
-        if use_db:
-            db_config = DatabaseConfig.from_env()
-            db_manager = DatabaseManager(db_config)
-            await db_manager.create_database_if_not_exists()
-            await db_manager.create_tables()
-            print("🗄️ \033[1;34mПодключение к базе данных...\033[0m")
-
-        # Загружаем унифицированную конфигурацию
-        from config.unified_config import load_app_config
-
-        app_config = load_app_config()
-        pipeline = PipelineManager(db_manager, app_config, )
+        # Инициализация БД и pipeline
+        pipeline, db_manager = await _setup_pipeline(use_db)
 
         # Загружаем конфигурации всех аккаунтов
         if os.path.exists(config_file):
@@ -1245,6 +1208,7 @@ async def _full_process_command(
             allow_skipped=allow_skipped,
             no_transcription=no_transcription,
             transcription_model=transcription_model,
+            topic_mode=topic_mode,
         )
 
         # Выводим итоговую статистику
@@ -1307,7 +1271,7 @@ async def _get_zoom_api(account: str | None, config_file: str) -> ZoomAPI:
     return ZoomAPI(config)
 
 
-def _export_recordings(recordings: list, export_format: str, output_file: str | None):
+def _export_recordings(recordings: builtins.list, export_format: str, output_file: str | None):
     """Экспорт записей в файл"""
     logger = get_logger()
 

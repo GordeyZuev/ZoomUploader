@@ -11,8 +11,11 @@ load_dotenv()
 
 def setup_logger(log_level: str | None = None, log_file: str | None = None) -> None:
     """Настройка логгера."""
+    # Уровень для консоли берется из env
     if log_level is None:
-        log_level = os.getenv("LOG_LEVEL", "INFO")
+        console_level = os.getenv("LOG_LEVEL", "INFO")
+    else:
+        console_level = log_level
 
     env_log_file = os.getenv("LOG_FILE")
     error_log_file = os.getenv("ERROR_LOG_FILE")
@@ -35,13 +38,15 @@ def setup_logger(log_level: str | None = None, log_file: str | None = None) -> N
         "{extra[module]: <25} | {name}:{function}:{line} - {message}"
     )
 
+    # Консольный handler - уровень из env
     logger.add(
         sys.stderr,
         format=console_format,
-        level=log_level,
+        level=console_level,
         colorize=True,
     )
 
+    # Файловый handler - всегда INFO
     if log_file:
         log_path = Path(log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -49,7 +54,7 @@ def setup_logger(log_level: str | None = None, log_file: str | None = None) -> N
         logger.add(
             log_file,
             format=file_format,
-            level=log_level,
+            level="INFO",
             rotation="10 MB",
             retention="7 days",
             compression="zip",
