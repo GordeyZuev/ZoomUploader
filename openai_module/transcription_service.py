@@ -122,7 +122,8 @@ class TranscriptionService:
                         f"🔄 Повторная попытка {attempt}/{self.config.retry_attempts} "
                         f"(прошло {elapsed/60:.1f} минут)"
                     )
-                    await asyncio.sleep(self.config.retry_delay)
+                    # Задержка перед повтором уже обрабатывается в блоке except
+                    # Здесь не добавляем дополнительную задержку
 
                 # Открываем файл и отправляем в API
                 attempt_start = time.time()
@@ -247,20 +248,58 @@ class TranscriptionService:
                 last_error = e
                 elapsed = time.time() - start_time
                 error_type = type(e).__name__
+                error_str = str(e).lower()
 
-                # Проверяем, является ли ошибка таймаутом
-                if "timeout" in str(e).lower() or "timed out" in str(e).lower():
+                # Проверяем тип ошибки для выбора стратегии повтора
+                is_connection_error = "connection" in error_str or "apiconnectionerror" in error_str
+                is_timeout = "timeout" in error_str or "timed out" in error_str
+                is_rate_limit = "rate limit" in error_str or "429" in error_str
+
+                if is_timeout:
                     logger.warning(
                         f"⚠️ Таймаут при транскрибации (попытка {attempt}/{self.config.retry_attempts})\n"
                         f"   ⏱️  Прошло времени: {elapsed/60:.1f} минут\n"
                         f"   💡 Это может быть нормально для больших файлов. "
                         f"Текущий таймаут: {self.config.timeout/60:.1f} минут"
                     )
+                    # Для таймаутов увеличиваем задержку перед повтором
+                    if attempt < self.config.retry_attempts:
+                        wait_time = self.config.retry_delay * (2 ** (attempt - 1))  # Экспоненциальная задержка
+                        logger.info(f"   ⏳ Ожидание {wait_time:.1f} сек перед повтором...")
+                        await asyncio.sleep(wait_time)
+                elif is_connection_error:
+                    logger.warning(
+                        f"⚠️ Ошибка подключения при транскрибации (попытка {attempt}/{self.config.retry_attempts}): {error_type}\n"
+                        f"   ⏱️  Прошло времени: {elapsed/60:.1f} минут\n"
+                        f"   💡 Возможные причины: проблемы с сетью, rate limiting, перегрузка сервера"
+                    )
+                    # Для ошибок подключения используем экспоненциальную задержку
+                    if attempt < self.config.retry_attempts:
+                        wait_time = self.config.retry_delay * (2 ** (attempt - 1))  # 1с, 2с, 4с...
+                        # Но не больше 30 секунд
+                        wait_time = min(wait_time, 30.0)
+                        logger.info(f"   ⏳ Ожидание {wait_time:.1f} сек перед повтором (экспоненциальная задержка)...")
+                        await asyncio.sleep(wait_time)
+                elif is_rate_limit:
+                    logger.warning(
+                        f"⚠️ Rate limit при транскрибации (попытка {attempt}/{self.config.retry_attempts}): {error_type}\n"
+                        f"   ⏱️  Прошло времени: {elapsed/60:.1f} минут\n"
+                        f"   💡 Превышен лимит запросов к API, увеличиваем задержку"
+                    )
+                    # Для rate limit используем большую задержку
+                    if attempt < self.config.retry_attempts:
+                        wait_time = 10.0 * attempt  # 10с, 20с, 30с...
+                        logger.info(f"   ⏳ Ожидание {wait_time:.1f} сек перед повтором (rate limit)...")
+                        await asyncio.sleep(wait_time)
                 else:
                     logger.warning(
                         f"⚠️ Ошибка транскрибации (попытка {attempt}/{self.config.retry_attempts}): {error_type}: {e}\n"
                         f"   ⏱️  Прошло времени: {elapsed/60:.1f} минут"
                     )
+                    # Для других ошибок используем стандартную задержку
+                    if attempt < self.config.retry_attempts:
+                        wait_time = self.config.retry_delay * attempt
+                        await asyncio.sleep(wait_time)
 
         # Если все попытки неудачны
         logger.error(f"❌ Не удалось транскрибировать аудио после {self.config.retry_attempts} попыток")

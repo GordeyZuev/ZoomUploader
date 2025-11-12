@@ -49,7 +49,7 @@ class InteractiveMapper:
         if privacy_status is None:
             return None, None, None
 
-        description = f"Запись от {date_str}"
+        description = ""
 
         console.print(
             f"\n[bold green]✅ Загружаем:[/bold green] [bold white]\"{youtube_title}\"[/bold white] [bold green]как[/bold green] [bold cyan]{privacy_status}[/bold cyan]"

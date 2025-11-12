@@ -4,6 +4,7 @@
 
 import asyncio
 import os
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -483,6 +484,20 @@ class PipelineManager:
             else:
                 return f"{hours}ч {remaining_minutes}м"
 
+    def _format_elapsed_time(self, seconds: float) -> str:
+        """Форматирование времени выполнения в читаемый вид"""
+        if seconds < 60:
+            return f"{seconds:.1f}с"
+        elif seconds < 3600:
+            minutes = int(seconds // 60)
+            secs = int(seconds % 60)
+            return f"{minutes}м {secs}с"
+        else:
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            secs = int(seconds % 60)
+            return f"{hours}ч {minutes}м {secs}с"
+
     async def run_full_pipeline(
         self,
         configs: dict,
@@ -530,33 +545,77 @@ class PipelineManager:
             return {"success": False, "message": "Нет записей для обработки"}
 
         self.logger.info(f"🚀 Запуск полного пайплайна для {len(target_recordings)} записей")
+        
+        # Начало отсчета общего времени выполнения пайплайна
+        pipeline_start_time = time.time()
 
+        # ЭТАП 1: СКАЧИВАНИЕ
+        self.console.print()
+        self.console.print("[bold blue]" + "=" * 70 + "[/bold blue]")
+        self.console.print("[bold blue]📥 ЭТАП 1: СКАЧИВАНИЕ ЗАПИСЕЙ[/bold blue]")
+        self.console.print("[bold blue]" + "=" * 70 + "[/bold blue]")
+        self.console.print()
+        stage_start_time = time.time()
         download_count = await self.download_recordings(target_recordings)
+        stage_elapsed = time.time() - stage_start_time
+        self.console.print()
+        self.console.print(
+            f"[bold green]✅ Этап 1 завершен: скачано {download_count}/{len(target_recordings)} записей "
+            f"[dim](время выполнения: {self._format_elapsed_time(stage_elapsed)})[/dim][/bold green]"
+        )
 
         # Проверяем, есть ли записи для обработки (скачанные или уже имеющиеся)
         recordings_to_process = [r for r in target_recordings if r.status == ProcessingStatus.DOWNLOADED]
         if not recordings_to_process:
+            pipeline_total_time = time.time() - pipeline_start_time
             return {
                 "success": False,
                 "message": "Нет записей для обработки (ничего не скачано)",
                 "download_count": download_count,
                 "process_count": 0,
-                "upload_count": 0
+                "upload_count": 0,
+                "total_time": pipeline_total_time,
             }
 
+        # ЭТАП 2: ОБРАБОТКА
+        self.console.print()
+        self.console.print("[bold yellow]" + "=" * 70 + "[/bold yellow]")
+        self.console.print("[bold yellow]🎬 ЭТАП 2: ОБРАБОТКА ВИДЕО[/bold yellow]")
+        self.console.print("[bold yellow]" + "=" * 70 + "[/bold yellow]")
+        self.console.print()
+        stage_start_time = time.time()
         process_count = await self.process_recordings(recordings_to_process)
+        stage_elapsed = time.time() - stage_start_time
+        self.console.print()
+        self.console.print(
+            f"[bold green]✅ Этап 2 завершен: обработано {process_count}/{len(recordings_to_process)} записей "
+            f"[dim](время выполнения: {self._format_elapsed_time(stage_elapsed)})[/dim][/bold green]"
+        )
 
-        # Проверяем, есть ли записи для транскрибации (обработанные с аудио)
+        # ЭТАП 3: ТРАНСКРИБАЦИЯ
         transcribe_count = 0
         if not no_transcription:
             recordings_to_transcribe = [
-            r for r in target_recordings
-            if r.status == ProcessingStatus.PROCESSED and r.processed_audio_path
-        ]
-        if recordings_to_transcribe:
-            transcribe_count = await self.transcribe_recordings(recordings_to_transcribe)
+                r for r in target_recordings
+                if r.status == ProcessingStatus.PROCESSED 
+                and (r.processed_audio_path or r.processed_video_path)
+            ]
+            if recordings_to_transcribe:
+                self.console.print()
+                self.console.print("[bold cyan]" + "=" * 70 + "[/bold cyan]")
+                self.console.print("[bold cyan]🎤 ЭТАП 3: ТРАНСКРИБАЦИЯ АУДИО[/bold cyan]")
+                self.console.print("[bold cyan]" + "=" * 70 + "[/bold cyan]")
+                self.console.print()
+                stage_start_time = time.time()
+                transcribe_count = await self.transcribe_recordings(recordings_to_transcribe)
+                stage_elapsed = time.time() - stage_start_time
+                self.console.print()
+                self.console.print(
+                    f"[bold green]✅ Этап 3 завершен: транскрибировано {transcribe_count}/{len(recordings_to_transcribe)} записей "
+                    f"[dim](время выполнения: {self._format_elapsed_time(stage_elapsed)})[/dim][/bold green]"
+                )
 
-        # Проверяем, есть ли записи для загрузки (обработанные, можно транскрибированные)
+        # ЭТАП 4: ЗАГРУЗКА НА ПЛАТФОРМЫ
         recordings_to_upload = [
             r for r in target_recordings
             if r.status in [ProcessingStatus.PROCESSED, ProcessingStatus.TRANSCRIBED]
@@ -564,7 +623,22 @@ class PipelineManager:
         upload_count = 0
         uploaded_recordings = []
         if recordings_to_upload and platforms:
+            self.console.print()
+            self.console.print("[bold green]" + "=" * 70 + "[/bold green]")
+            self.console.print("[bold green]📤 ЭТАП 4: ЗАГРУЗКА НА ПЛАТФОРМЫ[/bold green]")
+            self.console.print("[bold green]" + "=" * 70 + "[/bold green]")
+            self.console.print()
+            stage_start_time = time.time()
             upload_count, uploaded_recordings = await self.upload_recordings(recordings_to_upload, platforms)
+            stage_elapsed = time.time() - stage_start_time
+            self.console.print()
+            self.console.print(
+                f"[bold green]✅ Этап 4 завершен: загружено {upload_count}/{len(recordings_to_upload)} записей "
+                f"[dim](время выполнения: {self._format_elapsed_time(stage_elapsed)})[/dim][/bold green]"
+            )
+
+        # Вычисляем общее время выполнения пайплайна
+        pipeline_total_time = time.time() - pipeline_start_time
 
         return {
             "success": True,
@@ -573,6 +647,7 @@ class PipelineManager:
             "transcribe_count": transcribe_count,
             "upload_count": upload_count,
             "uploaded_recordings": uploaded_recordings,
+            "total_time": pipeline_total_time,
         }
 
     async def _download_single_recording(self, recording: MeetingRecording) -> bool:
@@ -980,7 +1055,9 @@ class PipelineManager:
                     )
 
                     # Ждем завершения с возможностью прерывания
-                    success, processed_path, processed_audio_path = await process_task
+                    # process_video_with_audio_detection возвращает только (success, processed_path)
+                    success, processed_path = await process_task
+                    processed_audio_path = None  # Этот метод не создает отдельный аудио файл
 
                 except asyncio.CancelledError:
                     self.console.print("\n[bold red]❌ Обработка прервана пользователем[/bold red]")
@@ -997,6 +1074,48 @@ class PipelineManager:
                 # Обновляем статус на PROCESSED после успешной обработки
                 recording.status = ProcessingStatus.PROCESSED
                 recording.processed_video_path = processed_path
+                
+                # Извлекаем аудио из обработанного видео, если его еще нет
+                if not processed_audio_path:
+                    try:
+                        # Создаем путь для аудио файла
+                        safe_title = processor._sanitize_filename(recording.topic)
+                        audio_dir = "video/processed_audio"
+                        os.makedirs(audio_dir, exist_ok=True)
+                        audio_filename = f"{safe_title}_processed.mp3"
+                        audio_path = os.path.join(audio_dir, audio_filename)
+                        
+                        # Извлекаем аудио из обработанного видео с оптимальными параметрами для Whisper API
+                        # Используем те же параметры, что и AudioCompressor (64k, 16kHz, моно)
+                        # чтобы сразу получить файл подходящего размера
+                        self.logger.info(f"🎵 Извлечение аудио из обработанного видео: {recording.topic}")
+                        extract_cmd = [
+                            'ffmpeg',
+                            '-i', processed_path,
+                            '-vn',  # Без видео
+                            '-acodec', 'libmp3lame',  # MP3 кодек
+                            '-ab', '64k',  # Битрейт (оптимально для Whisper)
+                            '-ar', '16000',  # Частота дискретизации 16kHz (оптимально для речи)
+                            '-ac', '1',  # Моно (для речи достаточно)
+                            '-y',  # Перезаписать, если существует
+                            audio_path,
+                        ]
+                        
+                        extract_process = await asyncio.create_subprocess_exec(
+                            *extract_cmd,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE
+                        )
+                        await extract_process.wait()
+                        
+                        if extract_process.returncode == 0 and os.path.exists(audio_path):
+                            processed_audio_path = audio_path
+                            self.logger.info(f"✅ Аудио извлечено: {audio_path}")
+                        else:
+                            self.logger.warning(f"⚠️ Не удалось извлечь аудио из видео: {recording.topic}")
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Ошибка при извлечении аудио: {e}")
+                
                 # Сохраняем путь к обработанному аудио, если оно было создано
                 if processed_audio_path:
                     # Используем относительный путь, если возможно
@@ -1042,21 +1161,27 @@ class PipelineManager:
                 TimeElapsedColumn,
             )
 
-            # Проверяем наличие аудио файла
+            # Проверяем наличие аудио или видео файла
+            # TranscriptionService может работать с видео файлами, извлекая аудио автоматически
+            import os
             audio_path = recording.processed_audio_path
             if not audio_path:
-                self.logger.error(f"Аудио файл не найден для записи: {recording.topic}")
-                recording.status = ProcessingStatus.FAILED
-                await self.db_manager.update_recording(recording)
-                return False
+                # Если нет отдельного аудио файла, используем видео файл
+                audio_path = recording.processed_video_path
+                if audio_path:
+                    self.logger.info(f"Используем видео файл для транскрибации: {recording.topic}")
+                else:
+                    self.logger.error(f"Аудио или видео файл не найден для записи: {recording.topic}")
+                    recording.status = ProcessingStatus.FAILED
+                    await self.db_manager.update_recording(recording)
+                    return False
 
             # Если путь начинается с '/', это абсолютный путь, иначе - относительный
-            import os
             if not os.path.isabs(audio_path):
                 audio_path = os.path.join(os.getcwd(), audio_path)
 
             if not os.path.exists(audio_path):
-                self.logger.error(f"Аудио файл не найден: {audio_path}")
+                self.logger.error(f"Файл не найден: {audio_path}")
                 recording.status = ProcessingStatus.FAILED
                 await self.db_manager.update_recording(recording)
                 return False
@@ -1198,6 +1323,9 @@ class PipelineManager:
             success_count = 0
             for platform in platforms:
                 try:
+                    # Формируем топики для добавления в описание (не добавляем в description, добавляем в parts позже)
+                    topics_description = self._format_topics_description(recording.topic_timestamps, platform)
+                    
                     # Подготавливаем метаданные для конкретной платформы
                     if (
                         not recording.is_mapped
@@ -1207,14 +1335,6 @@ class PipelineManager:
                         # Используем общие метаданные + спрашиваем специфичные для платформы
                         title = common_metadata['title']
                         description = common_metadata.get('description', '')
-
-                        # Добавляем топики в описание, если они есть
-                        topics_description = self._format_topics_description(recording.topic_timestamps, platform)
-                        if topics_description:
-                            if description:
-                                description = f"{description}\n\n{topics_description}"
-                            else:
-                                description = topics_description
 
                         thumbnail_path = common_metadata.get('thumbnail_path')
                         privacy_status = common_metadata.get('privacy_status', 'unlisted')
@@ -1238,14 +1358,6 @@ class PipelineManager:
                         title = mapping_result.youtube_title
                         description = mapping_result.description
 
-                        # Добавляем топики в описание, если они есть
-                        topics_description = self._format_topics_description(recording.topic_timestamps, platform)
-                        if topics_description:
-                            if description:
-                                description = f"{description}\n\n{topics_description}"
-                            else:
-                                description = topics_description
-
                         thumbnail_path = mapping_result.thumbnail_path
                         playlist_id = (
                             mapping_result.youtube_playlist_id if platform == 'youtube' else None
@@ -1264,7 +1376,7 @@ class PipelineManager:
                             upload_kwargs['album_id'] = album_id
 
                     upload_time_str = datetime.now().strftime('%d.%m.%Y %H:%M')
-                    parts = [title]
+                    parts = []
                     if description:
                         parts.append(description)
                     if topics_description:
@@ -1319,8 +1431,12 @@ class PipelineManager:
         """Интерактивный ввод общих метаданных для всех платформ"""
         metadata = {}
 
-        print(f"\n🎬 Настройка метаданных для видео: {recording.topic}")
-        print("=" * 60)
+        self.console.print()
+        self.console.print("[bold yellow]" + "=" * 70 + "[/bold yellow]")
+        self.console.print("[bold yellow]🎬 НАСТРОЙКА МЕТАДАННЫХ[/bold yellow]")
+        self.console.print("[bold yellow]" + "=" * 70 + "[/bold yellow]")
+        self.console.print(f"[bold white]Видео:[/bold white] {recording.topic}")
+        self.console.print()
 
         # Название (обязательное)
         while True:
@@ -1328,7 +1444,7 @@ class PipelineManager:
             if title:
                 metadata['title'] = title
                 break
-            print("❌ Название не может быть пустым!")
+            self.console.print("[red]❌ Название не может быть пустым![/red]")
 
         # Описание (необязательное)
         description = input("📄 Описание (необязательно, Enter для пропуска): ").strip()
@@ -1340,18 +1456,21 @@ class PipelineManager:
         if thumbnail_path and os.path.exists(thumbnail_path):
             metadata['thumbnail_path'] = thumbnail_path
         elif thumbnail_path:
-            print(f"⚠️ Файл миниатюры не найден: {thumbnail_path}")
+            self.console.print(f"[yellow]⚠️ Файл миниатюры не найден: {thumbnail_path}[/yellow]")
 
         # Приватность (по умолчанию unlisted)
         privacy_options = ['public', 'unlisted', 'private']
-        print(f"\n🔒 Настройки приватности: {', '.join(privacy_options)}")
+        self.console.print()
+        self.console.print("[dim]" + "-" * 70 + "[/dim]")
+        self.console.print(f"🔒 [bold]Настройки приватности:[/bold] {', '.join(privacy_options)}")
         privacy = input("🔒 Приватность (по умолчанию: unlisted): ").strip().lower()
         if privacy in privacy_options:
             metadata['privacy_status'] = privacy
         else:
             metadata['privacy_status'] = 'unlisted'
 
-        print("✅ Общие метаданные настроены")
+        self.console.print()
+        self.console.print("[bold green]✅ Общие метаданные настроены[/bold green]")
         return metadata
 
     def _get_platform_specific_metadata(
@@ -1360,8 +1479,11 @@ class PipelineManager:
         """Интерактивный ввод метаданных, специфичных для платформы"""
         metadata = {}
 
-        print(f"\n📺 Настройка для платформы: {platform.upper()}")
-        print("=" * 60)
+        self.console.print()
+        self.console.print("[bold cyan]" + "=" * 70 + "[/bold cyan]")
+        self.console.print(f"[bold cyan]📺 НАСТРОЙКА ДЛЯ {platform.upper()}[/bold cyan]")
+        self.console.print("[bold cyan]" + "=" * 70 + "[/bold cyan]")
+        self.console.print()
 
         # Плейлист/Альбом (необязательное)
         if platform == 'youtube':
@@ -1375,7 +1497,8 @@ class PipelineManager:
             if album_id:
                 metadata['album_id'] = album_id
 
-        print(f"✅ Метаданные для {platform.upper()} настроены")
+        self.console.print()
+        self.console.print(f"[bold green]✅ Метаданные для {platform.upper()} настроены[/bold green]")
         return metadata
 
     def _format_topics_description(

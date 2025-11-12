@@ -93,7 +93,7 @@ class TitleMapper:
             rule.get("youtube_title_template", "{original_title} ({date})"), variables
         )
 
-        description = f"Запись от {variables['date']}"
+        description = ""
 
         thumbnail_path = rule.get("thumbnail", "thumbnails/default_thumbnail.jpg")
 

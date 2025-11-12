@@ -1178,12 +1178,17 @@ async def _full_process_command(
         # Подготавливаем список записей
         recordings_list = recordings.split(',') if recordings else []
 
-        print("🚀 \033[1;34mЗапуск полного пайплайна...\033[0m")
-        print(f"📅 Период: {from_date} - {to_date or 'текущая дата'}")
+        # Выводим информацию о запуске пайплайна
+        pipeline.console.print()
+        pipeline.console.print("[bold magenta]" + "=" * 70 + "[/bold magenta]")
+        pipeline.console.print("[bold magenta]🚀 ЗАПУСК ПОЛНОГО ПАЙПЛАЙНА[/bold magenta]")
+        pipeline.console.print("[bold magenta]" + "=" * 70 + "[/bold magenta]")
+        pipeline.console.print(f"[bold]📅 Период:[/bold] {from_date} - {to_date or 'текущая дата'}")
         if platforms:
-            print(f"📤 Платформы: {', '.join(platforms)}")
+            pipeline.console.print(f"[bold]📤 Платформы:[/bold] {', '.join(platforms)}")
         else:
-            print("📤 Платформы: не указаны (только скачивание и обработка)")
+            pipeline.console.print("[bold]📤 Платформы:[/bold] не указаны (только скачивание и обработка)")
+        pipeline.console.print()
 
         # Запускаем полный пайплайн
         results = await pipeline.run_full_pipeline(
@@ -1198,27 +1203,41 @@ async def _full_process_command(
         )
 
         # Выводим итоговую статистику
-        print("\n" + "=" * 60)
-        print("📊 ИТОГИ ПОЛНОГО ПАЙПЛАЙНА")
-        print("=" * 60)
+        pipeline.console.print()
+        pipeline.console.print("[bold magenta]" + "=" * 70 + "[/bold magenta]")
+        pipeline.console.print("[bold magenta]📊 ИТОГИ ПОЛНОГО ПАЙПЛАЙНА[/bold magenta]")
+        pipeline.console.print("[bold magenta]" + "=" * 70 + "[/bold magenta]")
+        pipeline.console.print()
 
         if results.get('success', True):  # По умолчанию считаем успешным
-            print(f"✅ Скачано записей: {results.get('download_count', 0)}")
-            print(f"🎬 Обработано записей: {results.get('process_count', 0)}")
-            print(f"🎤 Транскрибировано записей: {results.get('transcribe_count', 0)}")
-            print(f"📤 Загружено записей: {results.get('upload_count', 0)}")
+            pipeline.console.print(f"✅ [bold]Скачано записей:[/bold] {results.get('download_count', 0)}")
+            pipeline.console.print(f"🎬 [bold]Обработано записей:[/bold] {results.get('process_count', 0)}")
+            pipeline.console.print(f"🎤 [bold]Транскрибировано записей:[/bold] {results.get('transcribe_count', 0)}")
+            pipeline.console.print(f"📤 [bold]Загружено записей:[/bold] {results.get('upload_count', 0)}")
+            
+            # Выводим общее время выполнения, если оно есть
+            if results.get('total_time'):
+                total_time_formatted = pipeline._format_elapsed_time(results['total_time'])
+                pipeline.console.print()
+                pipeline.console.print(f"⏱️  [bold]Общее время выполнения:[/bold] [cyan]{total_time_formatted}[/cyan]")
 
             # Отображаем список загруженных видео с ссылками
             uploaded_recordings = results.get('uploaded_recordings', [])
             if uploaded_recordings:
                 pipeline.display_uploaded_videos(uploaded_recordings)
         else:
-            print(f"❌ Пайплайн завершился с ошибкой: {results.get('message', 'Неизвестная ошибка')}")
+            pipeline.console.print(f"❌ [bold red]Пайплайн завершился с ошибкой:[/bold red] {results.get('message', 'Неизвестная ошибка')}")
 
         if results.get('errors'):
-            print(f"❌ Ошибок: {len(results['errors'])}")
+            pipeline.console.print()
+            pipeline.console.print("[bold red]" + "=" * 70 + "[/bold red]")
+            pipeline.console.print(f"[bold red]❌ ОШИБКИ: {len(results['errors'])}[/bold red]")
+            pipeline.console.print("[bold red]" + "=" * 70 + "[/bold red]")
             for error in results['errors']:
-                print(f"   • {error}")
+                pipeline.console.print(f"   • [red]{error}[/red]")
+        
+        pipeline.console.print()
+        pipeline.console.print("[dim]" + "=" * 70 + "[/dim]")
 
         # Закрываем соединение с БД
         if db_manager:
