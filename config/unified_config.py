@@ -26,7 +26,7 @@ class YouTubeConfig(PlatformConfig):
     client_secrets_file: str = "config/youtube_client_secrets.json"
     credentials_file: str = "config/youtube_credentials.json"
     scopes: list[str] = None
-    default_privacy: str = "private"
+    default_privacy: str = "unlisted"
     default_language: str = "ru"
 
     def __post_init__(self):
@@ -100,7 +100,7 @@ class UploadSettings:
     retry_attempts: int = 3
     retry_delay: int = 5
     interactive_mode: bool = True
-    default_privacy: str = "private"
+    default_privacy: str = "unlisted"
 
     def __post_init__(self):
         if self.supported_formats is None:

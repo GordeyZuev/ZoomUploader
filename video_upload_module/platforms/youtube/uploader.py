@@ -131,6 +131,7 @@ class YouTubeUploader(BaseUploader):
                     'title': title,
                     'description': description or f"Загружено {self._get_timestamp()}",
                     'defaultLanguage': self.config.default_language,
+                    'defaultAudioLanguage': self.config.default_language,
                 },
                 'status': {
                     'privacyStatus': privacy_status or self.config.default_privacy,

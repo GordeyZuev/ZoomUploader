@@ -22,7 +22,7 @@ class YouTubeConfig(PlatformConfig):
     client_secrets_file: str = "youtube_client_secrets.json"
     credentials_file: str = "youtube_credentials.json"
     scopes: list[str] | None = None
-    default_privacy: str = "private"
+    default_privacy: str = "unlisted"
     default_language: str = "ru"
 
     def __post_init__(self):

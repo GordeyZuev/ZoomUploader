@@ -13,7 +13,7 @@ class InteractiveMapper:
         self.logger = logger
 
     def handle_unknown_title(
-        self, original_title: str, start_time: str, default_privacy: str = "private"
+        self, original_title: str, start_time: str, default_privacy: str = "unlisted"
     ) -> tuple[str | None, str | None, str]:
         """Интерактивная обработка неизвестного названия."""
 
@@ -248,7 +248,7 @@ def get_interactive_mapper() -> InteractiveMapper:
 
 
 def handle_unknown_title_interactive(
-    original_title: str, start_time: str, default_privacy: str = "private"
+    original_title: str, start_time: str, default_privacy: str = "unlisted"
 ) -> tuple[str | None, str | None, str]:
     """Удобная функция для интерактивной обработки неизвестного названия."""
     mapper = get_interactive_mapper()

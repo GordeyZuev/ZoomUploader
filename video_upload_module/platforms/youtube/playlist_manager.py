@@ -27,7 +27,7 @@ class YouTubePlaylistManager:
             self.logger = logging.getLogger(__name__)
 
     async def create_playlist(
-        self, title: str, description: str = "", privacy_status: str = "private"
+        self, title: str, description: str = "", privacy_status: str = "unlisted"
     ) -> str | None:
         """Создание плейлиста"""
         try:
