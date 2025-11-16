@@ -284,7 +284,7 @@ class TopicExtractor:
 
 ## ОСНОВНАЯ ТЕМА ПАРЫ
 
-Выведи РОВНО ОДНУ тему (2–3 слова):
+Выведи РОВНО ОДНУ тему (2–3 слова):{f" Название темы НЕ должно содержать слова из названия курса '{recording_topic}'. Если тема содержит такие слова — убери их. Например, если курс называется 'Прикладной Python', а тема 'Асинхронное программирование Python', напиши только 'Асинхронное программирование'." if recording_topic else ""}
 Название темы
 
 Примеры: "Stable Diffusion", "Архитектура трансформеров", "Generative Models"
@@ -319,7 +319,7 @@ class TopicExtractor:
 
 ## ОСНОВНАЯ ТЕМА ПАРЫ
 
-Выведи РОВНО ОДНУ тему (2–3 слова):
+Выведи РОВНО ОДНУ тему (2–3 слова):{f" Название темы НЕ должно содержать слова из названия курса '{recording_topic}'. Если тема содержит такие слова — убери их. Например, если курс называется 'Прикладной Python', а тема 'Асинхронное программирование Python', напиши только 'Асинхронное программирование'." if recording_topic else ""}
 Название темы
 
 Примеры: "Stable Diffusion", "Архитектура трансформеров", "Generative Models"
@@ -588,8 +588,10 @@ class TopicExtractor:
 
                 if topic and len(topic) > 3:
                     words = topic.split()
-                    if len(words) > 4:
-                        topic = ' '.join(words[:4])
+                    if len(words) > 7:
+                        topic = ' '.join(words[:15]) + '...'
+                    elif len(topic) > 150:
+                        topic = topic[:150].rsplit(' ', 1)[0] + '...'
                     main_topics.append(topic)
                     logger.debug(f"✅ Найдена основная тема: {topic}")
 
@@ -673,11 +675,11 @@ class TopicExtractor:
 
         processed_main_topics = []
         for topic in main_topics[:1]:
-            words = topic.split()
-            if len(words) > 3:
-                topic = ' '.join(words[:3])
             topic = ' '.join(topic.split())
             if topic and len(topic) > 3:
+                words = topic.split()
+                if len(words) > 7:
+                    topic = ' '.join(words[:7]) + '...'
                 processed_main_topics.append(topic)
 
         if not processed_main_topics and main_topics_section_found:

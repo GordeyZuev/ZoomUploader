@@ -190,14 +190,14 @@ uv run python main.py recreate-db
     "mapping_rules": [
       {
         "pattern": "Название курса из Zoom",
-        "youtube_title_template": "(Л) Название ({date})",
+        "title_template": "(Л) Название ({date})",
         "thumbnail": "thumbnails/course.png",
         "youtube_playlist_id": "PLAYLIST_ID",
         "vk_album_id": "ALBUM_ID"
       }
     ],
     "default_rules": {
-      "youtube_title_template": "{original_title} ({date})",
+      "title_template": "{original_title} ({date})",
       "thumbnail": "thumbnails/ml_extra.png"
     },
     "date_format": "DD.MM.YYYY",

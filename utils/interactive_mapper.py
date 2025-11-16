@@ -41,8 +41,8 @@ class InteractiveMapper:
         )
         console.print(info_panel)
 
-        youtube_title = self._get_youtube_title(original_title, date_str)
-        if youtube_title is None:
+        title = self._get_title(original_title, date_str)
+        if title is None:
             return None, None, None
 
         privacy_status = self._get_privacy_status(default_privacy)
@@ -52,11 +52,11 @@ class InteractiveMapper:
         description = ""
 
         console.print(
-            f"\n[bold green]✅ Загружаем:[/bold green] [bold white]\"{youtube_title}\"[/bold white] [bold green]как[/bold green] [bold cyan]{privacy_status}[/bold cyan]"
+            f"\n[bold green]✅ Загружаем:[/bold green] [bold white]\"{title}\"[/bold white] [bold green]как[/bold green] [bold cyan]{privacy_status}[/bold cyan]"
         )
         console.print("[bold green]" + "=" * 60 + "[/bold green]")
 
-        return youtube_title, description, privacy_status
+        return title, description, privacy_status
 
     def ask_playlist_optional(self) -> str | None:
         """Опционально запросить ID плейлиста YouTube."""
@@ -71,28 +71,28 @@ class InteractiveMapper:
             print("\n   ❌ Отменено")
             return None
 
-    def _get_youtube_title(self, original_title: str, date_str: str) -> str | None:
-        """Получение названия для YouTube от пользователя."""
+    def _get_title(self, original_title: str, date_str: str) -> str | None:
+        """Получение названия видео от пользователя."""
 
         suggested_title = f"{original_title} ({date_str})"
 
-        print("🎬 Введите название для YouTube:")
+        print("🎬 Введите название видео:")
         print(f"   Предложение: {suggested_title}")
         print()
 
         while True:
             try:
-                youtube_title = input("   Название: ").strip()
+                title = input("   Название: ").strip()
 
-                if not youtube_title:
+                if not title:
                     print("   ❌ Название не может быть пустым")
                     continue
 
-                if len(youtube_title) > 100:
+                if len(title) > 100:
                     print("   ❌ Название слишком длинное (максимум 100 символов)")
                     continue
 
-                return youtube_title
+                return title
 
             except KeyboardInterrupt:
                 print("\n   ❌ Отменено пользователем")

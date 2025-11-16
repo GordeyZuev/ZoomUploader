@@ -414,12 +414,12 @@ class PipelineManager:
                 topic, recording.start_time, recording.duration
             )
 
-            if mapping_result.youtube_title:
+            if mapping_result.title:
                 # Есть маппинг - устанавливаем статус INITIALIZED
                 recording.is_mapped = True
                 recording.status = ProcessingStatus.INITIALIZED
                 self.logger.debug(
-                    f"✅ Маппинг найден для '{topic}' -> '{mapping_result.youtube_title}'"
+                    f"✅ Маппинг найден для '{topic}' -> '{mapping_result.title}'"
                 )
             else:
                 # Нет маппинга - устанавливаем статус SKIPPED
@@ -1443,7 +1443,7 @@ class PipelineManager:
                             upload_kwargs['album_id'] = platform_specific['album_id']
                     else:
                         # Используем данные из маппинга
-                        title = mapping_result.youtube_title
+                        title = mapping_result.title
                         description = mapping_result.description
 
                         thumbnail_path = mapping_result.thumbnail_path
@@ -1623,10 +1623,8 @@ class PipelineManager:
         if not topic_timestamps or len(topic_timestamps) == 0:
             return ""
 
-        # Лимиты длины описания
-        # YouTube: ~5000 символов
-        # VK: ~2000 символов (примерно)
-        max_length = 5000 if platform == 'youtube' else 2000
+        # Лимиты длины описания: ~5000 символов (VK & YouTube)
+        max_length = 5000
 
         # Формируем заголовок
         lines = ["🔹 Темы лекции:", ""]

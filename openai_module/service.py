@@ -439,17 +439,28 @@ class TranscriptionService:
             topic_timestamps = topics_result.get('topic_timestamps', [])
             long_pauses = topics_result.get('long_pauses', [])
 
-            # Добавляем паузы как отдельные временные метки
-            pause_timestamps = [
-                {
-                    'topic': 'Перерыв',
-                    'start': pause['start'],
-                    'end': pause['end'],
-                    'type': 'pause',
-                    'duration_minutes': pause.get('duration_minutes', (pause['end'] - pause['start']) / 60),
-                }
-                for pause in long_pauses
-            ]
+            # Проверяем, какие перерывы уже есть в topic_timestamps (добавленные моделью)
+            existing_pause_starts = set()
+            for ts in topic_timestamps:
+                topic = ts.get('topic', '').strip()
+                # Проверяем, является ли это перерывом (с учетом разных вариантов написания)
+                if topic.lower() in ['перерыв', 'pause', 'break']:
+                    existing_pause_starts.add(ts.get('start', 0))
+
+            # Добавляем паузы как отдельные временные метки, исключая дубликаты
+            pause_timestamps = []
+            for pause in long_pauses:
+                pause_start = pause['start']
+                # Пропускаем паузы, которые уже добавлены моделью
+                # Используем небольшой допуск (5 секунд) для учета возможных расхождений во времени
+                if not any(abs(pause_start - existing_start) < 5.0 for existing_start in existing_pause_starts):
+                    pause_timestamps.append({
+                        'topic': 'Перерыв',
+                        'start': pause_start,
+                        'end': pause['end'],
+                        'type': 'pause',
+                        'duration_minutes': pause.get('duration_minutes', (pause['end'] - pause_start) / 60),
+                    })
 
             # Объединяем темы и паузы, сортируем по времени начала
             all_timestamps = topic_timestamps + pause_timestamps
