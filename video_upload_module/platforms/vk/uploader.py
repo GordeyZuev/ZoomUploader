@@ -44,7 +44,7 @@ class VKUploader(BaseUploader):
         try:
             async with aiohttp.ClientSession() as session:
                 params = {'access_token': self.config.access_token, 'v': '5.131'}
-                async with session.get(f"{self.base_url}/users.get", params=params) as response:
+                async with session.post(f"{self.base_url}/users.get", data=params) as response:
                     if response.status == 200:
                         data = await response.json()
                         if 'error' in data:
@@ -58,7 +58,7 @@ class VKUploader(BaseUploader):
                                 if token:
                                     self.config.access_token = token
                                     params = {'access_token': self.config.access_token, 'v': '5.131'}
-                                    async with session.get(f"{self.base_url}/users.get", params=params) as recheck:
+                                    async with session.post(f"{self.base_url}/users.get", data=params) as recheck:
                                         if recheck.status == 200:
                                             again = await recheck.json()
                                             if 'error' not in again:
@@ -256,13 +256,13 @@ class VKUploader(BaseUploader):
             return None
 
     async def _make_request(self, method: str, params: dict[str, Any]) -> dict[str, Any] | None:
-        """Выполнение запроса к VK API."""
+        """Выполнение запроса к VK API. Использует POST для всех запросов, чтобы избежать проблем с длинными URL."""
         params['access_token'] = self.config.access_token
         params['v'] = '5.131'
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.base_url}/{method}", params=params) as response:
+                async with session.post(f"{self.base_url}/{method}", data=params) as response:
                     if response.status == 200:
                         data = await response.json()
                         if 'error' in data:
@@ -270,7 +270,8 @@ class VKUploader(BaseUploader):
                             return None
                         return data.get('response')
                     else:
-                        self.logger.error(f"HTTP Error: {response.status}")
+                        error_text = await response.text()
+                        self.logger.error(f"HTTP Error: {response.status}, Response: {error_text[:500]}")
                         return None
         except Exception as e:
             self.logger.error(f"Ошибка запроса к VK API: {e}")

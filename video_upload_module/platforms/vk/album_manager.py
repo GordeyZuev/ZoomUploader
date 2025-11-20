@@ -31,8 +31,8 @@ class VKAlbumManager:
                 params['group_id'] = self.config.group_id
 
             async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self.base_url}/video.addAlbum", params=params
+                async with session.post(
+                    f"{self.base_url}/video.addAlbum", data=params
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -60,8 +60,8 @@ class VKAlbumManager:
                 params['owner_id'] = -self.config.group_id
 
             async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self.base_url}/video.getAlbums", params=params
+                async with session.post(
+                    f"{self.base_url}/video.getAlbums", data=params
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -105,7 +105,7 @@ class VKAlbumManager:
                 params['owner_id'] = -self.config.group_id
 
             async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.base_url}/video.get", params=params) as response:
+                async with session.post(f"{self.base_url}/video.get", data=params) as response:
                     if response.status == 200:
                         data = await response.json()
                         if 'error' in data:
@@ -155,8 +155,8 @@ class VKAlbumManager:
                 params['privacy'] = privacy
 
             async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self.base_url}/video.editAlbum", params=params
+                async with session.post(
+                    f"{self.base_url}/video.editAlbum", data=params
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -180,8 +180,8 @@ class VKAlbumManager:
             params = {'album_id': album_id, 'access_token': self.config.access_token, 'v': '5.131'}
 
             async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self.base_url}/video.deleteAlbum", params=params
+                async with session.post(
+                    f"{self.base_url}/video.deleteAlbum", data=params
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -211,8 +211,8 @@ class VKAlbumManager:
             }
 
             async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self.base_url}/video.moveToAlbum", params=params
+                async with session.post(
+                    f"{self.base_url}/video.moveToAlbum", data=params
                 ) as response:
                     if response.status == 200:
                         data = await response.json()

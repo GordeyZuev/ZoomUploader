@@ -25,6 +25,7 @@ from utils.formatting import normalize_datetime_string
 from utils.interactive_mapper import get_interactive_mapper
 from utils.title_mapper import TitleMapper
 from video_download_module import ZoomDownloader
+from video_upload_module.core.base import UploadResult
 
 logger = get_logger()
 
@@ -1407,11 +1408,13 @@ class PipelineManager:
                 self.console.print("[cyan]📤 Требуется ввод метаданных для загрузки[/cyan]")
                 common_metadata = self._get_common_metadata(recording)
 
-            # Загружаем на каждую платформу с крутящимся индикатором
-            success_count = 0
+            # Подготавливаем метаданные для всех платформ заранее (до параллельной загрузки)
+            platform_configs = {}
+            upload_time_str = datetime.now().strftime('%d.%m.%Y %H:%M')
+            
             for platform in platforms:
                 try:
-                    # Формируем топики для добавления в описание (не добавляем в description, добавляем в parts позже)
+                    # Формируем топики для добавления в описание
                     topics_description = self._format_topics_description(recording.topic_timestamps, platform)
 
                     # Подготавливаем метаданные для конкретной платформы
@@ -1463,7 +1466,7 @@ class PipelineManager:
                         if album_id:
                             upload_kwargs['album_id'] = album_id
 
-                    upload_time_str = datetime.now().strftime('%d.%m.%Y %H:%M')
+                    # Формируем финальное описание
                     parts = []
                     if description:
                         parts.append(description)
@@ -1473,38 +1476,55 @@ class PipelineManager:
                     parts.append("P.S. Сформировано автоматически, возможны неточности.")
                     final_description = "\n\n".join([p for p in parts if p])
 
-                    # Теперь запускаем загрузку со спиннером
-                    with Progress(
-                        SpinnerColumn(style="green"),
-                        TextColumn(f"[bold green]Загрузка на {platform.upper()}[/bold green]"),
-                        TimeElapsedColumn(),
-                        transient=False,
-                        console=self.console,
-                    ) as progress:
-                        progress.add_task("Загрузка", total=None)
+                    platform_configs[platform] = {
+                        'title': title,
+                        'description': final_description,
+                        'upload_kwargs': upload_kwargs,
+                    }
+                except Exception as e:
+                    self.logger.error(f"Ошибка подготовки метаданных для {platform}: {e}")
+                    continue
 
-                        result = await upload_manager.upload_to_platform(
-                            platform=platform,
-                            video_path=recording.processed_video_path,
-                            title=title,
-                            description=final_description,
-                            **upload_kwargs,
-                        )
-                        if result and result.status == 'uploaded':
-                            success_count += 1
-                            # Обновляем статус и URL записи
-                            if platform == 'youtube':
-                                recording.update_platform_status('youtube', PlatformStatus.UPLOADED_YOUTUBE, result.video_url)
-                            elif platform == 'vk':
-                                recording.update_platform_status('vk', PlatformStatus.UPLOADED_VK, result.video_url)
-
-                except asyncio.CancelledError:
-                    self.console.print(
-                        f"\n[bold red]❌ Загрузка на {platform} прервана пользователем[/bold red]"
+            # Теперь запускаем параллельную загрузку на все платформы
+            async def upload_single_platform(platform: str, config: dict) -> tuple[str, UploadResult | None]:
+                """Вспомогательная функция для загрузки на одну платформу"""
+                try:
+                    result = await upload_manager.upload_to_platform(
+                        platform=platform,
+                        video_path=recording.processed_video_path,
+                        title=config['title'],
+                        description=config['description'],
+                        **config['upload_kwargs'],
                     )
-                    break
+                    return platform, result
                 except Exception as e:
                     self.logger.error(f"Ошибка загрузки на {platform}: {e}")
+                    return platform, None
+
+            # Создаем задачи для параллельной загрузки
+            upload_tasks = [
+                upload_single_platform(platform, config)
+                for platform, config in platform_configs.items()
+            ]
+
+            # Запускаем все загрузки параллельно
+            results = await asyncio.gather(*upload_tasks, return_exceptions=True)
+
+            # Обрабатываем результаты
+            success_count = 0
+            for result in results:
+                if isinstance(result, Exception):
+                    self.logger.error(f"Ошибка при параллельной загрузке: {result}")
+                    continue
+                
+                platform, upload_result = result
+                if upload_result and upload_result.status == 'uploaded':
+                    success_count += 1
+                    # Обновляем статус и URL записи
+                    if platform == 'youtube':
+                        recording.update_platform_status('youtube', PlatformStatus.UPLOADED_YOUTUBE, upload_result.video_url)
+                    elif platform == 'vk':
+                        recording.update_platform_status('vk', PlatformStatus.UPLOADED_VK, upload_result.video_url)
 
             # Обновляем основной статус записи на UPLOADED, если загружена хотя бы на одну платформу
             if success_count > 0:

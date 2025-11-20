@@ -97,7 +97,8 @@ class FireworksTranscriptionService:
             except Exception as exc:
                 last_error = exc
                 elapsed = time.time() - start_time
-                error_msg = str(exc)
+                extra_info = self._format_error_info(exc)
+                error_msg = str(exc) if not extra_info else f"{exc} | {extra_info}"
                 logger.warning(
                     f"⚠️ Ошибка Fireworks транскрибации (попытка {attempt}/{retry_attempts}): {error_msg}\n"
                     f"   ⏱️  Время до ошибки: {elapsed/60:.1f} мин"
@@ -111,6 +112,34 @@ class FireworksTranscriptionService:
         raise RuntimeError(
             f"Ошибка транскрибации через Fireworks после {retry_attempts} попыток"
         ) from last_error
+
+    def _format_error_info(self, exc: Exception) -> str:
+        """Возвращает строку со статус-кодом и телом ответа, если доступны."""
+        status_code = getattr(exc, "status_code", None)
+        response_obj = getattr(exc, "response", None)
+        if status_code is None and response_obj is not None:
+            status_code = getattr(response_obj, "status_code", None)
+
+        response_body = ""
+        if response_obj is not None:
+            if getattr(response_obj, "text", None):
+                response_body = response_obj.text.strip()
+            elif getattr(response_obj, "content", None):
+                response_body = str(response_obj.content)
+        elif hasattr(exc, "body"):
+            response_body = str(getattr(exc, "body"))
+
+        parts: list[str] = []
+        if status_code is not None:
+            parts.append(f"status_code={status_code}")
+        if response_body:
+            max_len = 1000
+            trimmed = response_body[:max_len]
+            if len(response_body) > max_len:
+                trimmed += "... (truncated)"
+            parts.append(f"response_body={trimmed}")
+
+        return " | ".join(parts)
 
     def _normalize_response(self, response: Any) -> dict[str, Any]:
         """

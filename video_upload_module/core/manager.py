@@ -96,21 +96,32 @@ class UploadManager:
     async def upload_to_all_platforms(
         self, video_path: str, title: str, description: str = "", **kwargs
     ) -> dict[str, UploadResult | None]:
-        """Загрузка видео на все настроенные платформы."""
+        """Загрузка видео на все настроенные платформы (параллельно)."""
 
-        results = {}
+        platforms = self.get_available_platforms()
+        if not platforms:
+            return {}
 
-        for platform in self.get_available_platforms():
-            result = await self.upload_to_platform(
+        # Создаем задачи для параллельной загрузки
+        tasks = {
+            platform: self.upload_to_platform(
                 platform=platform,
                 video_path=video_path,
                 title=title,
                 description=description,
                 **kwargs,
             )
-            results[platform] = result
+            for platform in platforms
+        }
 
-        return results
+        # Запускаем все загрузки параллельно
+        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+
+        # Формируем словарь результатов
+        return {
+            platform: result if not isinstance(result, Exception) else None
+            for platform, result in zip(platforms, results)
+        }
 
     async def batch_upload_to_platform(
         self, platform: str, video_files: list[dict[str, Any]]
