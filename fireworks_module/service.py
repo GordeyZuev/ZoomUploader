@@ -103,7 +103,6 @@ class FireworksTranscriptionService:
                     f"⚠️ Ошибка Fireworks транскрибации (попытка {attempt}/{retry_attempts}): {error_msg}\n"
                     f"   ⏱️  Время до ошибки: {elapsed/60:.1f} мин"
                 )
-                # Логируем параметры для отладки (без api_key)
                 debug_params = {k: v for k, v in params.items() if k != "api_key"}
                 logger.debug(f"   📋 Параметры запроса: {debug_params}")
                 if attempt < retry_attempts and retry_delay > 0:
@@ -127,7 +126,7 @@ class FireworksTranscriptionService:
             elif getattr(response_obj, "content", None):
                 response_body = str(response_obj.content)
         elif hasattr(exc, "body"):
-            response_body = str(getattr(exc, "body"))
+            response_body = str(exc.body)
 
         parts: list[str] = []
         if status_code is not None:

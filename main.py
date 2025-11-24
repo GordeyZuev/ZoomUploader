@@ -34,10 +34,8 @@ def parse_date(date_str: str) -> str:
     if not date_str:
         return date_str
 
-    # Убираем лишние пробелы
     date_str = date_str.strip()
 
-    # Список поддерживаемых форматов
     formats = [
         '%Y-%m-%d',  # YYYY-MM-DD
         '%d-%m-%Y',  # DD-MM-YYYY
@@ -46,7 +44,6 @@ def parse_date(date_str: str) -> str:
         '%d/%m/%y',  # DD/MM/YY
     ]
 
-    # Пробуем распарсить дату в каждом формате
     for fmt in formats:
         try:
             parsed_date = datetime.strptime(date_str, fmt)
@@ -54,11 +51,9 @@ def parse_date(date_str: str) -> str:
         except ValueError:
             continue
 
-    # Если формат не распознан, возвращаем как есть
     return date_str
 
 
-# Общие опции для всех команд
 def common_options(f):
     """Общие опции для всех команд"""
     f = click.option(
@@ -81,7 +76,6 @@ def common_options(f):
     return f
 
 
-# Опции для команд с выбором записей
 def selection_options(f):
     """Опции для выбора записей"""
     f = click.option('-a', '--all', 'select_all', is_flag=True, help='Выбрать все записи')(f)
@@ -94,7 +88,6 @@ def selection_options(f):
     return f
 
 
-# Опции для команд загрузки
 def platform_options(f):
     """Опции для выбора платформ"""
     f = click.option('--youtube', is_flag=True, help='Загрузить на YouTube')(f)
@@ -103,7 +96,6 @@ def platform_options(f):
     return f
 
 
-# Опции для команд с принудительным выполнением
 def force_options(f):
     """Опции для принудительного выполнения"""
     f = click.option('-f', '--force', is_flag=True, help='Принудительно выполнить операцию')(f)
@@ -121,16 +113,22 @@ def cli():
 @click.option(
     '--last',
     type=int,
-    default=0,
-    help='Последние N дней (0 = сегодня, 1 = вчера, 7 = неделя, 14 = две недели)',
+    help='Последние N дней (0 = сегодня, 1 = вчера, 7 = неделя, 14 = две недели). Если не указан и нет --from/--to, показывает все записи',
+)
+@click.option(
+    '-recs',
+    '--recordings',
+    type=str,
+    help='ID записей для показа через запятую (например: 1,4,7) или одна запись (например: 42)',
 )
 @click.option('--export', type=click.Choice(['json', 'csv', 'summary']), help='Экспорт результатов')
 @click.option('--output', type=str, help='Имя выходного файла')
-def list(from_date, to_date, last, account, config_file, use_db, export, output):
+@click.option('--show-meta', is_flag=True, help='Показать темы и топики для записей со статусом TRANSCRIBED и выше')
+def list(from_date, to_date, last, recordings, account, config_file, use_db, export, output, show_meta):
     """Показать записи из базы данных"""
     asyncio.run(
         _list_command(
-            from_date, to_date, last, account, config_file, use_db, export, output
+            from_date, to_date, last, recordings, account, config_file, use_db, export, output, show_meta
         )
     )
 
@@ -434,8 +432,8 @@ def _parse_dates(from_date, to_date, last):
         from_date = parse_date(from_date)
         if to_date:
             to_date = parse_date(to_date)
-    else:
-        # Используем --last (по умолчанию 0 = сегодня)
+    elif last is not None:
+        # Используем --last, если указан
         if last == 0:
             # Сегодня
             from_date = datetime.now().strftime('%Y-%m-%d')
@@ -444,6 +442,10 @@ def _parse_dates(from_date, to_date, last):
             # Последние N дней
             to_date = datetime.now().strftime('%Y-%m-%d')
             from_date = (datetime.now() - timedelta(days=last)).strftime('%Y-%m-%d')
+    else:
+        # Если ничего не указано, возвращаем None (будет означать все записи)
+        from_date = None
+        to_date = None
 
     return from_date, to_date
 
@@ -577,9 +579,8 @@ async def _get_target_recordings(
 
 
 async def _list_command(
-    from_date, to_date, last, account, config_file, use_db, export, output):
+    from_date, to_date, last, recordings, account, config_file, use_db, export, output, show_meta):
     """Команда list - показать записи из БД"""
-    from_date, to_date = _parse_dates(from_date, to_date, last)
 
     setup_logger()
     logger = get_logger()
@@ -589,18 +590,40 @@ async def _list_command(
         pipeline, db_manager = await _setup_pipeline(use_db)
 
         # Получаем записи из БД
-        recordings = await pipeline.get_recordings_from_db(from_date, to_date)
+        if recordings:
+            # Фильтрация по конкретным ID
+            try:
+                recording_ids = [int(r.strip()) for r in recordings.split(',')]
+                recordings_list = await pipeline.db_manager.get_recordings_by_ids(recording_ids)
 
-        if not recordings:
+                if not recordings_list:
+                    print(f"📋 Записи с ID {recordings} не найдены в базе данных")
+                    return
+
+            except ValueError:
+                logger.error("❌ Ошибка: ID записей должны быть числами")
+                return
+        else:
+            # Парсим даты
+            from_date, to_date = _parse_dates(from_date, to_date, last)
+
+            if from_date is None:
+                # Если даты не указаны, получаем все записи
+                recordings_list = await db_manager.get_recordings()
+            else:
+                # Используем фильтрацию по датам
+                recordings_list = await pipeline.get_recordings_from_db(from_date, to_date)
+
+        if not recordings_list:
             print("📋 Записи не найдены в базе данных")
             return
 
         # Показываем записи
-        pipeline.display_recordings(recordings)
+        pipeline.display_recordings(recordings_list, show_meta=show_meta)
 
         # Экспорт если запрошен
-        if export and recordings:
-            _export_recordings(recordings, export, output)
+        if export and recordings_list:
+            _export_recordings(recordings_list, export, output)
 
         # Закрываем соединение с БД
         if db_manager:

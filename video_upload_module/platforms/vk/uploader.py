@@ -226,18 +226,20 @@ class VKUploader(BaseUploader):
         self, upload_url: str, video_path: str, progress=None, task_id=None
     ) -> dict[str, Any] | None:
         """Загрузка файла видео."""
+        video_file = None
         try:
-            os.path.getsize(video_path)
+            # Открываем файл заранее и закрываем только после завершения запроса
+            # Это предотвращает ошибку Broken pipe
+            video_file = open(video_path, 'rb')
+            files = {'video_file': video_file}
 
-            with open(video_path, 'rb') as video_file:
-                files = {'video_file': video_file}
-
-                async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession() as session:
+                try:
                     async with session.post(upload_url, data=files) as response:
                         if response.status == 200:
-                            data = await response.json()
-                            if 'error' in data:
-                                self.logger.error(f"VK Upload Error: {data['error']}")
+                            result_data = await response.json()
+                            if 'error' in result_data:
+                                self.logger.error(f"VK Upload Error: {result_data['error']}")
                                 return None
 
                             if progress and task_id is not None:
@@ -247,12 +249,24 @@ class VKUploader(BaseUploader):
                                 except Exception:
                                     pass
 
-                            return data
+                            return result_data
                         else:
                             self.logger.error(f"HTTP Upload Error: {response.status}")
                             return None
+                finally:
+                    # Закрываем файл после завершения запроса
+                    if video_file:
+                        try:
+                            video_file.close()
+                        except Exception:
+                            pass
         except Exception as e:
             self.logger.error(f"Ошибка загрузки файла: {e}")
+            if video_file:
+                try:
+                    video_file.close()
+                except Exception:
+                    pass
             return None
 
     async def _make_request(self, method: str, params: dict[str, Any]) -> dict[str, Any] | None:

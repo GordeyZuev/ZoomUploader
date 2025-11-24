@@ -120,7 +120,7 @@ class UploadManager:
         # Формируем словарь результатов
         return {
             platform: result if not isinstance(result, Exception) else None
-            for platform, result in zip(platforms, results)
+            for platform, result in zip(platforms, results, strict=True)
         }
 
     async def batch_upload_to_platform(
