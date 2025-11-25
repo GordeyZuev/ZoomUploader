@@ -35,6 +35,7 @@ class ConditionalBarColumn(ProgressColumn):
     """Колонка прогресс-бара, которая показывается только при скачивании"""
 
     def __init__(self, bar_width: int = 25):
+        super().__init__()
         self.bar_column = BarColumn(bar_width=bar_width)
 
     def render(self, task) -> RenderableType:

@@ -19,7 +19,6 @@ class DeepSeekConfig:
     temperature: float = 0.0  # Нулевая температура для детерминированности
     max_tokens: int = 8000  # Ограничение DeepSeek: максимум 8192, используем 8000
     timeout: float = 120.0  # Таймаут для запросов
-    seed: int | None = None  # Опциональный seed для воспроизводимости
 
     @classmethod
     def from_file(cls, config_file: str = "config/deepseek_creds.json") -> "DeepSeekConfig":
@@ -46,7 +45,6 @@ class DeepSeekConfig:
                 temperature=data.get("temperature", 0.0),
                 max_tokens=data.get("max_tokens", 4000),
                 timeout=data.get("timeout", 120.0),
-                seed=data.get("seed"),
             )
 
         except Exception as e:

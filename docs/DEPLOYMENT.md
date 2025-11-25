@@ -98,18 +98,19 @@ uv run python main.py recreate-db
   "language": "ru",
   "response_format": "verbose_json",
   "timestamp_granularities": ["segment"],
-  "alignment_model": "mms_fa",
   "prompt": "Это лекция магистратуры по Computer Science со специализацией в Machine Learning и Data Science. Сохраняй правильное написание профильных терминов (включая английские), латинских обозначений, аббревиатур, элементов кода и имён собственных.",
-  "enable_vad": true,
+  "enable_vad": false,
   "diarization": false,
   "temperature": 0.0,
   "max_file_size_mb": 25,
   "audio_bitrate": "64k",
   "audio_sample_rate": 16000,
-  "retry_attempts": 2,
+  "retry_attempts": 1,
   "retry_delay": 2.0
 }
 ```
+
+> ℹ️ Для детерминированных ответов мы отключаем VAD и повторные попытки, а также не используем `alignment_model`. Эти параметры могут по-разному разбивать аудио или вызывать дополнительные запросы, что приводит к расхождениям в транскрипции даже при нулевой температуре.
 
 **Как получить API ключ:**
 1. Зарегистрируйтесь на [`Fireworks AI`](https://fireworks.ai/)
@@ -130,10 +131,11 @@ uv run python main.py recreate-db
   "base_url": "https://api.deepseek.com/v1",
   "temperature": 0.0,
   "max_tokens": 8000,
-  "timeout": 120.0,
-  "seed": null
+  "timeout": 120.0
 }
 ```
+
+> ℹ️ Для максимальной детерминированности ставим `temperature` в `0.0`, не включаем `top_p`/`frequency_penalty` одновременно и не задаём `seed` — DeepSeek официально его не документирует и может игнорировать.
 
 **Как получить API ключ:**
 1. Зарегистрируйтесь на [`DeepSeek Platform`](https://platform.deepseek.com/)
