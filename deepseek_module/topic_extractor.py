@@ -102,6 +102,7 @@ class TopicExtractor:
         )
 
         transcript_with_timestamps = self._format_transcript_with_timestamps(segments)
+
         try:
             result = await self._analyze_full_transcript(
                 transcript_with_timestamps,

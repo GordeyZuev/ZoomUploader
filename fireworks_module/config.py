@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from logger import get_logger
@@ -23,10 +23,10 @@ class FireworksConfig:
     # Параметры транскрибации
     language: str = "ru"
     response_format: str = "verbose_json"
-    timestamp_granularities: list[str] | None = field(default_factory=lambda: ["segment"])
+    timestamp_granularities: list[str] | None = None
     alignment_model: str | None = None
     diarization: bool = False
-    enable_vad: bool = False  # VAD разбивает аудио по-разному → недетерминированность
+    enable_vad: bool = True  # VAD обязателен для аудио длиннее 30 секунд
     vad_model: str | None = None  # "silero" (default) | "whisperx-pyannet" (Более точная)
     temperature: float | None = 0.0
     prompt: str | None = None

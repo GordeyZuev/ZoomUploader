@@ -1299,7 +1299,9 @@ class PipelineManager:
                 # Используем переданный progress, просто выполняем обработку
                 try:
                     process_task = asyncio.create_task(
-                        processor.process_video_with_audio_detection(file_path, recording.topic)
+                        processor.process_video_with_audio_detection(
+                            file_path, recording.topic, recording.start_time
+                        )
                     )
 
                     success, processed_path = await process_task
@@ -1329,7 +1331,9 @@ class PipelineManager:
 
                     try:
                         process_task = asyncio.create_task(
-                            processor.process_video_with_audio_detection(file_path, recording.topic)
+                            processor.process_video_with_audio_detection(
+                                file_path, recording.topic, recording.start_time
+                            )
                         )
 
                         success, processed_path = await process_task
@@ -1355,7 +1359,18 @@ class PipelineManager:
                         safe_title = processor._sanitize_filename(recording.topic)
                         audio_dir = "video/processed_audio"
                         os.makedirs(audio_dir, exist_ok=True)
-                        audio_filename = f"{safe_title}_processed.mp3"
+
+                        # Добавляем дату и время в имя файла для уникальности
+                        date_suffix = ""
+                        if recording.start_time:
+                            try:
+                                normalized_time = normalize_datetime_string(recording.start_time)
+                                date_obj = datetime.fromisoformat(normalized_time)
+                                date_suffix = f"_{date_obj.strftime('%y-%m-%d_%H-%M')}"
+                            except Exception as e:
+                                self.logger.warning(f"⚠️ Ошибка парсинга даты '{recording.start_time}' для имени аудио файла: {e}")
+
+                        audio_filename = f"{safe_title}{date_suffix}_processed.mp3"
                         audio_path = os.path.join(audio_dir, audio_filename)
 
                         self.logger.info(f"🎵 Извлечение аудио из обработанного видео: {recording.topic}")

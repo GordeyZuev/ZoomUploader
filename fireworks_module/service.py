@@ -3,6 +3,7 @@
 import asyncio
 import os
 import time
+from collections import Counter
 from typing import Any
 
 try:
@@ -170,6 +171,7 @@ class FireworksTranscriptionService:
             raw_segments = payload["segments"]
         elif isinstance(payload.get("words"), list):
             raw_segments = payload["words"]
+            logger.warning(f"⚠️ Используем 'words' вместо 'segments': {len(raw_segments)} элементов")
 
         segments: list[dict[str, Any]] = []
         for idx, segment in enumerate(raw_segments):
@@ -182,16 +184,16 @@ class FireworksTranscriptionService:
             else:
                 segment_dict = {}
 
+
+            # Если в сегменте есть массив words, мы его игнорируем и используем только text сегмента
+            if "words" in segment_dict and isinstance(segment_dict.get("words"), list):
+                pass
+
             start = segment_dict.get("start") or segment_dict.get("start_time") or segment_dict.get("offset")
             end = segment_dict.get("end") or segment_dict.get("end_time") or segment_dict.get("offset_end")
             seg_text = segment_dict.get("text") or segment_dict.get("word") or ""
 
-            # Fireworks может возвращать время в миллисекундах; нормализуем до секунд
-            if isinstance(start, (int, float)) and start > 1e4:
-                start = start / 1000.0
-            if isinstance(end, (int, float)) and end > 1e4:
-                end = end / 1000.0
-
+            # Fireworks всегда возвращает время в секундах, конвертируем в float
             start_float = float(start) if isinstance(start, (int, float)) else 0.0
             end_float = float(end) if isinstance(end, (int, float)) else 0.0
 
@@ -212,6 +214,17 @@ class FireworksTranscriptionService:
                     "text": seg_text.strip(),
                 }
             )
+
+        # Проверяем на дубликаты временных меток
+        if segments:
+            start_times = [seg["start"] for seg in segments]
+            time_counts = Counter(start_times)
+            duplicates = {time: count for time, count in time_counts.items() if count > 1}
+            if duplicates:
+                logger.warning(
+                    f"⚠️ Найдены сегменты с одинаковыми временными метками: {len(duplicates)} уникальных времен, "
+                    f"максимум дубликатов: {max(duplicates.values())} сегментов на время {max(duplicates.items(), key=lambda x: x[1])[0]:.2f}с"
+                )
 
         # Сортируем сегменты по времени начала (на случай, если порядок нарушен)
         segments.sort(key=lambda x: x.get("start", 0))
