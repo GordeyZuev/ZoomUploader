@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 
@@ -20,24 +21,62 @@ class ProcessingStatus(Enum):
     EXPIRED = "expired"  # Устарело (очищено)
 
 
-class PlatformStatus(Enum):
-    """Статусы загрузки на платформы"""
+class SourceType(Enum):
+    """Тип источника видео."""
+
+    ZOOM = "zoom"
+    LOCAL_FILE = "local_file"
+    YOUTUBE = "youtube"
+    VK = "vk"
+    HTTP_LINK = "http_link"
+    YANDEX_DISK_API = "yandex_disk_api"
+
+
+class TargetType(Enum):
+    """Тип вывода/публикации."""
+
+    YOUTUBE = "youtube"
+    VK = "vk"
+    YANDEX_DISK = "yandex_disk"
+    LOCAL = "local"
+    WEBHOOK = "webhook"
+    GDRIVE = "gdrive"
+
+
+class TargetStatus(Enum):
+    """Статусы загрузки на выходные площадки."""
 
     NOT_UPLOADED = "not_uploaded"
-    UPLOADING_YOUTUBE = "uploading_youtube"
-    UPLOADED_YOUTUBE = "uploaded_youtube"
-    FAILED_YOUTUBE = "failed_youtube"
-    UPLOADING_VK = "uploading_vk"
-    UPLOADED_VK = "uploaded_vk"
-    FAILED_VK = "failed_vk"
+    UPLOADING = "uploading"
+    UPLOADED = "uploaded"
+    FAILED = "failed"
 
 
-class ProcessingMetadata:
-    """Метаданные пост-обработки видео"""
+class OutputTarget:
+    """Отдельный таргет вывода (YouTube, VK, диск и т.д.)."""
 
-    def __init__(self):
-        self.processing_notes: str = ""  # Заметки обработчика
-        self.processing_time: datetime | None = None  # Время обработки
+    def __init__(
+        self,
+        target_type: TargetType,
+        status: TargetStatus = TargetStatus.NOT_UPLOADED,
+        target_meta: dict[str, Any] | None = None,
+        uploaded_at: datetime | None = None,
+    ):
+        self.target_type = target_type
+        self.status = status
+        self.target_meta: dict[str, Any] = target_meta or {}
+        self.uploaded_at = uploaded_at
+
+    def get_link(self) -> str | None:
+        return self.target_meta.get("target_link") or self.target_meta.get("video_url")
+
+    def mark_uploaded(self, link: str | None = None, meta: dict[str, Any] | None = None):
+        if link:
+            self.target_meta["target_link"] = link
+        if meta:
+            self.target_meta.update(meta)
+        self.status = TargetStatus.UPLOADED
+        self.uploaded_at = datetime.utcnow()
 
 
 class MeetingRecording:
@@ -50,44 +89,72 @@ class MeetingRecording:
 
     def __init__(self, meeting_data: dict[str, Any]):
         self.db_id: int | None = None
-        self.topic: str = meeting_data.get('topic', '')
-        self.start_time: str = meeting_data.get('start_time', '')
-        self.duration: int = meeting_data.get('duration', 0)
-        self.meeting_id: str = meeting_data.get('id', '')
-        self.account: str = meeting_data.get('account', 'default')
+        self.display_name: str = meeting_data.get("display_name") or meeting_data.get("topic", "")
+        self.start_time: str = meeting_data.get("start_time", "")
+        self.duration: int = meeting_data.get("duration", 0)
+        self.status: ProcessingStatus = meeting_data.get("status", ProcessingStatus.INITIALIZED)
+        self.is_mapped: bool = bool(meeting_data.get("is_mapped", False))
+        self.expire_at: datetime | None = meeting_data.get("expire_at")
 
-        # Информация о файлах записи
-        self.video_file_size: int | None = None
-        self.video_file_download_url: str | None = None
-        self.download_access_token: str | None = None
-        self.password: str | None = None
-        self.recording_play_passcode: str | None = None
+        # Источник
+        source_type_raw = meeting_data.get("source_type") or SourceType.ZOOM.value
+        self.source_type: SourceType = (
+            source_type_raw if isinstance(source_type_raw, SourceType) else SourceType(source_type_raw)
+        )
+        self.source_key: str = meeting_data.get("source_key") or str(meeting_data.get("id", ""))
+        self.source_metadata: dict[str, Any] = meeting_data.get("source_metadata", {}) or {}
 
-        # Маппинг и статусы обработки
-        self.is_mapped: bool = False
-        self.status: ProcessingStatus = ProcessingStatus.INITIALIZED
-        self.local_video_path: str | None = None
-        self.processed_video_path: str | None = None
-        self.processed_audio_path: str | None = None
-        self.downloaded_at: datetime | None = None
+        # Файлы/пути (относительно media_dir)
+        self.local_video_path: str | None = meeting_data.get("local_video_path")
+        self.processed_video_path: str | None = meeting_data.get("processed_video_path")
+        self.processed_audio_dir: str | None = meeting_data.get("processed_audio_dir")
+        self.transcription_dir: str | None = meeting_data.get("transcription_dir")
+        self.downloaded_at: datetime | None = meeting_data.get("downloaded_at")
 
-        # Статусы загрузки на платформы
-        self.youtube_status: PlatformStatus = PlatformStatus.NOT_UPLOADED
-        self.youtube_url: str | None = None
-        self.vk_status: PlatformStatus = PlatformStatus.NOT_UPLOADED
-        self.vk_url: str | None = None
+        # Доп. инфо по файлам и скачиванию (для источников типа Zoom)
+        self.video_file_size: int | None = meeting_data.get("video_file_size")
+        self.video_file_download_url: str | None = meeting_data.get("video_file_download_url")
+        self.download_access_token: str | None = meeting_data.get("download_access_token")
+        self.password: str | None = meeting_data.get("password")
+        self.recording_play_passcode: str | None = meeting_data.get("recording_play_passcode")
 
-        # Метаданные обработки
-        self.processing_notes: str = ""
-        self.processing_time: datetime | None = None
+        # Сырые данные транскрибации и темы
+        self.transcription_info: Any | None = meeting_data.get("transcription_info")
+        self.topic_timestamps: list[dict[str, Any]] | None = meeting_data.get("topic_timestamps")
+        self.main_topics: list[str] | None = meeting_data.get("main_topics")
 
-        # Транскрипция и темы
-        self.transcription_file_path: str | None = None
-        self.topic_timestamps: list[dict[str, Any]] | None = None  # [{"topic": str, "start": float, "end": float}, ...]
-        self.main_topics: list[str] | None = None  # Максимум 2 темы
+        # Выходы
+        raw_targets = meeting_data.get("output_targets", []) or []
+        self.output_targets: list[OutputTarget] = []
+        for raw in raw_targets:
+            if isinstance(raw, OutputTarget):
+                self.output_targets.append(raw)
+            elif isinstance(raw, dict) and "target_type" in raw:
+                try:
+                    target_type = (
+                        raw["target_type"]
+                        if isinstance(raw["target_type"], TargetType)
+                        else TargetType(raw["target_type"])
+                    )
+                    status_raw = raw.get("status", TargetStatus.NOT_UPLOADED)
+                    status = status_raw if isinstance(status_raw, TargetStatus) else TargetStatus(status_raw)
+                    self.output_targets.append(
+                        OutputTarget(
+                            target_type=target_type,
+                            status=status,
+                            target_meta=raw.get("target_meta"),
+                            uploaded_at=raw.get("uploaded_at"),
+                        )
+                    )
+                except Exception:
+                    continue
 
-        # Обрабатываем файлы записи
-        self._process_recording_files(meeting_data.get('recording_files', []))
+        # Вспомогательные атрибуты для обратной совместимости с Zoom
+        self.meeting_id: str = meeting_data.get("id", "") or self.source_metadata.get("meeting_id", "")
+        self.account: str = meeting_data.get("account", "default") or self.source_metadata.get("account", "default")
+
+        # Обрабатываем файлы записи (для Zoom API входных данных)
+        self._process_recording_files(meeting_data.get("recording_files", []))
 
     def _process_recording_files(self, recording_files: list[dict[str, Any]]) -> None:
         """
@@ -136,17 +203,14 @@ class MeetingRecording:
             self.video_file_size = best_mp4_file['file_size']
             self.video_file_download_url = best_mp4_file['download_url']
 
-    def update_status(self, new_status: ProcessingStatus, notes: str = "") -> None:
+    def update_status(self, new_status: ProcessingStatus) -> None:
         """
         Обновление статуса записи.
 
         Args:
             new_status: Новый статус
-            notes: Дополнительные заметки
         """
         self.status = new_status
-        if notes:
-            self.processing_notes = notes
 
     def has_video(self) -> bool:
         """Проверка наличия видео файла"""
@@ -184,25 +248,56 @@ class MeetingRecording:
         """Проверка, готова ли запись для загрузки"""
         return self.status == ProcessingStatus.PROCESSED and self.processed_video_path is not None
 
-    def update_platform_status(
-        self, platform: str, status: PlatformStatus, url: str | None = None
-    ) -> None:
-        """
-        Обновление статуса загрузки на платформу.
+    # --- Работа с таргетами ---
+    def get_target(self, target_type: TargetType) -> OutputTarget | None:
+        for target in self.output_targets:
+            if target.target_type == target_type:
+                return target
+        return None
 
-        Args:
-            platform: Название платформы ('youtube' или 'vk')
-            status: Новый статус
-            url: URL загруженного видео
-        """
-        if platform.lower() == 'youtube':
-            self.youtube_status = status
-            if url:
-                self.youtube_url = url
-        elif platform.lower() == 'vk':
-            self.vk_status = status
-            if url:
-                self.vk_url = url
+    def ensure_target(self, target_type: TargetType) -> OutputTarget:
+        existing = self.get_target(target_type)
+        if existing:
+            return existing
+        new_target = OutputTarget(target_type=target_type)
+        self.output_targets.append(new_target)
+        return new_target
+
+    def set_primary_audio(self, audio_path: str) -> None:
+        """Сохранить основной аудиофайл и зафиксировать директорию."""
+        if audio_path:
+            self.processed_audio_dir = str(Path(audio_path).parent)
+            info = self.transcription_info or {}
+            if not isinstance(info, dict):
+                info = {}
+            info["primary_audio"] = audio_path
+            self.transcription_info = info
+
+    def get_primary_audio_path(self) -> str | None:
+        """Получить основной аудиофайл из сохранённой директории или transcription_info."""
+        # Приоритет: явный путь в transcription_info
+        if isinstance(self.transcription_info, dict):
+            path = self.transcription_info.get("primary_audio")
+            if path and Path(path).exists():
+                return path
+
+        if self.processed_audio_dir:
+            audio_dir = Path(self.processed_audio_dir)
+            if audio_dir.exists():
+                for ext in ("*.mp3", "*.wav", "*.m4a"):
+                    files = sorted(audio_dir.glob(ext))
+                    if files:
+                        return str(files[0])
+        return None
+
+    def targets_summary(self) -> dict[str, Any]:
+        summary = {}
+        for target in self.output_targets:
+            summary[target.target_type.value] = {
+                "status": target.status.value,
+                "link": target.get_link(),
+            }
+        return summary
 
     def get_processing_progress(self) -> dict[str, Any]:
         """
@@ -215,8 +310,6 @@ class MeetingRecording:
             'status': self.status.value,
             'downloaded': self.is_downloaded(),
             'processed': self.is_processed(),
-            'youtube_uploaded': self.youtube_status == PlatformStatus.UPLOADED_YOUTUBE,
-            'vk_uploaded': self.vk_status == PlatformStatus.UPLOADED_VK,
         }
 
         # Добавляем пути к файлам, если они есть
@@ -224,10 +317,10 @@ class MeetingRecording:
             progress['local_file'] = self.local_video_path
         if self.processed_video_path:
             progress['processed_file'] = self.processed_video_path
-        if self.processed_audio_path:
-            progress['processed_audio'] = self.processed_audio_path
-        if self.transcription_file_path:
-            progress['transcription_file'] = self.transcription_file_path
+        if self.processed_audio_dir:
+            progress['processed_audio_dir'] = self.processed_audio_dir
+        if self.transcription_dir:
+            progress['transcription_dir'] = self.transcription_dir
 
         # Добавляем информацию о транскрипции
         if self.topic_timestamps:
@@ -235,11 +328,9 @@ class MeetingRecording:
         if self.main_topics:
             progress['main_topics'] = self.main_topics
 
-        # Добавляем URL, если они есть
-        if self.youtube_url:
-            progress['youtube_url'] = self.youtube_url
-        if self.vk_url:
-            progress['vk_url'] = self.vk_url
+        # Добавляем информацию о таргетах
+        if self.output_targets:
+            progress['outputs'] = self.targets_summary()
 
         return progress
 
@@ -247,15 +338,9 @@ class MeetingRecording:
         """Сброс записи к начальному состоянию"""
         self.local_video_path = None
         self.processed_video_path = None
-        self.processed_audio_path = None
+        self.processed_audio_dir = None
         self.downloaded_at = None
-        self.youtube_status = PlatformStatus.NOT_UPLOADED
-        self.youtube_url = None
-        self.vk_status = PlatformStatus.NOT_UPLOADED
-        self.vk_url = None
-        self.processing_notes = ""
-        self.processing_time = None
-        self.transcription_file_path = None
+        self.transcription_dir = None
         self.topic_timestamps = None
         self.main_topics = None
 

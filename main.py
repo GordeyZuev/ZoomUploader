@@ -1,16 +1,19 @@
 import asyncio
 import builtins
+import math
 import os
+import shutil
 import sys
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import click
 
-from api import ZoomAPI
 from config import get_config_by_account, load_config_from_file
+from config.settings import settings
 from database import DatabaseConfig, DatabaseManager
 from logger import get_logger, setup_logger
-from models import ProcessingStatus
+from models import MeetingRecording, ProcessingStatus, SourceType
 from pipeline_manager import PipelineManager
 from utils import (
     export_recordings_summary,
@@ -18,6 +21,7 @@ from utils import (
     save_recordings_to_csv,
     save_recordings_to_json,
 )
+from video_processing_module.video_processor import ProcessingConfig, VideoProcessor
 
 
 def parse_date(date_str: str) -> str:
@@ -108,6 +112,85 @@ def cli():
     pass
 
 
+async def _add_video_command(source_path: str, display_name: str | None, set_expire: int | None):
+    """Создание записи из локального файла."""
+    logger = get_logger()
+    source_file = Path(source_path).expanduser().resolve()
+
+    if not source_file.exists():
+        logger.error(f"❌ Файл не найден: {source_file}")
+        return
+
+    # Настройки и инициализация БД
+    db_config = DatabaseConfig()
+    db_manager = DatabaseManager(db_config)
+    await db_manager.create_tables()
+
+    # Куда копируем
+    dest_dir = Path(settings.processing.input_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = dest_dir / source_file.name
+
+    try:
+        shutil.copy2(source_file, dest_path)
+        logger.info(f"📥 Файл скопирован в {dest_path}")
+    except Exception as e:
+        logger.error(f"❌ Не удалось скопировать файл: {e}")
+        return
+
+    # Получаем длительность через ffprobe (VideoProcessor)
+    duration_minutes = 0
+    try:
+        processor = VideoProcessor(ProcessingConfig())
+        info = await processor.get_video_info(str(dest_path))
+        duration_sec = float(info.get("duration", 0))
+        duration_minutes = int(math.ceil(duration_sec / 60)) if duration_sec > 0 else 0
+        logger.info(f"⏱️  Длительность файла: {duration_minutes} мин")
+    except Exception as e:
+        logger.warning(f"⚠️ Не удалось определить длительность: {e}")
+
+    # Данные записи
+    now_utc = datetime.now(UTC).replace(microsecond=0)
+    start_time_iso = now_utc.isoformat().replace("+00:00", "Z")
+    display = display_name or source_file.stem
+
+    expire_at = None
+    if set_expire and set_expire > 0:
+        expire_at = now_utc + timedelta(days=set_expire)
+
+    meeting_data = {
+        "display_name": display,
+        "start_time": start_time_iso,
+        "duration": duration_minutes,
+        "status": ProcessingStatus.DOWNLOADED,
+        "is_mapped": False,
+        "expire_at": expire_at,
+        "source_type": SourceType.LOCAL_FILE,
+        "source_key": str(source_file),
+        "source_metadata": {
+            "file_path": str(source_file),
+            "copied_path": str(dest_path),
+            "added_at": start_time_iso,
+        },
+        "local_video_path": str(dest_path),
+        "processed_video_path": None,
+        "processed_audio_dir": None,
+        "transcription_dir": None,
+        "topic_timestamps": None,
+        "main_topics": None,
+        "transcription_info": None,
+    }
+
+    recording = MeetingRecording(meeting_data)
+    try:
+        await db_manager.save_recordings([recording])
+        logger.info(f"✅ Запись добавлена: {display} (id={recording.db_id})")
+    except Exception as e:
+        logger.error(f"❌ Ошибка сохранения записи: {e}")
+    finally:
+        await db_manager.close()
+
+
 @cli.command()
 @common_options
 @click.option(
@@ -144,6 +227,21 @@ def list(from_date, to_date, last, recordings, account, config_file, use_db, exp
 def sync(from_date, to_date, last, account, config_file, use_db):
     """Синхронизировать данные из Zoom в базу данных"""
     asyncio.run(_sync_command(from_date, to_date, last, account, config_file, use_db))
+
+
+@cli.command()
+@click.option(
+    '--source',
+    'source_path',
+    required=True,
+    type=str,
+    help='Путь к локальному видеофайлу',
+)
+@click.option('--name', 'display_name', type=str, help='Отображаемое имя (по умолчанию имя файла)')
+@click.option('--set-expire', type=int, help='Дней до истечения записи (status -> EXPIRED после очистки)')
+def add_video(source_path: str, display_name: str | None, set_expire: int | None):
+    """Добавить локальное видео как запись в БД."""
+    asyncio.run(_add_video_command(source_path, display_name, set_expire))
 
 
 @cli.command()
@@ -216,11 +314,11 @@ def process(
     help='Последние N дней (0 = сегодня, 1 = вчера, 7 = неделя, 14 = две недели)',
 )
 @click.option(
-    '--transcription-model',
-    type=click.Choice(['fireworks', 'whisper']),
-    default='fireworks',
+    '--topic-model',
+    type=click.Choice(['deepseek', 'fireworks_deepseek']),
+    default='deepseek',
     show_default=True,
-    help='Выбор модели транскрибации (fireworks или whisper)',
+    help='Модель для извлечения тем: deepseek (по умолчанию) или fireworks_deepseek',
 )
 @click.option(
     '--topic-mode',
@@ -238,7 +336,7 @@ def transcribe(
     use_db,
     select_all,
     recordings,
-    transcription_model,
+    topic_model,
     topic_mode,
 ):
     """Транскрибировать записи"""
@@ -252,8 +350,65 @@ def transcribe(
             use_db,
             select_all,
             recordings,
-            transcription_model,
+            topic_model,
             topic_mode,
+        )
+    )
+
+
+@cli.command()
+@common_options
+@selection_options
+@click.option(
+    '--last',
+    type=int,
+    default=14,
+    help='Последние N дней (0 = сегодня, 1 = вчера, 7 = неделя, 14 = две недели)',
+)
+@click.option(
+    '--format',
+    'formats',
+    type=str,
+    default='srt,vtt',
+    help='Форматы субтитров для генерации через запятую (srt, vtt). По умолчанию: srt,vtt',
+)
+def subtitles(
+    from_date,
+    to_date,
+    last,
+    account,
+    config_file,
+    use_db,
+    select_all,
+    recordings,
+    formats,
+):
+    """Генерировать субтитры из транскрипций"""
+    # Парсим форматы из строки
+    valid_formats = {'srt', 'vtt'}
+    if formats:
+        formats_list = [f.strip().lower() for f in formats.split(',') if f.strip()]
+        invalid_formats = [f for f in formats_list if f not in valid_formats]
+        if invalid_formats:
+            raise click.BadParameter(
+                f"Недопустимые форматы: {', '.join(invalid_formats)}. Допустимые: {', '.join(valid_formats)}"
+            )
+        if not formats_list:
+            formats_list = ['srt', 'vtt']
+    else:
+        formats_list = ['srt', 'vtt']
+
+    asyncio.run(
+        _subtitles_command(
+            from_date,
+            to_date,
+            last,
+            account,
+            config_file,
+            use_db,
+            select_all,
+            recordings,
+            formats_list,
         )
     )
 
@@ -268,6 +423,11 @@ def transcribe(
     default=14,
     help='Последние N дней (0 = сегодня, 1 = вчера, 7 = неделя, 14 = две недели)',
 )
+@click.option(
+    '--upload-captions/--no-upload-captions',
+    default=None,
+    help='Загружать субтитры на поддерживаемые платформы (YouTube). По умолчанию берётся из app_config.upload_captions',
+)
 def upload(
     from_date,
     to_date,
@@ -280,6 +440,7 @@ def upload(
     youtube,
     vk,
     all_platforms,
+    upload_captions,
 ):
     """Загрузить записи на платформы"""
     asyncio.run(
@@ -295,6 +456,7 @@ def upload(
             youtube,
             vk,
             all_platforms,
+            upload_captions,
         )
     )
 
@@ -320,11 +482,11 @@ def upload(
     help='Пропустить шаг транскрибации (не вызывать транскрибацию и извлечение тем)',
 )
 @click.option(
-    '--transcription-model',
-    type=click.Choice(['fireworks', 'whisper']),
-    default='fireworks',
+    '--topic-model',
+    type=click.Choice(['deepseek', 'fireworks_deepseek']),
+    default='deepseek',
     show_default=True,
-    help='Выбор модели транскрибации (fireworks или whisper)',
+    help='Модель для извлечения тем: deepseek (по умолчанию) или fireworks_deepseek',
 )
 @click.option(
     '--topic-mode',
@@ -347,7 +509,7 @@ def full_process(
     all_platforms,
     allow_skipped,
     no_transcription,
-    transcription_model,
+    topic_model,
     topic_mode,
 ):
     """Полный пайплайн: скачать + обработать + загрузить записи"""
@@ -366,7 +528,7 @@ def full_process(
             all_platforms,
             allow_skipped,
             no_transcription,
-            transcription_model,
+            topic_model,
             topic_mode,
         )
     )
@@ -501,7 +663,7 @@ async def _get_target_recordings(
         allowed_statuses: Список разрешенных статусов
         min_duration: Минимальная длительность в минутах
         min_size_mb: Минимальный размер в МБ
-        require_file_path: Требуемый путь к файлу ('local_video_path', 'processed_audio_path', 'processed_video_path')
+        require_file_path: Требуемый путь к файлу ('local_video_path', 'processed_audio_dir', 'processed_video_path')
         filter_by_duration: Фильтровать ли по длительности
 
     Returns:
@@ -544,7 +706,7 @@ async def _get_target_recordings(
             target_recordings = [
                 r
                 for r in all_recordings
-                if r.topic in recordings_list
+                if (r.display_name in recordings_list)
                 and r.status in allowed_statuses
                 and (not require_file_path or getattr(r, require_file_path, None))
             ]
@@ -805,7 +967,7 @@ async def _transcribe_command(
     use_db,
     select_all,
     recordings,
-    transcription_model,
+    topic_model,
     topic_mode,
 ):
     """Команда transcribe - транскрибировать записи"""
@@ -826,16 +988,71 @@ async def _transcribe_command(
             select_all=select_all,
             recordings=recordings,
             allowed_statuses=[ProcessingStatus.PROCESSED],
-            require_file_path='processed_audio_path',
+            require_file_path='processed_audio_dir',
         )
 
         if target_recordings:
             success_count = await pipeline.transcribe_recordings(
-                target_recordings, transcription_model=transcription_model, topic_mode=topic_mode
+                target_recordings,
+                transcription_model="fireworks",
+                topic_mode=topic_mode,
+                topic_model=topic_model,
             )
             logger.info(f"✅ Транскрибация завершена: {success_count}/{len(target_recordings)}")
         else:
             logger.warning("❌ Нет записей для транскрибации (нужны записи со статусом PROCESSED и аудио файлом)")
+
+        # Закрываем соединение с БД
+        if db_manager:
+            await db_manager.close()
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+        sys.exit(1)
+
+
+async def _subtitles_command(
+    from_date,
+    to_date,
+    last,
+    account,
+    config_file,
+    use_db,
+    select_all,
+    recordings,
+    formats,
+):
+    """Команда subtitles - генерировать субтитры из транскрипций"""
+    from_date, to_date = _parse_dates(from_date, to_date, last)
+
+    setup_logger()
+    logger = get_logger()
+
+    try:
+        # Инициализация БД и pipeline
+        pipeline, db_manager = await _setup_pipeline(use_db)
+
+        # Получаем целевые записи со статусом TRANSCRIBED и наличием файла транскрипции
+        target_recordings = await _get_target_recordings(
+            pipeline=pipeline,
+            from_date=from_date,
+            to_date=to_date,
+            select_all=select_all,
+            recordings=recordings,
+            allowed_statuses=[ProcessingStatus.TRANSCRIBED],
+            require_file_path='transcription_dir',
+        )
+
+        if target_recordings:
+            success_count = await pipeline.generate_subtitles(
+                target_recordings, formats=formats
+            )
+            logger.info(f"✅ Генерация субтитров завершена: {success_count}/{len(target_recordings)}")
+        else:
+            logger.warning(
+                "❌ Нет записей для генерации субтитров "
+                "(нужны записи со статусом TRANSCRIBED и файлом транскрипции)"
+            )
 
         # Закрываем соединение с БД
         if db_manager:
@@ -858,6 +1075,7 @@ async def _upload_command(
     youtube,
     vk,
     all_platforms,
+    upload_captions,
 ):
     """Команда upload - загрузить записи на платформы"""
     from_date, to_date = _parse_dates(from_date, to_date, last)
@@ -894,7 +1112,9 @@ async def _upload_command(
         )
 
         if target_recordings:
-            success_count, uploaded_recordings = await pipeline.upload_recordings(target_recordings, platforms)
+            success_count, uploaded_recordings = await pipeline.upload_recordings(
+                target_recordings, platforms, upload_captions=upload_captions
+            )
             logger.info(f"✅ Загрузка завершена: {success_count}/{len(target_recordings)}")
 
             # Отображаем список загруженных видео с ссылками
@@ -964,10 +1184,10 @@ async def _reset_command(
 
                 # Удаляем все видео и аудио файлы
                 media_dirs = [
-                    'video/processed_video',
-                    'video/unprocessed_video',
-                    'video/processed_audio',
-                    'video/temp_processing',
+                    'media/video/processed',
+                    'media/video/unprocessed',
+                    'media/processed_audio',
+                    'media/video/temp_processing',
                 ]
                 deleted_files = 0
 
@@ -1173,7 +1393,7 @@ async def _full_process_command(
     all_platforms,
     allow_skipped,
     no_transcription,
-    transcription_model,
+    topic_model,
     topic_mode,
 ):
     """Команда full-process - полный пайплайн: скачать + обработать + загрузить"""
@@ -1230,8 +1450,9 @@ async def _full_process_command(
             platforms=platforms,
             allow_skipped=allow_skipped,
             no_transcription=no_transcription,
-            transcription_model=transcription_model,
+            transcription_model="fireworks",
             topic_mode=topic_mode,
+            topic_model=topic_model,
         )
 
         # Выводим итоговую статистику
@@ -1278,20 +1499,6 @@ async def _full_process_command(
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
         sys.exit(1)
-
-
-async def _get_zoom_api(account: str | None, config_file: str) -> ZoomAPI:
-    """Получение API клиента Zoom"""
-    if os.path.exists(config_file):
-        configs = load_config_from_file(config_file)
-        if account:
-            config = get_config_by_account(account, configs)
-        else:
-            config = next(iter(configs.values()))
-    else:
-        raise FileNotFoundError(f"Файл конфигурации не найден: {config_file}")
-
-    return ZoomAPI(config)
 
 
 def _export_recordings(recordings: builtins.list, export_format: str, output_file: str | None):

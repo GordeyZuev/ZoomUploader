@@ -241,8 +241,23 @@ class VideoProcessor:
             logger.info(f"🔍 Детекция звука для: {title}")
             first_sound, last_sound = await self.audio_detector.detect_audio_boundaries(video_path)
 
-            if first_sound is None or last_sound is None:
+            if first_sound is None and last_sound is None:
                 logger.warning(f"⚠️ Не удалось определить границы звука для {title}")
+                return False, None
+
+            if first_sound is None:
+                logger.warning(f"⚠️ Не удалось определить начало звука для {title}")
+                return False, None
+
+            # Если звук есть на всем протяжении видео, не обрезаем и используем исходный файл
+            if last_sound is None and first_sound == 0.0:
+                logger.info(
+                    "🔊 Звук на всем протяжении видео, пропускаем обрезку и используем исходный файл"
+                )
+                return True, os.path.abspath(video_path)
+
+            if last_sound is None:
+                logger.warning(f"⚠️ Не удалось определить конечную границу звука для {title}")
                 return False, None
 
             logger.info(f"🎵 Найденные границы звука: {first_sound:.1f}s - {last_sound:.1f}s")

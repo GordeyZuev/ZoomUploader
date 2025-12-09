@@ -1,8 +1,10 @@
 """Извлечение тем из транскрипции через DeepSeek"""
 
 import re
+from pathlib import Path
 from typing import Any
 
+import httpx
 from openai import AsyncOpenAI
 
 from logger import format_log, get_logger
@@ -18,19 +20,45 @@ class TopicExtractor:
     def __init__(self, config: DeepSeekConfig):
         self.config = config
 
-        if "deepseek.com" not in config.base_url.lower():
+        base = (config.base_url or "").lower()
+        allowed_domains = ("deepseek.com", "fireworks.ai")
+
+        if not any(domain in base for domain in allowed_domains):
             raise ValueError(
-                f"❌ ОШИБКА: Указан не DeepSeek endpoint! "
-                f"Получен: {config.base_url}, ожидается: https://api.deepseek.com/v1"
+                "❌ ОШИБКА: Некорректный endpoint для TopicExtractor! "
+                "Ожидается DeepSeek API (https://api.deepseek.com/v1) "
+                "или Fireworks API (https://api.fireworks.ai/inference/v1). "
+                f"Получен: {config.base_url}"
             )
 
-        self.client = AsyncOpenAI(
-            api_key=config.api_key,
-            base_url=config.base_url,
-        )
+        # Определяем провайдер
+        self.is_fireworks = "fireworks.ai" in base
+
+        # Определяем способ подключения к API
+        # Для Fireworks используем прямой HTTP-запрос через httpx (нужны специфичные параметры)
+        # Для прямого DeepSeek используем OpenAI клиент (OpenAI-compatible API)
+        if self.is_fireworks:
+            self.client = None  # Будем использовать httpx напрямую
+            self.api_key = config.api_key
+            self.base_url = config.base_url
+        else:
+            # Для DeepSeek используем AsyncOpenAI (OpenAI-compatible API)
+            self.client = AsyncOpenAI(
+                api_key=config.api_key,
+                base_url=config.base_url,
+            )
+            self.api_key = None
+            self.base_url = None
+
+        # Определяем провайдер для логирования
+        if self.is_fireworks:
+            provider = "fireworks_deepseek"
+        else:
+            provider = "deepseek"
         logger.info(
             format_log(
                 "TopicExtractor инициализирован",
+                провайдер=provider,
                 базовый_url=config.base_url,
                 модель=config.model,
             )
@@ -143,6 +171,92 @@ class TopicExtractor:
                 'topic_timestamps': [],
                 'main_topics': [],
             }
+
+    async def extract_topics_from_file(
+        self,
+        segments_file_path: str,
+        recording_topic: str | None = None,
+        granularity: str = "long",  # "short" | "long"
+    ) -> dict[str, Any]:
+        """
+        Извлечение тем из файла segments.txt.
+
+        Args:
+            segments_file_path: Путь к файлу segments.txt с форматом [HH:MM:SS - HH:MM:SS] текст
+            recording_topic: Название курса/предмета для контекста (опционально)
+            granularity: Режим извлечения тем: "short" или "long"
+
+        Returns:
+            Словарь с темами (аналогично extract_topics)
+        """
+        if not Path(segments_file_path).exists():
+            raise FileNotFoundError(f"Файл segments.txt не найден: {segments_file_path}")
+
+        logger.info(f"📖 Чтение сегментов из файла: {segments_file_path}")
+
+        segments = []
+        transcription_text_parts = []
+        timestamp_pattern = re.compile(
+            r'\[(\d{2}):(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2}):(\d{2})\]\s*(.+)'
+        )
+        timestamp_pattern_ms = re.compile(
+            r'\[(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})\]\s*(.+)'
+        )
+
+        with open(segments_file_path, encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+
+                match_ms = timestamp_pattern_ms.match(line)
+                match_s = timestamp_pattern.match(line) if not match_ms else None
+
+                if match_ms or match_s:
+                    try:
+                        if match_ms:
+                            start_h, start_m, start_s, start_ms = map(int, match_ms.groups()[:4])
+                            end_h, end_m, end_s, end_ms = map(int, match_ms.groups()[4:8])
+                            text = match_ms.groups()[8].strip()
+                            start_seconds = start_h * 3600 + start_m * 60 + start_s + start_ms / 1000.0
+                            end_seconds = end_h * 3600 + end_m * 60 + end_s + end_ms / 1000.0
+                        else:
+                            start_h, start_m, start_s, end_h, end_m, end_s = map(int, match_s.groups()[:6])
+                            text = match_s.groups()[6].strip()
+                            start_seconds = start_h * 3600 + start_m * 60 + start_s
+                            end_seconds = end_h * 3600 + end_m * 60 + end_s
+
+                        if text:
+                            segments.append({
+                                'start': float(start_seconds),
+                                'end': float(end_seconds),
+                                'text': text,
+                            })
+                            transcription_text_parts.append(text)
+                    except (ValueError, IndexError) as e:
+                        logger.warning(
+                            f"⚠️ Ошибка парсинга строки {line_num} в файле {segments_file_path}: {line[:50]}... - {e}"
+                        )
+                        continue
+                else:
+                    if line and not line.startswith('['):
+                        transcription_text_parts.append(line)
+
+        if not segments:
+            raise ValueError(f"Не удалось извлечь сегменты из файла {segments_file_path}")
+
+        transcription_text = ' '.join(transcription_text_parts)
+
+        logger.info(
+            f"✅ Прочитано {len(segments)} сегментов из файла {segments_file_path}"
+        )
+
+        return await self.extract_topics(
+            transcription_text=transcription_text,
+            segments=segments,
+            recording_topic=recording_topic,
+            granularity=granularity,
+        )
 
     def _format_transcript_with_timestamps(self, segments: list[dict]) -> str:
         """
@@ -353,26 +467,27 @@ class TopicExtractor:
 """
 
         try:
-            response = await self.client.chat.completions.create(
-                model=self.config.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Ты — самый лучший аналитик учебных материалов на магистратуре Computer Science. Анализируй транскрипции и выделяй структуру лекций."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    },
-                ],
-                temperature=self.config.temperature if self.config.temperature is not None else 0.0,
-                top_p=1.0,
-                frequency_penalty=0.0,
-                presence_penalty=0.0,
-                max_tokens=self.config.max_tokens,
-            )
+            if self.is_fireworks:
+                # Для Fireworks используем прямой HTTP-запрос, чтобы поддерживать все параметры
+                content = await self._fireworks_request(prompt)
+            else:
+                # Для прямого DeepSeek используем OpenAI клиент (OpenAI-compatible API)
+                response = await self.client.chat.completions.create(
+                    model=self.config.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "Ты — самый лучший аналитик учебных материалов на магистратуре Computer Science. Анализируй транскрипции и выделяй структуру лекций.",
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt,
+                        },
+                    ],
+                    **self.config.to_request_params(),
+                )
+                content = response.choices[0].message.content.strip()
 
-            content = response.choices[0].message.content.strip()
             if not content:
                 return {'main_topics': [], 'topic_timestamps': []}
 
@@ -393,6 +508,117 @@ class TopicExtractor:
                 )
             )
             return {'main_topics': [], 'topic_timestamps': []}
+
+    async def _fireworks_request(self, prompt: str) -> str:
+        """
+        Прямой HTTP-запрос к Fireworks API.
+
+        Параметры передаются согласно официальной документации Fireworks API:
+          - model
+          - max_tokens
+          - top_p
+          - top_k
+          - presence_penalty
+          - frequency_penalty
+          - temperature
+          - messages
+
+        Args:
+            prompt: Промпт для отправки
+
+        Returns:
+            Текст ответа от модели
+        """
+        url = f"{self.base_url}/chat/completions"
+
+        # Собираем параметры согласно спецификации Fireworks API
+        params: dict[str, Any] = {
+            "max_tokens": self.config.max_tokens,
+            "top_k": self.config.top_k,
+            "presence_penalty": self.config.presence_penalty,
+            "frequency_penalty": self.config.frequency_penalty,
+            "temperature": self.config.temperature,
+        }
+
+        # Для максимальной детерминированности: если top_k=1, не используем top_p
+        # (top_p и top_k могут конфликтовать при детерминированных настройках)
+        if self.config.top_k != 1 and self.config.top_p is not None:
+            params["top_p"] = self.config.top_p
+
+        # Fireworks API: для всех моделей запросы с max_tokens > 4096 требуют stream=true
+        # Для не-потоковых запросов ограничиваем max_tokens до 4096
+        if params.get("max_tokens", 0) > 4096:
+            logger.warning(
+                f"⚠️ max_tokens={params.get('max_tokens')} превышает лимит Fireworks для не-потоковых запросов (4096). "
+                f"Уменьшаем до 4096. Для большего значения требуется stream=true."
+            )
+            params["max_tokens"] = 4096
+
+        # Фильтруем None значения, чтобы не передавать их в API
+        params = {k: v for k, v in params.items() if v is not None}
+
+        payload = {
+            "model": self.config.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "Ты — самый лучший аналитик учебных материалов на магистратуре Computer Science. Анализируй транскрипции и выделяй структуру лекций."
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            **params,
+        }
+
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+
+        timeout = httpx.Timeout(self.config.timeout, connect=10.0)
+
+        logger.debug(f"📤 Fireworks API запрос: URL={url}, модель={self.config.model}, параметры={list(params.keys())}")
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            try:
+                response = await client.post(url, json=payload, headers=headers)
+
+                if response.status_code != 200:
+                    error_text = response.text
+                    try:
+                        error_data = response.json()
+                        error_text = str(error_data)
+                    except Exception:
+                        pass
+
+                    logger.error(
+                        f"❌ Ошибка Fireworks API (status {response.status_code}):\n"
+                        f"URL: {url}\n"
+                        f"Payload keys: {list(payload.keys())}\n"
+                        f"Payload params: {params}\n"
+                        f"Response: {error_text[:2000]}"
+                    )
+                    response.raise_for_status()
+
+                data = response.json()
+
+                if "choices" not in data or not data["choices"]:
+                    raise ValueError(f"Неожиданный формат ответа от Fireworks API: {data}")
+
+                content = data["choices"][0]["message"]["content"].strip()
+                return content
+            except httpx.HTTPStatusError as e:
+                if e.response is not None:
+                    try:
+                        error_data = e.response.json()
+                        logger.error(f"❌ Ошибка Fireworks API: {error_data}")
+                    except Exception:
+                        error_text = e.response.text
+                        logger.error(f"❌ Ошибка Fireworks API: {error_text[:1000]}")
+                raise
 
     def _detect_long_pauses(self, segments: list[dict], min_gap_minutes: float = 8.0) -> list[dict]:
         """

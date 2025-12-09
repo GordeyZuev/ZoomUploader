@@ -112,25 +112,19 @@ def format_status(status: str) -> str:
 
 def format_meeting_info(recording) -> str:
     """Форматирование информации о встрече для вывода."""
-    topic = recording.topic or "Без названия"
+    title = getattr(recording, "display_name", None) or "Без названия"
     date = format_date(recording.start_time)
     duration = format_duration(recording.duration)
-    status = format_status(recording.status.value)
+    status_value = recording.status.value if hasattr(recording.status, "value") else str(recording.status)
+    status = format_status(status_value)
 
-    info = f"📅 {topic}\n"
+    info = f"📅 {title}\n"
     info += f"   ⏰ Дата: {date}\n"
     info += f"   ⏱️  Длительность: {duration}\n"
     info += f"   📊 {status}\n"
 
-    if recording.video_file_size > 0:
+    if getattr(recording, "video_file_size", 0) > 0:
         video_size = format_file_size(recording.video_file_size)
         info += f"   🎬 Видео: {video_size}\n"
-
-    if recording.chat_file_size > 0:
-        chat_size = format_file_size(recording.chat_file_size)
-        info += f"   💬 Чат: {chat_size}\n"
-
-    if recording.error_message:
-        info += f"   ❌ Ошибка: {recording.error_message}\n"
 
     return info

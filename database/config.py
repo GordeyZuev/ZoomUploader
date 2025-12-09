@@ -1,30 +1,79 @@
+"""Конфигурация подключения к PostgreSQL с валидацией через Pydantic"""
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from config.settings import settings
 
 
-class DatabaseConfig:
-    """Конфигурация подключения к PostgreSQL (совместимость)"""
+class DatabaseConfig(BaseSettings):
+    """
+    Конфигурация подключения к PostgreSQL.
 
-    def __init__(self, db_settings=None):
-        if db_settings is None:
-            db_settings = settings.database
+    Использует настройки из config.settings, но может быть переопределена.
+    """
 
-        self.host = db_settings.host
-        self.port = db_settings.port
-        self.database = db_settings.database
-        self.username = db_settings.username
-        self.password = db_settings.password
+    model_config = SettingsConfigDict(
+        env_file=None,
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    host: str = Field(
+        default_factory=lambda: settings.database.host,
+        description="Хост базы данных",
+    )
+    port: int = Field(
+        default_factory=lambda: settings.database.port,
+        ge=1,
+        le=65535,
+        description="Порт базы данных",
+    )
+    database: str = Field(
+        default_factory=lambda: settings.database.database,
+        description="Название базы данных",
+    )
+    username: str = Field(
+        default_factory=lambda: settings.database.username,
+        description="Имя пользователя",
+    )
+    password: str = Field(
+        default_factory=lambda: settings.database.password,
+        description="Пароль",
+    )
 
     @classmethod
-    def from_env(cls) -> 'DatabaseConfig':
-        """Создание конфигурации из Pydantic Settings"""
-        return cls(settings.database)
+    def from_env(cls) -> "DatabaseConfig":
+        """
+        Создание конфигурации из Pydantic Settings.
+
+        Returns:
+            DatabaseConfig: Конфигурация базы данных
+        """
+        return cls()
 
     @property
     def url(self) -> str:
-        """URL для подключения к базе данных"""
-        return settings.database.url
+        """
+        URL для подключения к базе данных (асинхронный).
+
+        Returns:
+            str: PostgreSQL async URL
+        """
+        return (
+            f"postgresql+asyncpg://{self.username}:{self.password}@"
+            f"{self.host}:{self.port}/{self.database}"
+        )
 
     @property
     def sync_url(self) -> str:
-        """Синхронный URL для Alembic"""
-        return settings.database.sync_url
+        """
+        Синхронный URL для Alembic.
+
+        Returns:
+            str: PostgreSQL sync URL
+        """
+        return (
+            f"postgresql://{self.username}:{self.password}@"
+            f"{self.host}:{self.port}/{self.database}"
+        )

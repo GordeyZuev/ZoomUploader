@@ -40,16 +40,19 @@ class LoggingSettings(BaseSettings):
     )
 
 
+MEDIA_ROOT = "media"
+
+
 class ProcessingSettings(BaseSettings):
     """Настройки обработки видео"""
 
     input_dir: str = Field(
-        default="video/unprocessed_video", description="Директория входящих видео"
+        default=f"{MEDIA_ROOT}/video/unprocessed", description="Директория входящих видео"
     )
     output_dir: str = Field(
-        default="video/processed_video", description="Директория обработанных видео"
+        default=f"{MEDIA_ROOT}/video/processed", description="Директория обработанных видео"
     )
-    temp_dir: str = Field(default="video/temp_processing", description="Временная директория")
+    temp_dir: str = Field(default=f"{MEDIA_ROOT}/video/temp_processing", description="Временная директория")
 
     # Настройки FFmpeg - только обрезка без изменения качества
     video_codec: str = Field(default="copy", description="Видео кодек (copy = без перекодирования)")
@@ -88,7 +91,7 @@ class ZoomSettings(BaseSettings):
         default="config/zoom_creds.json", description="Путь к файлу конфигурации Zoom"
     )
     download_dir: str = Field(
-        default="video/unprocessed_video", description="Директория для скачивания записей"
+        default=f"{MEDIA_ROOT}/video/unprocessed", description="Директория для скачивания записей"
     )
 
 

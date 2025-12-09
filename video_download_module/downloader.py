@@ -25,7 +25,7 @@ logger = get_logger()
 class ZoomDownloader:
     """Класс для загрузки файлов Zoom."""
 
-    def __init__(self, download_dir: str = "video/unprocessed_video"):
+    def __init__(self, download_dir: str = "media/video/unprocessed"):
         self.download_dir = Path(download_dir)
         self.download_dir.mkdir(parents=True, exist_ok=True)
         self.console = Console()
@@ -41,12 +41,12 @@ class ZoomDownloader:
         return url
 
     def _get_filename(self, recording: MeetingRecording) -> str:
-        topic = recording.topic.strip() if recording.topic else ""
-        safe_topic = "".join(
-            c for c in topic if c.isalnum() or c in (' ', '-', '_', '(', ')')
+        display_name = recording.display_name.strip() if recording.display_name else ""
+        safe_name = "".join(
+            c for c in display_name if c.isalnum() or c in (' ', '-', '_', '(', ')')
         ).strip()
-        if len(safe_topic) > 60:
-            safe_topic = safe_topic[:60].rstrip()
+        if len(safe_name) > 60:
+            safe_name = safe_name[:60].rstrip()
         if recording.start_time and recording.start_time.strip():
             try:
                 normalized_time = normalize_datetime_string(recording.start_time)
@@ -58,7 +58,7 @@ class ZoomDownloader:
         else:
             formatted_date = "unknown_date"
 
-        return f"{safe_topic} ({formatted_date}).mp4"
+        return f"{safe_name} ({formatted_date}).mp4"
 
     async def download_file(
         self,
@@ -335,10 +335,10 @@ class ZoomDownloader:
         force_download: bool = False,
     ) -> bool:
         """Загрузка записи (только видео)."""
-        logger.debug(f"Начинаю загрузку записи: {recording.topic}")
+        logger.debug(f"Начинаю загрузку записи: {recording.display_name}")
 
         if not recording.video_file_download_url:
-            logger.error(f"Нет ссылки на видео для {recording.topic}")
+            logger.error(f"Нет ссылки на видео для {recording.display_name}")
             recording.update_status(ProcessingStatus.FAILED, "Нет ссылки на видео")
             return False
 
@@ -347,7 +347,7 @@ class ZoomDownloader:
             ProcessingStatus.SKIPPED,
         ]:
             logger.info(
-                f"⏭️ Запись уже обработана (статус: {recording.status.value}), пропускаем загрузку: {recording.topic}"
+                f"⏭️ Запись уже обработана (статус: {recording.status.value}), пропускаем загрузку: {recording.display_name}"
             )
             return False
 
@@ -411,11 +411,11 @@ class ZoomDownloader:
                 recording.local_video_path = str(video_path)
             recording.update_status(ProcessingStatus.DOWNLOADED)
             recording.downloaded_at = datetime.now()
-            logger.debug(f"✅ Запись {recording.topic} успешно загружена: {video_path}")
+            logger.debug(f"✅ Запись {recording.display_name} успешно загружена: {video_path}")
             return True
         else:
             recording.update_status(ProcessingStatus.FAILED)
-            logger.error(f"❌ Ошибка загрузки записи {recording.topic}")
+            logger.error(f"❌ Ошибка загрузки записи {recording.display_name}")
             return False
 
     async def download_multiple(
@@ -454,7 +454,7 @@ class ZoomDownloader:
                     except Exception:
                         date_str = "??/??/??"
 
-                    title = f"{recording.topic[:45]}{'...' if len(recording.topic) > 45 else ''}"
+                    title = f"{recording.display_name[:45]}{'...' if len(recording.display_name) > 45 else ''}"
                     # Используем реальный размер файла или разумное значение по умолчанию
                     estimated_size = recording.video_file_size or (
                         200 * 1024 * 1024

@@ -97,15 +97,14 @@ uv run python main.py recreate-db
   "base_url": "https://audio-turbo.api.fireworks.ai",
   "language": "ru",
   "response_format": "verbose_json",
-  "timestamp_granularities": ["segment"],
+  "timestamp_granularities": ["word"],
   "prompt": "Это лекция магистратуры по Computer Science со специализацией в Machine Learning и Data Science. Сохраняй правильное написание профильных терминов (включая английские), латинских обозначений, аббревиатур, элементов кода и имён собственных.",
-  "enable_vad": false,
-  "diarization": false,
-  "temperature": 0.0,
-  "max_file_size_mb": 25,
+  "diarize": false,
+  "temperature": 0.05,
+  "max_file_size_mb": 1024,
   "audio_bitrate": "64k",
   "audio_sample_rate": 16000,
-  "retry_attempts": 1,
+  "retry_attempts": 2,
   "retry_delay": 2.0
 }
 ```

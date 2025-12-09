@@ -93,6 +93,37 @@ class UploadManager:
         )
         return None
 
+    async def upload_caption(
+        self,
+        platform: str,
+        video_id: str,
+        caption_path: str,
+        language: str = "ru",
+        name: str | None = None,
+    ) -> bool:
+        """Загрузка субтитров, если платформа поддерживает."""
+        uploader = self.get_uploader(platform)
+        if not uploader:
+            logger.error(f"❌ Загрузчик для платформы {platform} не найден")
+            return False
+
+        if not hasattr(uploader, "upload_caption"):
+            logger.info(f"ℹ️ Платформа {platform} не поддерживает загрузку субтитров")
+            return False
+
+        try:
+            return bool(
+                await uploader.upload_caption(
+                    video_id=video_id,
+                    caption_path=caption_path,
+                    language=language,
+                    name=name,
+                )
+            )
+        except Exception as e:
+            logger.error(f"❌ Ошибка загрузки субтитров на {platform}: {e}")
+            return False
+
     async def upload_to_all_platforms(
         self, video_path: str, title: str, description: str = "", **kwargs
     ) -> dict[str, UploadResult | None]:

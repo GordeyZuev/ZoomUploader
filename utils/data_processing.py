@@ -3,7 +3,7 @@ from typing import Any
 
 from api.zoom_api import ZoomAPI
 from logger import get_logger
-from models.recording import MeetingRecording, ProcessingStatus
+from models.recording import MeetingRecording, ProcessingStatus, TargetStatus, TargetType
 
 from .formatting import normalize_datetime_string
 
@@ -118,7 +118,7 @@ def group_recordings_by_topic(
     grouped = {}
 
     for recording in recordings:
-        topic = recording.topic or "Без названия"
+        topic = recording.display_name or "Без названия"
         if topic not in grouped:
             grouped[topic] = []
         grouped[topic].append(recording)
@@ -189,6 +189,19 @@ def get_pipeline_statistics(recordings: list[MeetingRecording]) -> dict[str, Any
     """Получение статистики пайплайна обработки."""
     total = len(recordings)
 
+    def _uploaded_count(target_type: TargetType) -> int:
+        return len(
+            [
+                r
+                for r in recordings
+                if any(
+                    (t.target_type == target_type or t.target_type == target_type.value)
+                    and (t.status == TargetStatus.UPLOADED or t.status == TargetStatus.UPLOADED.value)
+                    for t in getattr(r, "output_targets", [])
+                )
+            ]
+        )
+
     stats = {
         'total_recordings': total,
         'long_enough': len(filter_recordings_by_duration(recordings)),
@@ -196,10 +209,8 @@ def get_pipeline_statistics(recordings: list[MeetingRecording]) -> dict[str, Any
         'ready_for_upload': len(filter_ready_for_upload(recordings)),
         'downloaded': len([r for r in recordings if r.is_downloaded()]),
         'processed': len([r for r in recordings if r.status.value == 'processed']),
-        'youtube_uploaded': len(
-            [r for r in recordings if r.youtube_status.value == 'uploaded_youtube']
-        ),
-        'vk_uploaded': len([r for r in recordings if r.vk_status.value == 'uploaded_vk']),
+        'youtube_uploaded': _uploaded_count(TargetType.YOUTUBE),
+        'vk_uploaded': _uploaded_count(TargetType.VK),
         'failed': len([r for r in recordings if r.is_failed()]),
     }
 
@@ -237,7 +248,7 @@ def get_recordings_statistics(recordings: list[MeetingRecording]) -> dict[str, A
         status = recording.status.value
         status_counts[status] = status_counts.get(status, 0) + 1
 
-    topics = set(rec.topic for rec in recordings if rec.topic)
+    topics = set(rec.display_name for rec in recordings if rec.display_name)
 
     return {
         'total_recordings': len(recordings),

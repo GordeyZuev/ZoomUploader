@@ -92,3 +92,16 @@ class BaseUploader(ABC):
             platform=platform,
             metadata=metadata or {},
         )
+
+    async def upload_caption(
+        self,
+        video_id: str,
+        caption_path: str,
+        language: str = "ru",
+        name: str | None = None,
+    ) -> bool:
+        """
+        Загрузка субтитров (по умолчанию не реализована).
+        Переопределяется платформенными загрузчиками, которые это поддерживают.
+        """
+        return False
