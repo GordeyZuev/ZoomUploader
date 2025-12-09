@@ -1,3 +1,17 @@
-from .recording import MeetingRecording, PlatformStatus, ProcessingMetadata, ProcessingStatus
+from .recording import (
+    MeetingRecording,
+    OutputTarget,
+    ProcessingStatus,
+    SourceType,
+    TargetStatus,
+    TargetType,
+)
 
-__all__ = ['MeetingRecording', 'ProcessingStatus', 'PlatformStatus', 'ProcessingMetadata']
+__all__ = [
+    'MeetingRecording',
+    'ProcessingStatus',
+    'SourceType',
+    'TargetType',
+    'TargetStatus',
+    'OutputTarget',
+]

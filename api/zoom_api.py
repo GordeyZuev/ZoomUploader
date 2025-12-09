@@ -1,10 +1,11 @@
-import base64
 from typing import Any
 
 import httpx
 
 from config.settings import ZoomConfig
 from logger import get_logger
+
+from .token_manager import TokenManager
 
 logger = get_logger()
 
@@ -34,62 +35,30 @@ class ZoomResponseError(ZoomAPIError):
 
 
 class ZoomAPI:
-    """Класс для работы с Zoom API."""
+    """
+    Класс для работы с Zoom API.
+
+    Использует TokenManager для централизованного управления токенами доступа
+    с синхронизацией и механизмом повторных попыток.
+    """
 
     def __init__(self, config: ZoomConfig):
         """Инициализация API клиента."""
         self.config = config
-        self._cached_token = None
-        self._token_expires_at = None
+        # TokenManager будет использоваться через get_instance для каждого запроса
 
     async def get_access_token(self) -> str | None:
-        """Получение токена доступа с кэшированием."""
-        import time
+        """
+        Получение токена доступа с кэшированием и синхронизацией.
 
-        # Проверяем, есть ли действующий кэшированный токен
-        if (
-            self._cached_token
-            and self._token_expires_at
-            and time.time() < self._token_expires_at - 60
-        ):  # Обновляем за минуту до истечения
-            logger.debug(f"Используем кэшированный токен для аккаунта: {self.config.account}")
-            return self._cached_token
+        Использует TokenManager для централизованного управления токенами,
+        предотвращая race conditions при параллельных запросах.
 
-        credentials = f"{self.config.client_id}:{self.config.client_secret}"
-        encoded_credentials = base64.b64encode(credentials.encode()).decode()
-
-        try:
-            logger.info(f"Получение токена для аккаунта: {self.config.account}")
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    "https://zoom.us/oauth/token",
-                    headers={"Authorization": f"Basic {encoded_credentials}"},
-                    params={
-                        "grant_type": "account_credentials",
-                        "account_id": self.config.account_id,
-                    },
-                )
-
-                if response.status_code == 200:
-                    token_data = response.json()
-                    access_token = token_data.get("access_token")
-                    expires_in = token_data.get("expires_in", 3600)  # По умолчанию 1 час
-
-                    # Кэшируем токен
-                    self._cached_token = access_token
-                    self._token_expires_at = time.time() + expires_in
-
-                    logger.info("Токен получен успешно")
-                    return access_token
-                else:
-                    logger.error(
-                        f"Ошибка получения токена: {response.status_code} - {response.text}"
-                    )
-                    return None
-
-        except Exception as e:
-            logger.error(f"Исключение при получении токена: {e}")
-            return None
+        Returns:
+            Access token или None в случае неудачи
+        """
+        token_manager = await TokenManager.get_instance(self.config.account)
+        return await token_manager.get_token(self.config)
 
     async def get_recordings(
         self,
@@ -125,16 +94,31 @@ class ZoomAPI:
                     logger.info(f"Получено записей: {len(data.get('meetings', []))}")
                     return data
                 else:
-                    logger.error(f"Ошибка API: {response.status_code} - {response.text}")
-                    raise ZoomResponseError(f"Ошибка API: {response.status_code} - {response.text}")
+                    logger.error(
+                        f"Ошибка API для аккаунта {self.config.account}: "
+                        f"{response.status_code} - {response.text}"
+                    )
+                    raise ZoomResponseError(
+                        f"Ошибка API: {response.status_code} - {response.text}"
+                    )
 
         except httpx.RequestError as e:
-            logger.error(f"Ошибка сетевого запроса: {e}")
+            error_type = type(e).__name__
+            logger.error(
+                f"Ошибка сетевого запроса для аккаунта {self.config.account} "
+                f"({error_type}): {e}",
+                exc_info=True,
+            )
             raise ZoomRequestError(f"Ошибка сетевого запроса: {e}") from e
         except ZoomAPIError:
             raise
         except Exception as e:
-            logger.error(f"Неожиданная ошибка: {e}")
+            error_type = type(e).__name__
+            logger.error(
+                f"Неожиданная ошибка для аккаунта {self.config.account} "
+                f"({error_type}): {e}",
+                exc_info=True,
+            )
             raise ZoomAPIError(f"Неожиданная ошибка: {e}") from e
 
     async def get_recording_details(
@@ -160,11 +144,30 @@ class ZoomAPI:
                 if response.status_code == 200:
                     return response.json()
                 else:
-                    raise ZoomResponseError(f"Ошибка API: {response.status_code} - {response.text}")
+                    logger.error(
+                        f"Ошибка API для аккаунта {self.config.account} "
+                        f"при получении деталей записи {meeting_id}: "
+                        f"{response.status_code} - {response.text}"
+                    )
+                    raise ZoomResponseError(
+                        f"Ошибка API: {response.status_code} - {response.text}"
+                    )
 
         except httpx.RequestError as e:
+            error_type = type(e).__name__
+            logger.error(
+                f"Ошибка сетевого запроса для аккаунта {self.config.account} "
+                f"при получении деталей записи {meeting_id} ({error_type}): {e}",
+                exc_info=True,
+            )
             raise ZoomRequestError(f"Ошибка сетевого запроса: {e}") from e
         except ZoomAPIError:
             raise
         except Exception as e:
+            error_type = type(e).__name__
+            logger.error(
+                f"Неожиданная ошибка для аккаунта {self.config.account} "
+                f"при получении деталей записи {meeting_id} ({error_type}): {e}",
+                exc_info=True,
+            )
             raise ZoomAPIError(f"Неожиданная ошибка: {e}") from e

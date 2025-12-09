@@ -1,36 +1,50 @@
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
+"""Фабрика конфигураций для загрузки видео с валидацией через Pydantic"""
 
+from typing import Literal
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from config.unified_config import PlatformConfig, VKConfig, YouTubeConfig
 from logger import get_logger
 
 logger = get_logger()
 
 
-class PlatformConfig(ABC):
-    """Базовый класс конфигурации платформы"""
+class YouTubeUploadConfig(PlatformConfig):
+    """Конфигурация YouTube API для загрузки"""
 
-    @abstractmethod
-    def validate(self) -> bool:
-        """Валидация конфигурации"""
-        pass
+    client_secrets_file: str = Field(
+        default="youtube_client_secrets.json",
+        description="Путь к файлу с секретами клиента",
+    )
+    credentials_file: str = Field(
+        default="youtube_credentials.json",
+        description="Путь к файлу с credentials",
+    )
+    scopes: list[str] = Field(
+        default_factory=lambda: [
+            'https://www.googleapis.com/auth/youtube.upload',
+            'https://www.googleapis.com/auth/youtube.force-ssl',
+        ],
+        description="Scopes для YouTube API",
+    )
+    default_privacy: Literal["private", "unlisted", "public"] = Field(
+        default="unlisted",
+        description="Приватность по умолчанию",
+    )
+    default_language: str = Field(
+        default="ru",
+        description="Язык по умолчанию",
+    )
 
-
-@dataclass
-class YouTubeConfig(PlatformConfig):
-    """Конфигурация YouTube API"""
-
-    client_secrets_file: str = "youtube_client_secrets.json"
-    credentials_file: str = "youtube_credentials.json"
-    scopes: list[str] | None = None
-    default_privacy: str = "unlisted"
-    default_language: str = "ru"
-
-    def __post_init__(self):
-        if self.scopes is None:
-            self.scopes = [
-                'https://www.googleapis.com/auth/youtube.upload',
-                'https://www.googleapis.com/auth/youtube.force-ssl',
-            ]
+    @field_validator("scopes")
+    @classmethod
+    def validate_scopes(cls, v: list[str]) -> list[str]:
+        """Валидация scopes."""
+        if not v:
+            logger.warning("⚠️ Не указаны scopes для YouTube API")
+        return v
 
     def validate(self) -> bool:
         """Валидация конфигурации"""
@@ -39,9 +53,6 @@ class YouTubeConfig(PlatformConfig):
         if not os.path.exists(self.client_secrets_file):
             logger.warning(f"⚠️ Файл с секретами клиента не найден: {self.client_secrets_file}")
 
-        if not self.scopes:
-            logger.warning("⚠️ Не указаны scopes для YouTube API")
-
         if self.default_privacy not in ['private', 'unlisted', 'public']:
             logger.error(f"❌ Неверный статус приватности: {self.default_privacy}")
             return False
@@ -49,21 +60,53 @@ class YouTubeConfig(PlatformConfig):
         return True
 
 
-@dataclass
-class VKConfig(PlatformConfig):
-    """Конфигурация VK API"""
+class VKUploadConfig(PlatformConfig):
+    """Конфигурация VK API для загрузки"""
 
-    access_token: str = ""
-    app_id: str = "54249533"  # ID приложения VK
-    scope: str = "video,groups,wall"  # Права доступа
-    group_id: int | None = None
-    album_id: int | None = None
-    name: str = ""
-    description: str = ""
-    privacy_view: str = "0"
-    privacy_comment: str = "1"
-    no_comments: bool = False
-    repeat: bool = False
+    access_token: str = Field(
+        default="",
+        description="VK access token",
+    )
+    app_id: str = Field(
+        default="54249533",
+        description="ID приложения VK",
+    )
+    scope: str = Field(
+        default="video,groups,wall",
+        description="Права доступа",
+    )
+    group_id: int | None = Field(
+        default=None,
+        description="ID группы VK",
+    )
+    album_id: int | None = Field(
+        default=None,
+        description="ID альбома VK",
+    )
+    name: str = Field(
+        default="",
+        description="Название",
+    )
+    description: str = Field(
+        default="",
+        description="Описание",
+    )
+    privacy_view: Literal["0", "1", "2"] = Field(
+        default="0",
+        description="Настройки приватности просмотра",
+    )
+    privacy_comment: Literal["0", "1", "2"] = Field(
+        default="1",
+        description="Настройки приватности комментариев",
+    )
+    no_comments: bool = Field(
+        default=False,
+        description="Отключить комментарии",
+    )
+    repeat: bool = Field(
+        default=False,
+        description="Повторять загрузку",
+    )
 
     def validate(self) -> bool:
         """Валидация конфигурации"""
@@ -76,31 +119,44 @@ class VKConfig(PlatformConfig):
         if not self.scope:
             logger.warning("⚠️ VK scope не указан")
 
-        if self.privacy_view not in ['0', '1', '2']:
-            logger.error(f"❌ Неверный privacy_view: {self.privacy_view}")
-            return False
-
-        if self.privacy_comment not in ['0', '1', '2']:
-            logger.error(f"❌ Неверный privacy_comment: {self.privacy_comment}")
-            return False
-
         return True
 
 
-@dataclass
-class UploadConfig:
+class UploadConfig(BaseSettings):
     """Общая конфигурация системы загрузки"""
 
-    youtube: YouTubeConfig | None = None
-    vk: VKConfig | None = None
-    max_file_size_mb: int = 5000
-    supported_formats: list[str] | None = None
-    retry_attempts: int = 3
-    retry_delay: int = 5
+    model_config = SettingsConfigDict(
+        extra="ignore",
+        case_sensitive=False,
+    )
 
-    def __post_init__(self):
-        if self.supported_formats is None:
-            self.supported_formats = ['mp4', 'avi', 'mov', 'mkv', 'webm', 'm4v']
+    youtube: YouTubeUploadConfig | None = Field(
+        default=None,
+        description="Конфигурация YouTube",
+    )
+    vk: VKUploadConfig | None = Field(
+        default=None,
+        description="Конфигурация VK",
+    )
+    max_file_size_mb: int = Field(
+        default=5000,
+        ge=1,
+        description="Максимальный размер файла в МБ",
+    )
+    supported_formats: list[str] = Field(
+        default_factory=lambda: ['mp4', 'avi', 'mov', 'mkv', 'webm', 'm4v'],
+        description="Поддерживаемые форматы файлов",
+    )
+    retry_attempts: int = Field(
+        default=3,
+        ge=1,
+        description="Количество попыток при ошибке",
+    )
+    retry_delay: int = Field(
+        default=5,
+        ge=0,
+        description="Задержка между попытками в секундах",
+    )
 
     def validate(self) -> bool:
         """Валидация всей конфигурации"""
@@ -118,37 +174,48 @@ class UploadConfigFactory:
 
     @staticmethod
     def from_app_config(app_config) -> UploadConfig:
-        """Создание конфигурации из унифицированного конфига приложения"""
+        """
+        Создание конфигурации из унифицированного конфига приложения.
 
+        Args:
+            app_config: AppConfig из unified_config
+
+        Returns:
+            UploadConfig: Конфигурация для загрузки
+        """
         # Создаем конфигурации платформ
         youtube = None
         vk = None
 
         if "youtube" in app_config.platforms:
             youtube_platform = app_config.platforms["youtube"]
-            youtube = YouTubeConfig(
-                client_secrets_file=youtube_platform.client_secrets_file,
-                credentials_file=youtube_platform.credentials_file,
-                scopes=youtube_platform.scopes,
-                default_privacy=youtube_platform.default_privacy,
-                default_language=youtube_platform.default_language,
-            )
+            if isinstance(youtube_platform, YouTubeConfig):
+                youtube = YouTubeUploadConfig(
+                    enabled=youtube_platform.enabled,
+                    client_secrets_file=youtube_platform.client_secrets_file,
+                    credentials_file=youtube_platform.credentials_file,
+                    scopes=youtube_platform.scopes,
+                    default_privacy=youtube_platform.default_privacy,
+                    default_language=youtube_platform.default_language,
+                )
 
         if "vk" in app_config.platforms:
             vk_platform = app_config.platforms["vk"]
-            vk = VKConfig(
-                access_token=vk_platform.access_token,
-                app_id=getattr(vk_platform, 'app_id', '54249533'),
-                scope=getattr(vk_platform, 'scope', 'video,groups,wall'),
-                group_id=vk_platform.group_id,
-                album_id=vk_platform.album_id,
-                name=vk_platform.name,
-                description=vk_platform.description,
-                privacy_view=vk_platform.privacy_view,
-                privacy_comment=vk_platform.privacy_comment,
-                no_comments=vk_platform.no_comments,
-                repeat=vk_platform.repeat,
-            )
+            if isinstance(vk_platform, VKConfig):
+                vk = VKUploadConfig(
+                    enabled=vk_platform.enabled,
+                    access_token=vk_platform.access_token,
+                    app_id=getattr(vk_platform, 'app_id', '54249533'),
+                    scope=getattr(vk_platform, 'scope', 'video,groups,wall'),
+                    group_id=vk_platform.group_id,
+                    album_id=vk_platform.album_id,
+                    name=vk_platform.name,
+                    description=vk_platform.description,
+                    privacy_view=vk_platform.privacy_view,
+                    privacy_comment=vk_platform.privacy_comment,
+                    no_comments=vk_platform.no_comments,
+                    repeat=vk_platform.repeat,
+                )
 
         # Создаем общую конфигурацию
         upload_settings = app_config.upload_settings

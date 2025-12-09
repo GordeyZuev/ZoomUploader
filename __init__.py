@@ -2,7 +2,14 @@ from .api import ZoomAPI
 from .config import ZoomConfig, get_config_by_account, load_config_from_file
 from .database import DatabaseConfig, DatabaseManager, RecordingModel
 from .logger import get_logger, setup_logger
-from .models import MeetingRecording, PlatformStatus, ProcessingMetadata, ProcessingStatus
+from .models import (
+    MeetingRecording,
+    OutputTarget,
+    ProcessingStatus,
+    SourceType,
+    TargetStatus,
+    TargetType,
+)
 from .utils import (
     export_recordings_summary,
     filter_ready_for_processing,
@@ -43,8 +50,10 @@ __all__ = [
     # Core Models
     'MeetingRecording',
     'ProcessingStatus',
-    'PlatformStatus',
-    'ProcessingMetadata',
+    'SourceType',
+    'TargetType',
+    'TargetStatus',
+    'OutputTarget',
     # API
     'ZoomAPI',
     # Config

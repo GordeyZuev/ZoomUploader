@@ -93,24 +93,66 @@ class UploadManager:
         )
         return None
 
+    async def upload_caption(
+        self,
+        platform: str,
+        video_id: str,
+        caption_path: str,
+        language: str = "ru",
+        name: str | None = None,
+    ) -> bool:
+        """Загрузка субтитров, если платформа поддерживает."""
+        uploader = self.get_uploader(platform)
+        if not uploader:
+            logger.error(f"❌ Загрузчик для платформы {platform} не найден")
+            return False
+
+        if not hasattr(uploader, "upload_caption"):
+            logger.info(f"ℹ️ Платформа {platform} не поддерживает загрузку субтитров")
+            return False
+
+        try:
+            return bool(
+                await uploader.upload_caption(
+                    video_id=video_id,
+                    caption_path=caption_path,
+                    language=language,
+                    name=name,
+                )
+            )
+        except Exception as e:
+            logger.error(f"❌ Ошибка загрузки субтитров на {platform}: {e}")
+            return False
+
     async def upload_to_all_platforms(
         self, video_path: str, title: str, description: str = "", **kwargs
     ) -> dict[str, UploadResult | None]:
-        """Загрузка видео на все настроенные платформы."""
+        """Загрузка видео на все настроенные платформы (параллельно)."""
 
-        results = {}
+        platforms = self.get_available_platforms()
+        if not platforms:
+            return {}
 
-        for platform in self.get_available_platforms():
-            result = await self.upload_to_platform(
+        # Создаем задачи для параллельной загрузки
+        tasks = {
+            platform: self.upload_to_platform(
                 platform=platform,
                 video_path=video_path,
                 title=title,
                 description=description,
                 **kwargs,
             )
-            results[platform] = result
+            for platform in platforms
+        }
 
-        return results
+        # Запускаем все загрузки параллельно
+        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+
+        # Формируем словарь результатов
+        return {
+            platform: result if not isinstance(result, Exception) else None
+            for platform, result in zip(platforms, results, strict=True)
+        }
 
     async def batch_upload_to_platform(
         self, platform: str, video_files: list[dict[str, Any]]

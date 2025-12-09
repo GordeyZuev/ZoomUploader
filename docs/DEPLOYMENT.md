@@ -97,19 +97,19 @@ uv run python main.py recreate-db
   "base_url": "https://audio-turbo.api.fireworks.ai",
   "language": "ru",
   "response_format": "verbose_json",
-  "timestamp_granularities": ["segment"],
-  "alignment_model": "mms_fa",
+  "timestamp_granularities": ["word"],
   "prompt": "Это лекция магистратуры по Computer Science со специализацией в Machine Learning и Data Science. Сохраняй правильное написание профильных терминов (включая английские), латинских обозначений, аббревиатур, элементов кода и имён собственных.",
-  "enable_vad": true,
-  "diarization": false,
-  "temperature": 0.0,
-  "max_file_size_mb": 25,
+  "diarize": false,
+  "temperature": 0.05,
+  "max_file_size_mb": 1024,
   "audio_bitrate": "64k",
   "audio_sample_rate": 16000,
   "retry_attempts": 2,
   "retry_delay": 2.0
 }
 ```
+
+> ℹ️ Для детерминированных ответов мы отключаем VAD и повторные попытки, а также не используем `alignment_model`. Эти параметры могут по-разному разбивать аудио или вызывать дополнительные запросы, что приводит к расхождениям в транскрипции даже при нулевой температуре.
 
 **Как получить API ключ:**
 1. Зарегистрируйтесь на [`Fireworks AI`](https://fireworks.ai/)
@@ -130,10 +130,11 @@ uv run python main.py recreate-db
   "base_url": "https://api.deepseek.com/v1",
   "temperature": 0.0,
   "max_tokens": 8000,
-  "timeout": 120.0,
-  "seed": null
+  "timeout": 120.0
 }
 ```
+
+> ℹ️ Для максимальной детерминированности ставим `temperature` в `0.0`, не включаем `top_p`/`frequency_penalty` одновременно и не задаём `seed` — DeepSeek официально его не документирует и может игнорировать.
 
 **Как получить API ключ:**
 1. Зарегистрируйтесь на [`DeepSeek Platform`](https://platform.deepseek.com/)
@@ -190,14 +191,14 @@ uv run python main.py recreate-db
     "mapping_rules": [
       {
         "pattern": "Название курса из Zoom",
-        "youtube_title_template": "(Л) Название ({date})",
+        "title_template": "(Л) Название ({date})",
         "thumbnail": "thumbnails/course.png",
         "youtube_playlist_id": "PLAYLIST_ID",
         "vk_album_id": "ALBUM_ID"
       }
     ],
     "default_rules": {
-      "youtube_title_template": "{original_title} ({date})",
+      "title_template": "{original_title} ({date})",
       "thumbnail": "thumbnails/ml_extra.png"
     },
     "date_format": "DD.MM.YYYY",

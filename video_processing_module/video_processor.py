@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from logger import get_logger
+from utils.formatting import normalize_datetime_string
 
 from .audio_detector import AudioDetector
 from .config import ProcessingConfig
@@ -220,9 +221,16 @@ class VideoProcessor:
             return []
 
     async def process_video_with_audio_detection(
-        self, video_path: str, title: str
+        self, video_path: str, title: str, start_time: str | None = None
     ) -> tuple[bool, str | None]:
-        """Обработка видео с автоматической обрезкой по звуку."""
+        """Обработка видео с автоматической обрезкой по звуку.
+
+        Args:
+            video_path: Путь к исходному видео файлу
+            title: Название видео
+            start_time: Дата начала записи в формате Zoom API (например, "2025-11-25T18:00:15Z")
+                       Используется для создания уникального имени файла
+        """
         try:
             logger.info(f"🎬 Обработка видео с детекцией звука: {title}")
 
@@ -233,26 +241,52 @@ class VideoProcessor:
             logger.info(f"🔍 Детекция звука для: {title}")
             first_sound, last_sound = await self.audio_detector.detect_audio_boundaries(video_path)
 
-            if first_sound is None or last_sound is None:
+            if first_sound is None and last_sound is None:
                 logger.warning(f"⚠️ Не удалось определить границы звука для {title}")
+                return False, None
+
+            if first_sound is None:
+                logger.warning(f"⚠️ Не удалось определить начало звука для {title}")
+                return False, None
+
+            # Если звук есть на всем протяжении видео, не обрезаем и используем исходный файл
+            if last_sound is None and first_sound == 0.0:
+                logger.info(
+                    "🔊 Звук на всем протяжении видео, пропускаем обрезку и используем исходный файл"
+                )
+                return True, os.path.abspath(video_path)
+
+            if last_sound is None:
+                logger.warning(f"⚠️ Не удалось определить конечную границу звука для {title}")
                 return False, None
 
             logger.info(f"🎵 Найденные границы звука: {first_sound:.1f}s - {last_sound:.1f}s")
 
-            start_time = max(0, first_sound - self.config.padding_before)
+            start_time_trim = max(0, first_sound - self.config.padding_before)
             end_time = last_sound + self.config.padding_after
 
             logger.info(
-                f"✂️ Обрезка с {start_time:.1f}s по {end_time:.1f}s (отступы: -{self.config.padding_before}s, +{self.config.padding_after}s)"
+                f"✂️ Обрезка с {start_time_trim:.1f}s по {end_time:.1f}s (отступы: -{self.config.padding_before}s, +{self.config.padding_after}s)"
             )
 
             safe_title = self._sanitize_filename(title)
-            output_filename = f"{safe_title}_processed.mp4"
+
+            # Добавляем дату и время в имя файла для уникальности
+            date_suffix = ""
+            if start_time:
+                try:
+                    normalized_time = normalize_datetime_string(start_time)
+                    date_obj = datetime.fromisoformat(normalized_time)
+                    date_suffix = f"_{date_obj.strftime('%y-%m-%d_%H-%M')}"
+                except Exception as e:
+                    logger.warning(f"⚠️ Ошибка парсинга даты '{start_time}' для имени файла: {e}")
+
+            output_filename = f"{safe_title}{date_suffix}_processed.mp4"
             output_path = os.path.join(self.config.output_dir, output_filename)
 
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             logger.info("🎬 Запуск FFmpeg для обрезки...")
-            success = await self.trim_video(video_path, output_path, start_time, end_time)
+            success = await self.trim_video(video_path, output_path, start_time_trim, end_time)
 
             if success:
                 logger.info(f"✅ Видео обработано: {output_path}")

@@ -78,7 +78,7 @@ def export_recordings_summary(
         f.write("-" * 80 + "\n")
 
         for i, recording in enumerate(recordings, 1):
-            f.write(f"{i}. {recording.topic}\n")
+            f.write(f"{i}. {recording.display_name}\n")
             f.write(f"   Дата: {recording.start_time}\n")
             f.write(f"   Длительность: {recording.format_duration(recording.duration)}\n")
             f.write(f"   Статус: {recording.status.value}\n")

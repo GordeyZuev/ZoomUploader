@@ -44,15 +44,11 @@ config/*_creds.json
 .env.local
 .env.*.local
 
-# Video files (too large for git)
-video/unprocessed_video/*.mp4
-video/processing/*.mp4
-video/processed_video/*.mp4
-video/processed_audio/*
-video/temp_processing/*
-
-# Transcriptions
-transcriptions/
+# Media files (too large for git)
+media/*
+thumbnails/*
+transcriptions/*
+video/*
 
 # Logs
 logs/

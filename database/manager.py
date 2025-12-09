@@ -5,12 +5,20 @@ import asyncpg
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import selectinload
 
 from logger import get_logger
-from models.recording import MeetingRecording, PlatformStatus, ProcessingStatus
+from models.recording import (
+    MeetingRecording,
+    OutputTarget,
+    ProcessingStatus,
+    SourceType,
+    TargetStatus,
+    TargetType,
+)
 
 from .config import DatabaseConfig
-from .models import Base, RecordingModel
+from .models import Base, OutputTargetModel, RecordingModel, SourceMetadataModel
 
 logger = get_logger()
 
@@ -37,6 +45,28 @@ def _parse_start_time(start_time_str: str) -> datetime:
     except Exception as e:
         logger.error(f"Ошибка парсинга start_time '{start_time_str}': {e}")
         raise ValueError(f"Не удалось распарсить start_time: {start_time_str}") from e
+
+
+def _build_source_metadata_payload(recording: MeetingRecording) -> dict:
+    """Формируем JSONB метаданных источника из модели."""
+    meta = dict(recording.source_metadata or {})
+
+    zoom_fields = {
+        "meeting_id": getattr(recording, "meeting_id", None),
+        "account": getattr(recording, "account", None),
+        "video_file_download_url": getattr(recording, "video_file_download_url", None),
+        "download_access_token": getattr(recording, "download_access_token", None),
+        "password": getattr(recording, "password", None),
+        "recording_play_passcode": getattr(recording, "recording_play_passcode", None),
+    }
+    for key, value in zoom_fields.items():
+        if value:
+            meta[key] = value
+
+    if recording.video_file_size is not None:
+        meta["video_file_size"] = recording.video_file_size
+
+    return meta
 
 
 class DatabaseManager:
@@ -172,10 +202,10 @@ class DatabaseManager:
                             await self._create_new_recording(session, recording)
                         saved_count += 1
                     except IntegrityError as e:
-                        logger.warning(f"⚠️ Запись уже существует: {recording.topic} - {e}")
+                        logger.warning(f"⚠️ Запись уже существует: {recording.display_name} - {e}")
                         continue
                     except Exception as e:
-                        logger.error(f"❌ Ошибка сохранения записи {recording.topic}: {e}")
+                        logger.error(f"❌ Ошибка сохранения записи {recording.display_name}: {e}")
                         continue
 
                 await session.commit()
@@ -190,12 +220,20 @@ class DatabaseManager:
     async def _find_existing_recording(
         self, session: AsyncSession, recording: MeetingRecording
     ) -> RecordingModel | None:
-        """Поиск существующей записи по meeting_id и start_time"""
+        """Поиск существующей записи по (source_type, source_key, start_time)."""
         try:
             start_time = _parse_start_time(recording.start_time)
-            stmt = select(RecordingModel).where(
-                RecordingModel.meeting_id == str(recording.meeting_id),
-                RecordingModel.start_time == start_time,
+            source_type = (
+                recording.source_type if isinstance(recording.source_type, SourceType) else SourceType(recording.source_type)
+            )
+            stmt = (
+                select(RecordingModel)
+                .join(SourceMetadataModel)
+                .where(
+                    SourceMetadataModel.source_type == source_type,
+                    SourceMetadataModel.source_key == recording.source_key,
+                    RecordingModel.start_time == start_time,
+                )
             )
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
@@ -207,41 +245,67 @@ class DatabaseManager:
         self, session: AsyncSession, existing: RecordingModel, recording: MeetingRecording
     ):
         """Обновление существующей записи."""
-        existing.topic = recording.topic
+        existing.display_name = recording.display_name
         existing.duration = recording.duration
         existing.video_file_size = recording.video_file_size
-        existing.video_file_download_url = recording.video_file_download_url
-        existing.download_access_token = recording.download_access_token
-        existing.password = recording.password
-        existing.recording_play_passcode = recording.recording_play_passcode
-        existing.account = recording.account
-        existing.meeting_id = str(recording.meeting_id)
+        existing.is_mapped = recording.is_mapped if recording.is_mapped is not None else existing.is_mapped
 
-        if existing.status == ProcessingStatus.INITIALIZED:
-            existing.is_mapped = recording.is_mapped
-            existing.status = recording.status
-            logger.debug(
-                f"Обновление записи {existing.id}: статус INITIALIZED -> is_mapped={recording.is_mapped}, status={recording.status.value}"
+        # Обновляем статус без излишних ограничений, чтобы фиксировать прогресс
+        new_status = recording.status if isinstance(recording.status, ProcessingStatus) else ProcessingStatus(recording.status)
+        if existing.status != new_status:
+            existing.status = new_status
+        existing.expire_at = recording.expire_at
+
+        existing.local_video_path = recording.local_video_path
+        existing.processed_video_path = recording.processed_video_path
+        existing.processed_audio_dir = recording.processed_audio_dir
+        existing.transcription_dir = recording.transcription_dir
+        existing.transcription_info = recording.transcription_info
+        existing.topic_timestamps = recording.topic_timestamps
+        existing.main_topics = recording.main_topics
+        existing.downloaded_at = recording.downloaded_at
+
+        # Обновляем источник
+        meta = _build_source_metadata_payload(recording)
+        if existing.source is None:
+            source = SourceMetadataModel(
+                recording_id=existing.id,
+                source_type=recording.source_type if isinstance(recording.source_type, SourceType) else SourceType(recording.source_type),
+                source_key=recording.source_key,
+                metadata=meta,
             )
-        elif existing.status == ProcessingStatus.SKIPPED:
-            if recording.status == ProcessingStatus.INITIALIZED:
-                # Найден маппинг - обновляем статус
-                logger.info(
-                    f"🔄 Обновление записи {existing.id}: SKIPPED -> INITIALIZED (is_mapped: {existing.is_mapped} -> {recording.is_mapped})"
-                )
-                existing.is_mapped = recording.is_mapped
-                existing.status = recording.status
-            elif recording.is_mapped != existing.is_mapped:
-                # Обновляем только is_mapped если изменился
-                logger.debug(
-                    f"Обновление записи {existing.id}: is_mapped {existing.is_mapped} -> {recording.is_mapped}"
-                )
-                existing.is_mapped = recording.is_mapped
+            session.add(source)
+        else:
+            existing.source.source_type = (
+                recording.source_type if isinstance(recording.source_type, SourceType) else SourceType(recording.source_type)
+            )
+            existing.source.source_key = recording.source_key
+            existing.source.meta = meta
 
-        if existing.youtube_status != PlatformStatus.UPLOADED_YOUTUBE:
-            existing.youtube_status = recording.youtube_status
-        if existing.vk_status != PlatformStatus.UPLOADED_VK:
-            existing.vk_status = recording.vk_status
+        # Синхронизация output targets
+        existing_outputs: dict[TargetType, OutputTargetModel] = {}
+        for out in existing.outputs:
+            key = out.target_type if isinstance(out.target_type, TargetType) else TargetType(out.target_type)
+            existing_outputs[key] = out
+
+        for target in recording.output_targets:
+            target_type_value = target.target_type if isinstance(target.target_type, TargetType) else TargetType(target.target_type)
+            db_target = existing_outputs.get(target_type_value)
+            target_status = target.status if isinstance(target.status, TargetStatus) else TargetStatus(target.status)
+            if db_target:
+                db_target.status = target_status
+                db_target.target_meta = target.target_meta
+                db_target.uploaded_at = target.uploaded_at
+            else:
+                session.add(
+                    OutputTargetModel(
+                        recording_id=existing.id,
+                        target_type=target_type_value,
+                        status=target_status,
+                        target_meta=target.target_meta,
+                        uploaded_at=target.uploaded_at,
+                    )
+                )
 
         existing.updated_at = datetime.now()
         session.add(existing)
@@ -249,31 +313,21 @@ class DatabaseManager:
     async def _create_new_recording(self, session: AsyncSession, recording: MeetingRecording):
         """Создание новой записи."""
         db_recording = RecordingModel(
-            topic=recording.topic,
+            display_name=recording.display_name,
             start_time=_parse_start_time(recording.start_time),
             duration=recording.duration,
-            video_file_size=recording.video_file_size,
-            video_file_download_url=recording.video_file_download_url,
-            download_access_token=recording.download_access_token,
-            password=recording.password,
-            recording_play_passcode=recording.recording_play_passcode,
-            account=recording.account,
-            meeting_id=str(recording.meeting_id),
-            is_mapped=recording.is_mapped,
             status=recording.status,
+            is_mapped=recording.is_mapped,
+            expire_at=recording.expire_at,
             local_video_path=recording.local_video_path,
             processed_video_path=recording.processed_video_path,
-            processed_audio_path=recording.processed_audio_path,
-            downloaded_at=recording.downloaded_at,
-            youtube_status=recording.youtube_status,
-            youtube_url=recording.youtube_url,
-            vk_status=recording.vk_status,
-            vk_url=recording.vk_url,
-            processing_notes=recording.processing_notes,
-            processing_time=recording.processing_time,
-            transcription_file_path=recording.transcription_file_path,
+            processed_audio_dir=recording.processed_audio_dir,
+            transcription_dir=recording.transcription_dir,
+            video_file_size=recording.video_file_size,
+            transcription_info=recording.transcription_info,
             topic_timestamps=recording.topic_timestamps,
             main_topics=recording.main_topics,
+            downloaded_at=recording.downloaded_at,
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
@@ -282,13 +336,39 @@ class DatabaseManager:
         await session.flush()
         recording.db_id = db_recording.id
 
+        # Источник
+        meta = _build_source_metadata_payload(recording)
+        source_model = SourceMetadataModel(
+            recording_id=db_recording.id,
+            source_type=recording.source_type if isinstance(recording.source_type, SourceType) else SourceType(recording.source_type),
+            source_key=recording.source_key,
+            meta=meta,
+        )
+        session.add(source_model)
+        await session.flush()
+
+        # Выходы
+        for target in recording.output_targets:
+            session.add(
+                OutputTargetModel(
+                    recording_id=db_recording.id,
+                    target_type=target.target_type if isinstance(target.target_type, TargetType) else TargetType(target.target_type),
+                    status=target.status if isinstance(target.status, TargetStatus) else TargetStatus(target.status),
+                    target_meta=target.target_meta,
+                    uploaded_at=target.uploaded_at,
+                )
+            )
+
     async def get_recordings(
         self, status: ProcessingStatus | None = None
     ) -> list[MeetingRecording]:
         """Получение записей из базы данных."""
         async with self.async_session() as session:
             try:
-                query = select(RecordingModel)
+                query = select(RecordingModel).options(
+                    selectinload(RecordingModel.source),
+                    selectinload(RecordingModel.outputs),
+                )
                 if status:
                     query = query.where(RecordingModel.status == status)
                 query = query.order_by(RecordingModel.start_time.desc())
@@ -312,7 +392,14 @@ class DatabaseManager:
         """Получение записей по ID."""
         async with self.async_session() as session:
             try:
-                query = select(RecordingModel).where(RecordingModel.id.in_(recording_ids))
+                query = (
+                    select(RecordingModel)
+                    .options(
+                        selectinload(RecordingModel.source),
+                        selectinload(RecordingModel.outputs),
+                    )
+                    .where(RecordingModel.id.in_(recording_ids))
+                )
                 result = await session.execute(query)
                 db_recordings = result.scalars().all()
 
@@ -332,9 +419,16 @@ class DatabaseManager:
         """Получение записей, которые последний раз обновлялись раньше указанной даты (исключая EXPIRED)"""
         async with self.async_session() as session:
             try:
-                query = select(RecordingModel).where(
-                    RecordingModel.updated_at < cutoff_date,
-                    RecordingModel.status != ProcessingStatus.EXPIRED,
+                query = (
+                    select(RecordingModel)
+                    .options(
+                        selectinload(RecordingModel.source),
+                        selectinload(RecordingModel.outputs),
+                    )
+                    .where(
+                        RecordingModel.updated_at < cutoff_date,
+                        RecordingModel.status != ProcessingStatus.EXPIRED,
+                    )
                 )
                 result = await session.execute(query)
                 db_recordings = result.scalars().all()
@@ -355,45 +449,27 @@ class DatabaseManager:
         """Обновление записи в базе данных."""
         async with self.async_session() as session:
             try:
-                db_recording = await session.get(RecordingModel, recording.db_id)
+                db_recording = await session.get(
+                    RecordingModel,
+                    recording.db_id,
+                    options=[
+                        selectinload(RecordingModel.source),
+                        selectinload(RecordingModel.outputs),
+                    ],
+                )
                 if not db_recording:
                     logger.error(f"❌ Запись с ID {recording.db_id} не найдена")
                     return
 
-                db_recording.topic = recording.topic
-                db_recording.duration = recording.duration
-                db_recording.video_file_size = recording.video_file_size
-                db_recording.video_file_download_url = recording.video_file_download_url
-                db_recording.download_access_token = recording.download_access_token
-                db_recording.password = recording.password
-                db_recording.recording_play_passcode = recording.recording_play_passcode
-                db_recording.account = recording.account
-                db_recording.meeting_id = str(recording.meeting_id)
-                db_recording.is_mapped = recording.is_mapped
-                db_recording.status = recording.status
-                db_recording.local_video_path = recording.local_video_path
-                db_recording.processed_video_path = recording.processed_video_path
-                db_recording.processed_audio_path = recording.processed_audio_path
-                db_recording.downloaded_at = recording.downloaded_at
-                db_recording.youtube_status = recording.youtube_status
-                db_recording.youtube_url = recording.youtube_url
-                db_recording.vk_status = recording.vk_status
-                db_recording.vk_url = recording.vk_url
-                db_recording.processing_notes = recording.processing_notes
-                db_recording.processing_time = recording.processing_time
-                db_recording.transcription_file_path = recording.transcription_file_path
-                db_recording.topic_timestamps = recording.topic_timestamps
-                db_recording.main_topics = recording.main_topics
-                db_recording.updated_at = datetime.now()
+                await self._update_existing_recording(session, db_recording, recording)
 
-                session.add(db_recording)
                 await session.commit()
 
-                logger.debug(f"✅ Запись {recording.topic} обновлена в БД")
+                logger.debug(f"✅ Запись {recording.display_name} обновлена в БД")
 
             except Exception as e:
                 await session.rollback()
-                logger.error(f"❌ Ошибка обновления записи {recording.topic}: {e}")
+                logger.error(f"❌ Ошибка обновления записи {recording.display_name}: {e}")
                 raise
 
     def _convert_db_to_model(self, db_recording: RecordingModel) -> MeetingRecording:
@@ -416,38 +492,57 @@ class DatabaseManager:
             # Если это не datetime (не должно быть), преобразуем в строку
             start_time_str = str(db_recording.start_time)
 
+        source_type_raw = db_recording.source.source_type if db_recording.source else SourceType.ZOOM
+        source_type = source_type_raw if isinstance(source_type_raw, SourceType) else SourceType(source_type_raw)
+        source_key = db_recording.source.source_key if db_recording.source else ""
+        source_meta = db_recording.source.meta if db_recording.source else {}
+
+        outputs: list[OutputTarget] = []
+        for out in db_recording.outputs:
+            out_type = out.target_type if isinstance(out.target_type, TargetType) else TargetType(out.target_type)
+            out_status = out.status if isinstance(out.status, TargetStatus) else TargetStatus(out.status)
+            outputs.append(
+                OutputTarget(
+                    target_type=out_type,
+                    status=out_status,
+                    target_meta=out.target_meta,
+                    uploaded_at=out.uploaded_at,
+                )
+            )
+
         meeting_data = {
-            'topic': db_recording.topic,
-            'start_time': start_time_str,
-            'duration': db_recording.duration,
-            'id': db_recording.meeting_id,
-            'account': db_recording.account,
-            'recording_files': [],
+            "display_name": db_recording.display_name,
+            "start_time": start_time_str,
+            "duration": db_recording.duration,
+            "status": db_recording.status,
+            "is_mapped": db_recording.is_mapped,
+            "expire_at": db_recording.expire_at,
+            "source_type": source_type,
+            "source_key": source_key,
+            "source_metadata": source_meta,
+            "local_video_path": db_recording.local_video_path,
+            "processed_video_path": db_recording.processed_video_path,
+            "processed_audio_dir": db_recording.processed_audio_dir,
+            "transcription_dir": db_recording.transcription_dir,
+            "video_file_size": db_recording.video_file_size,
+            "transcription_info": db_recording.transcription_info,
+            "topic_timestamps": db_recording.topic_timestamps,
+            "main_topics": db_recording.main_topics,
+            "downloaded_at": db_recording.downloaded_at,
+            "output_targets": outputs,
         }
+
+        # Zoom-совместимые поля из метаданных
+        if source_meta:
+            meeting_data["id"] = source_meta.get("meeting_id", "")
+            meeting_data["account"] = source_meta.get("account", "default")
+            meeting_data["video_file_download_url"] = source_meta.get("video_file_download_url")
+            meeting_data["download_access_token"] = source_meta.get("download_access_token")
+            meeting_data["password"] = source_meta.get("password")
+            meeting_data["recording_play_passcode"] = source_meta.get("recording_play_passcode")
 
         recording = MeetingRecording(meeting_data)
         recording.db_id = db_recording.id
-        recording.video_file_size = db_recording.video_file_size
-        recording.video_file_download_url = db_recording.video_file_download_url
-        recording.download_access_token = db_recording.download_access_token
-        recording.password = db_recording.password
-        recording.recording_play_passcode = db_recording.recording_play_passcode
-        recording.is_mapped = db_recording.is_mapped
-        recording.status = db_recording.status
-        recording.local_video_path = db_recording.local_video_path
-        recording.processed_video_path = db_recording.processed_video_path
-        recording.processed_audio_path = db_recording.processed_audio_path
-        recording.downloaded_at = db_recording.downloaded_at
-        recording.youtube_status = db_recording.youtube_status
-        recording.youtube_url = db_recording.youtube_url
-        recording.vk_status = db_recording.vk_status
-        recording.vk_url = db_recording.vk_url
-        recording.processing_notes = db_recording.processing_notes
-        recording.processing_time = db_recording.processing_time
-        recording.transcription_file_path = db_recording.transcription_file_path
-        recording.topic_timestamps = db_recording.topic_timestamps
-        recording.main_topics = db_recording.main_topics
-
         return recording
 
     async def reset_recordings(self, keep_uploaded: bool = True) -> dict:
@@ -466,22 +561,25 @@ class DatabaseManager:
 
         async with self.async_session() as session:
             try:
-                # Получаем все записи для сброса
-                query = select(RecordingModel)
-                if keep_uploaded:
-                    # Исключаем записи, которые уже загружены хотя бы на одну платформу
-                    query = query.where(
-                        ~(
-                            (RecordingModel.youtube_status == PlatformStatus.UPLOADED_YOUTUBE)
-                            | (RecordingModel.vk_status == PlatformStatus.UPLOADED_VK)
-                        )
+                result = await session.execute(
+                    select(RecordingModel).options(
+                        selectinload(RecordingModel.source),
+                        selectinload(RecordingModel.outputs),
                     )
-
-                result = await session.execute(query)
-                db_recordings = result.scalars().all()
+                )
+                db_recordings = result.scalars().unique().all()
 
                 # Удаляем файлы и сбрасываем записи
                 for db_recording in db_recordings:
+                    # Если нужно оставить загруженные записи – проверяем наличие uploaded таргетов
+                    if keep_uploaded:
+                        uploaded_exists = any(
+                            (t.status == TargetStatus.UPLOADED or (not isinstance(t.status, TargetStatus) and t.status == TargetStatus.UPLOADED.value))
+                            for t in db_recording.outputs
+                        )
+                        if uploaded_exists:
+                            continue
+
                     # Удаляем физические файлы
                     if db_recording.local_video_path and os.path.exists(db_recording.local_video_path):
                         try:
@@ -497,20 +595,22 @@ class DatabaseManager:
                         except Exception as e:
                             logger.warning(f"⚠️ Не удалось удалить файл {db_recording.processed_video_path}: {e}")
 
-                    if db_recording.processed_audio_path and os.path.exists(db_recording.processed_audio_path):
+                    if db_recording.processed_audio_dir and os.path.exists(db_recording.processed_audio_dir):
                         try:
-                            os.remove(db_recording.processed_audio_path)
-                            logger.info(f"🗑️ Удален файл: {db_recording.processed_audio_path}")
+                            import shutil
+                            shutil.rmtree(db_recording.processed_audio_dir)
+                            logger.info(f"🗑️ Удалена папка аудио: {db_recording.processed_audio_dir}")
                         except Exception as e:
-                            logger.warning(f"⚠️ Не удалось удалить файл {db_recording.processed_audio_path}: {e}")
+                            logger.warning(f"⚠️ Не удалось удалить аудио директорию {db_recording.processed_audio_dir}: {e}")
 
-                    # Удаляем файл транскрипции, если он существует
-                    if db_recording.transcription_file_path and os.path.exists(db_recording.transcription_file_path):
+                    # Удаляем папку транскрипции, если она существует
+                    if db_recording.transcription_dir and os.path.exists(db_recording.transcription_dir):
                         try:
-                            os.remove(db_recording.transcription_file_path)
-                            logger.info(f"🗑️ Удален файл транскрипции: {db_recording.transcription_file_path}")
+                            import shutil
+                            shutil.rmtree(db_recording.transcription_dir)
+                            logger.info(f"🗑️ Удалена папка транскрипции: {db_recording.transcription_dir}")
                         except Exception as e:
-                            logger.warning(f"⚠️ Не удалось удалить файл транскрипции {db_recording.transcription_file_path}: {e}")
+                            logger.warning(f"⚠️ Не удалось удалить папку транскрипции {db_recording.transcription_dir}: {e}")
 
                     # Подсчитываем по статусам
                     old_status = db_recording.status.value if hasattr(db_recording.status, 'value') else str(db_recording.status)
@@ -524,24 +624,21 @@ class DatabaseManager:
 
                     db_recording.local_video_path = None
                     db_recording.processed_video_path = None
-                    db_recording.processed_audio_path = None
+                    db_recording.processed_audio_dir = None
                     db_recording.downloaded_at = None
 
                     # Сбрасываем транскрипцию и темы
-                    db_recording.transcription_file_path = None
+                    db_recording.transcription_dir = None
+                    db_recording.transcription_info = None
                     db_recording.topic_timestamps = None
                     db_recording.main_topics = None
 
-                    # Сбрасываем статусы загрузки на платформы (если не загружено)
-                    if db_recording.youtube_status != PlatformStatus.UPLOADED_YOUTUBE:
-                        db_recording.youtube_status = PlatformStatus.NOT_UPLOADED
-                        db_recording.youtube_url = None
-                    if db_recording.vk_status != PlatformStatus.UPLOADED_VK:
-                        db_recording.vk_status = PlatformStatus.NOT_UPLOADED
-                        db_recording.vk_url = None
+                    # Сбрасываем статусы таргетов
+                    for target in db_recording.outputs:
+                        target.status = TargetStatus.NOT_UPLOADED
+                        target.target_meta = None
+                        target.uploaded_at = None
 
-                    db_recording.processing_notes = ""
-                    db_recording.processing_time = None
                     db_recording.updated_at = datetime.now()
 
                     reset_count += 1

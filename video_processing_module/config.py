@@ -1,74 +1,169 @@
+"""Конфигурация обработки видео с валидацией через Pydantic"""
+
+from __future__ import annotations
+
+from pydantic import Field, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from config.settings import settings
 
 
-class ProcessingConfig:
-    """Конфигурация обработки видео (совместимость)"""
+class ProcessingConfig(BaseSettings):
+    """
+    Конфигурация обработки видео.
 
-    def __init__(self, processing_settings=None):
-        if processing_settings is None:
-            processing_settings = settings.processing
+    Использует настройки из config.settings, но может быть переопределена.
+    """
 
-        # Основные настройки
-        self.output_format: str = "mp4"
-        self.video_codec: str = processing_settings.video_codec
-        self.audio_codec: str = processing_settings.audio_codec
+    model_config = SettingsConfigDict(
+        env_file=None,
+        extra="ignore",
+        case_sensitive=False,
+    )
 
-        # Качество видео
-        self.video_bitrate: str = processing_settings.video_bitrate
-        self.audio_bitrate: str = processing_settings.audio_bitrate
-        self.resolution: str = processing_settings.resolution
-        self.fps: int = processing_settings.fps
+    # Основные настройки
+    output_format: str = Field(
+        default="mp4",
+        description="Формат выходного видео",
+    )
+    video_codec: str = Field(
+        default_factory=lambda: settings.processing.video_codec,
+        description="Видео кодек",
+    )
+    audio_codec: str = Field(
+        default_factory=lambda: settings.processing.audio_codec,
+        description="Аудио кодек",
+    )
 
-        # Обрезка по звуку
-        self.audio_detection: bool = True
-        self.silence_threshold: float = processing_settings.silence_threshold
-        self.min_silence_duration: float = processing_settings.min_silence_duration
-        self.padding_before: float = processing_settings.padding_before
-        self.padding_after: float = processing_settings.padding_after
+    # Качество видео
+    video_bitrate: str = Field(
+        default_factory=lambda: settings.processing.video_bitrate,
+        description="Битрейт видео",
+    )
+    audio_bitrate: str = Field(
+        default_factory=lambda: settings.processing.audio_bitrate,
+        description="Битрейт аудио",
+    )
+    resolution: str = Field(
+        default_factory=lambda: settings.processing.resolution,
+        description="Разрешение видео",
+    )
+    fps: int = Field(
+        default_factory=lambda: settings.processing.fps,
+        ge=0,
+        description="FPS (0 = не изменять)",
+    )
 
-        # Обрезка (для ручной настройки)
-        self.trim_start: float | None = None
-        self.trim_end: float | None = None
-        self.max_duration: int | None = None
+    # Обрезка по звуку
+    audio_detection: bool = Field(
+        default=True,
+        description="Включить детекцию звука для автоматической обрезки",
+    )
+    silence_threshold: float = Field(
+        default_factory=lambda: settings.processing.silence_threshold,
+        le=0.0,
+        description="Порог тишины в дБ (должен быть отрицательным)",
+    )
+    min_silence_duration: float = Field(
+        default_factory=lambda: settings.processing.min_silence_duration,
+        gt=0.0,
+        description="Минимальная длительность тишины в секундах",
+    )
+    padding_before: float = Field(
+        default_factory=lambda: settings.processing.padding_before,
+        ge=0.0,
+        description="Отступ до звука в секундах",
+    )
+    padding_after: float = Field(
+        default_factory=lambda: settings.processing.padding_after,
+        ge=0.0,
+        description="Отступ после звука в секундах",
+    )
 
-        # Сегментация
-        self.segment_duration: int = 30
-        self.overlap_duration: int = 1
+    # Обрезка (для ручной настройки)
+    trim_start: float | None = Field(
+        default=None,
+        ge=0.0,
+        description="Начало обрезки в секундах",
+    )
+    trim_end: float | None = Field(
+        default=None,
+        ge=0.0,
+        description="Конец обрезки в секундах",
+    )
+    max_duration: int | None = Field(
+        default=None,
+        gt=0,
+        description="Максимальная длительность в секундах",
+    )
 
-        # Папки
-        self.input_dir: str = processing_settings.input_dir
-        self.output_dir: str = processing_settings.output_dir
-        self.temp_dir: str = processing_settings.temp_dir
+    # Сегментация
+    segment_duration: int = Field(
+        default=30,
+        gt=0,
+        description="Длительность сегмента в секундах",
+    )
+    overlap_duration: int = Field(
+        default=1,
+        ge=0,
+        description="Перекрытие между сегментами в секундах",
+    )
 
-        # Дополнительные опции
-        self.remove_intro: bool = processing_settings.remove_intro
-        self.remove_outro: bool = processing_settings.remove_outro
-        self.intro_duration: int = processing_settings.intro_duration
-        self.outro_duration: int = processing_settings.outro_duration
+    # Папки
+    input_dir: str = Field(
+        default_factory=lambda: settings.processing.input_dir,
+        description="Директория входящих видео",
+    )
+    output_dir: str = Field(
+        default_factory=lambda: settings.processing.output_dir,
+        description="Директория обработанных видео",
+    )
+    temp_dir: str = Field(
+        default_factory=lambda: settings.processing.temp_dir,
+        description="Временная директория",
+    )
 
-        # Логирование
-        self.keep_temp_files: bool = processing_settings.keep_temp_files
+    # Дополнительные опции
+    remove_intro: bool = Field(
+        default_factory=lambda: settings.processing.remove_intro,
+        description="Удалять вступление",
+    )
+    remove_outro: bool = Field(
+        default_factory=lambda: settings.processing.remove_outro,
+        description="Удалять заключение",
+    )
+    intro_duration: int = Field(
+        default_factory=lambda: int(settings.processing.intro_duration),
+        ge=0,
+        description="Длительность вступления в секундах",
+    )
+    outro_duration: int = Field(
+        default_factory=lambda: int(settings.processing.outro_duration),
+        ge=0,
+        description="Длительность заключения в секундах",
+    )
 
-    def __post_init__(self):
-        """Валидация конфигурации"""
-        if self.max_duration and self.max_duration <= 0:
-            raise ValueError("max_duration должен быть положительным числом")
+    # Логирование
+    keep_temp_files: bool = Field(
+        default_factory=lambda: settings.processing.keep_temp_files,
+        description="Сохранять временные файлы",
+    )
 
-        if self.segment_duration <= 0:
-            raise ValueError("segment_duration должен быть положительным числом")
-
-        if self.overlap_duration < 0:
-            raise ValueError("overlap_duration не может быть отрицательным")
-
+    @model_validator(mode="after")
+    def validate_config(self) -> ProcessingConfig:
+        """Валидация зависимостей между полями."""
+        # Проверка overlap_duration < segment_duration
         if self.overlap_duration >= self.segment_duration:
-            raise ValueError("overlap_duration должен быть меньше segment_duration")
+            raise ValueError(
+                f"overlap_duration ({self.overlap_duration}) должен быть меньше "
+                f"segment_duration ({self.segment_duration})"
+            )
 
-        # Валидация настроек детекции звука
-        if self.silence_threshold > 0:
-            raise ValueError("silence_threshold должен быть отрицательным числом")
+        # Проверка trim_end > trim_start
+        if self.trim_start is not None and self.trim_end is not None:
+            if self.trim_end <= self.trim_start:
+                raise ValueError(
+                    f"trim_end ({self.trim_end}) должен быть больше trim_start ({self.trim_start})"
+                )
 
-        if self.min_silence_duration <= 0:
-            raise ValueError("min_silence_duration должен быть положительным числом")
-
-        if self.padding_before < 0 or self.padding_after < 0:
-            raise ValueError("padding значения не могут быть отрицательными")
+        return self

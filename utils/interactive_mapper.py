@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from logger import get_logger
+from models import TargetStatus, TargetType
 from utils.formatting import normalize_datetime_string
 
 logger = get_logger()
@@ -41,8 +42,8 @@ class InteractiveMapper:
         )
         console.print(info_panel)
 
-        youtube_title = self._get_youtube_title(original_title, date_str)
-        if youtube_title is None:
+        title = self._get_title(original_title, date_str)
+        if title is None:
             return None, None, None
 
         privacy_status = self._get_privacy_status(default_privacy)
@@ -52,11 +53,11 @@ class InteractiveMapper:
         description = ""
 
         console.print(
-            f"\n[bold green]✅ Загружаем:[/bold green] [bold white]\"{youtube_title}\"[/bold white] [bold green]как[/bold green] [bold cyan]{privacy_status}[/bold cyan]"
+            f"\n[bold green]✅ Загружаем:[/bold green] [bold white]\"{title}\"[/bold white] [bold green]как[/bold green] [bold cyan]{privacy_status}[/bold cyan]"
         )
         console.print("[bold green]" + "=" * 60 + "[/bold green]")
 
-        return youtube_title, description, privacy_status
+        return title, description, privacy_status
 
     def ask_playlist_optional(self) -> str | None:
         """Опционально запросить ID плейлиста YouTube."""
@@ -71,28 +72,28 @@ class InteractiveMapper:
             print("\n   ❌ Отменено")
             return None
 
-    def _get_youtube_title(self, original_title: str, date_str: str) -> str | None:
-        """Получение названия для YouTube от пользователя."""
+    def _get_title(self, original_title: str, date_str: str) -> str | None:
+        """Получение названия видео от пользователя."""
 
         suggested_title = f"{original_title} ({date_str})"
 
-        print("🎬 Введите название для YouTube:")
+        print("🎬 Введите название видео:")
         print(f"   Предложение: {suggested_title}")
         print()
 
         while True:
             try:
-                youtube_title = input("   Название: ").strip()
+                title = input("   Название: ").strip()
 
-                if not youtube_title:
+                if not title:
                     print("   ❌ Название не может быть пустым")
                     continue
 
-                if len(youtube_title) > 100:
+                if len(title) > 100:
                     print("   ❌ Название слишком длинное (максимум 100 символов)")
                     continue
 
-                return youtube_title
+                return title
 
             except KeyboardInterrupt:
                 print("\n   ❌ Отменено пользователем")
@@ -197,25 +198,29 @@ class InteractiveMapper:
             console.print("\n[bold white]📹 ЗАГРУЖЕННЫЕ ВИДЕО:[/bold white]")
 
             for i, recording in enumerate(uploaded_recordings, 1):
-                console.print(
-                    f"\n[bold cyan]{i}.[/bold cyan] [bold white]{recording.topic}[/bold white]"
-                )
+                title = getattr(recording, "display_name", None) or "Без названия"
+                console.print(f"\n[bold cyan]{i}.[/bold cyan] [bold white]{title}[/bold white]")
 
-                # Ссылки на платформы
-                has_any_link = False
-                if hasattr(recording, 'youtube_url') and recording.youtube_url:
+                def _link(target_type: TargetType, current_recording=recording) -> str | None:
+                    for t in getattr(current_recording, "output_targets", []):
+                        t_type = t.target_type if isinstance(t.target_type, TargetType) else TargetType(t.target_type)
+                        t_status = t.status if isinstance(t.status, TargetStatus) else TargetStatus(t.status)
+                        if t_type == target_type and t_status == TargetStatus.UPLOADED:
+                            return t.get_link()
+                    return None
+
+                youtube_link = _link(TargetType.YOUTUBE)
+                vk_link = _link(TargetType.VK)
+
+                if youtube_link:
                     console.print(
-                        f"    [bold red]📺 YouTube:[/bold red] [link={recording.youtube_url}]{recording.youtube_url}[/link]"
+                        f"    [bold red]📺 YouTube:[/bold red] [link={youtube_link}]{youtube_link}[/link]"
                     )
-                    has_any_link = True
-
-                if hasattr(recording, 'vk_url') and recording.vk_url:
+                if vk_link:
                     console.print(
-                        f"    [bold blue]📘 VK:[/bold blue] [link={recording.vk_url}]{recording.vk_url}[/link]"
+                        f"    [bold blue]📘 VK:[/bold blue] [link={vk_link}]{vk_link}[/link]"
                     )
-                    has_any_link = True
-
-                if not has_any_link:
+                if not youtube_link and not vk_link:
                     console.print("    [dim]Ссылки недоступны[/dim]")
 
         # Итоговая информация

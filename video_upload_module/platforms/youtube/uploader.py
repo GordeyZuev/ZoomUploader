@@ -215,6 +215,64 @@ class YouTubeUploader(BaseUploader):
             self.logger.error(f"Ошибка загрузки видео: {e}")
             return None
 
+    async def upload_caption(
+        self,
+        video_id: str,
+        caption_path: str,
+        language: str = "ru",
+        name: str | None = None,
+    ) -> bool:
+        """Загрузка субтитров (SRT/VTT) на YouTube."""
+
+        if not self._authenticated:
+            if not await self.authenticate():
+                return False
+
+        if not os.path.exists(caption_path):
+            self.logger.error(f"Файл субтитров не найден: {caption_path}")
+            return False
+
+        mime_type = "application/octet-stream"
+        if caption_path.lower().endswith(".vtt"):
+            mime_type = "text/vtt"
+        elif caption_path.lower().endswith(".srt"):
+            mime_type = "application/x-subrip"
+
+        try:
+            body = {
+                "snippet": {
+                    "videoId": video_id,
+                    "language": language,
+                    "name": name or "Transcript",
+                    "isDraft": False,
+                }
+            }
+
+            media = MediaFileUpload(caption_path, mimetype=mime_type, resumable=True)
+
+            self.logger.info(
+                f"Загрузка субтитров на YouTube для видео {video_id} ({language})"
+            )
+
+            request = self.service.captions().insert(
+                part="snippet", body=body, media_body=media
+            )
+            response = request.execute()
+
+            if response and response.get("id"):
+                self.logger.info(f"Субтитры загружены: caption_id={response['id']}")
+                return True
+
+            self.logger.error(f"Не удалось загрузить субтитры: {response}")
+            return False
+
+        except HttpError as e:
+            self.logger.error(f"Ошибка YouTube Captions API: {e}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Ошибка загрузки субтитров: {e}")
+            return False
+
     async def get_video_info(self, video_id: str) -> dict[str, Any] | None:
         """Получение информации о видео."""
         if not self._authenticated:

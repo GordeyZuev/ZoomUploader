@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from logger import get_logger, setup_logger
-from openai_module import TranscriptionService
+from transcription_module import TranscriptionService
 
 # Настройка логирования
 setup_logger()
@@ -36,14 +36,13 @@ async def test_fireworks_transcription(audio_path: str):
             audio_path=audio_path,
             recording_id=None,
             recording_topic="Тестовая запись",
-            provider="fireworks",
         )
 
         # Выводим результаты
         logger.info("✅ Транскрибация завершена успешно!")
         logger.info(f"📝 Длина текста: {len(result.get('transcription_text', ''))} символов")
         logger.info(f"📊 Количество сегментов: {len(result.get('topic_timestamps', []))}")
-        logger.info(f"📄 Файл транскрипции: {result.get('transcription_file_path', 'N/A')}")
+        logger.info(f"📁 Папка транскрипции: {result.get('transcription_dir', 'N/A')}")
 
         if result.get('main_topics'):
             logger.info(f"🔍 Основные темы: {', '.join(result['main_topics'])}")
@@ -67,7 +66,7 @@ async def main():
     """Главная функция"""
     if len(sys.argv) < 2:
         # Используем файл по умолчанию
-        audio_path = "video/processed_audio/ИИ_1_курс_НИС__Машинное_обучение_processed.mp3"
+        audio_path = "media/processed_audio/ИИ_1_курс_НИС__Машинное_обучение_processed.mp3"
     else:
         audio_path = sys.argv[1]
 

@@ -14,7 +14,7 @@ logger = get_logger()
 class MappingResult:
     """Результат маппинга названия."""
 
-    youtube_title: str
+    title: str
     description: str
     thumbnail_path: str
     youtube_playlist_id: str | None = None
@@ -23,7 +23,7 @@ class MappingResult:
 
 
 class TitleMapper:
-    """Класс для маппинга названий записей Zoom в названия для YouTube."""
+    """Класс для маппинга названий записей Zoom в названия для платформ."""
 
     def __init__(self, app_config: AppConfig | None = None):
         """Инициализация маппера."""
@@ -34,7 +34,7 @@ class TitleMapper:
     def map_title(
         self, original_title: str, start_time: str, duration: int = 0, main_topic: str | None = None
     ) -> MappingResult:
-        """Маппинг названия записи в название для YouTube.
+        """Маппинг названия записи в название для платформ.
 
         Args:
             original_title: Исходное название записи
@@ -47,13 +47,13 @@ class TitleMapper:
         if matched_rule:
             result = self._apply_rule(matched_rule, original_title, start_time, duration, main_topic)
             self.logger.info(
-                f"Найдено правило для '{original_title}': {matched_rule['pattern']} -> '{result.youtube_title}'"
+                f"Найдено правило для '{original_title}': {matched_rule['pattern']} -> '{result.title}'"
             )
             return result
         else:
             self.logger.info(f"Правило для '{original_title}' не найдено")
             return MappingResult(
-                youtube_title="",  # Пустое название означает "не найдено правило"
+                title="",  # Пустое название означает "не найдено правило"
                 description="",
                 thumbnail_path="",
                 youtube_playlist_id=None,
@@ -87,11 +87,11 @@ class TitleMapper:
     ) -> MappingResult:
         """Применение правила маппинга."""
 
+        template = rule.get("title_template", "{original_title} ({date})")
+
         variables = self._prepare_variables(original_title, start_time, duration, main_topic)
 
-        youtube_title = self._format_template(
-            rule.get("youtube_title_template", "{original_title} ({date})"), variables
-        )
+        title = self._format_template(template, variables)
 
         description = ""
 
@@ -101,7 +101,7 @@ class TitleMapper:
         vk_album_id = rule.get("vk_album_id", "")
 
         return MappingResult(
-            youtube_title=youtube_title,
+            title=title,
             description=description,
             thumbnail_path=thumbnail_path,
             youtube_playlist_id=youtube_playlist_id if youtube_playlist_id else None,
@@ -174,12 +174,18 @@ class TitleMapper:
         """Получение списка доступных паттернов."""
         return [rule.get("pattern", "") for rule in self.mapping_config.mapping_rules]
 
-    def add_rule(self, pattern: str, youtube_title_template: str, thumbnail: str) -> bool:
-        """Добавление нового правила маппинга."""
+    def add_rule(self, pattern: str, title_template: str, thumbnail: str) -> bool:
+        """Добавление нового правила маппинга.
+
+        Args:
+            pattern: Паттерн для сопоставления
+            title_template: Шаблон названия
+            thumbnail: Путь к миниатюре
+        """
         try:
             new_rule = {
                 "pattern": pattern,
-                "youtube_title_template": youtube_title_template,
+                "title_template": title_template,
                 "thumbnail": thumbnail,
             }
 

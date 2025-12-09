@@ -1,3 +1,4 @@
+from .audio_compressor import AudioCompressor
 from .data_processing import (
     filter_available_recordings,
     filter_ready_for_processing,
@@ -52,4 +53,5 @@ __all__ = [
     'format_status',
     'format_meeting_info',
     'normalize_datetime_string',
+    'AudioCompressor',
 ]

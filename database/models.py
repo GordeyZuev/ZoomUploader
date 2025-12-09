@@ -1,11 +1,20 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Enum, Identity, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Identity,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from models.recording import PlatformStatus, ProcessingStatus
+from models.recording import ProcessingStatus, SourceType, TargetStatus, TargetType
 
 
 class Base(DeclarativeBase):
@@ -13,66 +22,34 @@ class Base(DeclarativeBase):
 
 
 class RecordingModel(Base):
-    """Модель записи Zoom встречи в базе данных"""
+    """Универсальная запись."""
 
     __tablename__ = "recordings"
 
-    # Уникальное ограничение по комбинации meeting_id и start_time
-    __table_args__ = (
-        UniqueConstraint('meeting_id', 'start_time', name='unique_meeting_start_time'),
-    )
-
-    # Первичный ключ - автоинкрементный ID
     id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
 
     # Основные поля
-    topic: Mapped[str] = mapped_column(String(500), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(500), nullable=False)
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     duration: Mapped[int] = mapped_column(Integer, nullable=False)  # в минутах
-    share_url: Mapped[str | None] = mapped_column(String(1000))
-    auto_delete_date: Mapped[str | None] = mapped_column(String(50))
-    meeting_id: Mapped[str] = mapped_column(String(100), nullable=False)
-    account: Mapped[str | None] = mapped_column(String(255))  # Email аккаунта Zoom
-
-    # Файлы
-    video_file_download_url: Mapped[str | None] = mapped_column(String(1000))
-    video_file_size: Mapped[int] = mapped_column(Integer, default=0)
-
-    # Информация о доступе
-    password: Mapped[str | None] = mapped_column(String(100))
-    recording_play_passcode: Mapped[str | None] = mapped_column(String(500))
-    download_access_token: Mapped[str | None] = mapped_column(String(1000))
-
-    # Локальные файлы
-    local_video_path: Mapped[str | None] = mapped_column(String(1000))
-    processed_video_path: Mapped[str | None] = mapped_column(String(1000))
-    processed_audio_path: Mapped[str | None] = mapped_column(String(1000))
-    downloaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-    # Маппинг и статусы
-    is_mapped: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(
         Enum(ProcessingStatus), default=ProcessingStatus.INITIALIZED
     )
+    is_mapped: Mapped[bool] = mapped_column(Boolean, default=False)
+    expire_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    # Платформы
-    youtube_status: Mapped[str] = mapped_column(
-        Enum(PlatformStatus), default=PlatformStatus.NOT_UPLOADED
-    )
-    youtube_url: Mapped[str | None] = mapped_column(String(1000))
-    vk_status: Mapped[str] = mapped_column(
-        Enum(PlatformStatus), default=PlatformStatus.NOT_UPLOADED
-    )
-    vk_url: Mapped[str | None] = mapped_column(String(1000))
+    # Пути (относительно media_dir)
+    local_video_path: Mapped[str | None] = mapped_column(String(1000))
+    processed_video_path: Mapped[str | None] = mapped_column(String(1000))
+    processed_audio_dir: Mapped[str | None] = mapped_column(String(1000))
+    transcription_dir: Mapped[str | None] = mapped_column(String(1000))
+    downloaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    # Метаданные обработки
-    processing_notes: Mapped[str | None] = mapped_column(Text)
-    processing_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-    # Транскрипция и темы
-    transcription_file_path: Mapped[str | None] = mapped_column(String(1000))
-    topic_timestamps: Mapped[Any | None] = mapped_column(JSONB, nullable=True)  # JSON: [{"topic": str, "start": float, "end": float}, ...]
-    main_topics: Mapped[Any | None] = mapped_column(JSONB, nullable=True)  # JSON: [str, ...] максимум 2 темы
+    # Дополнительные поля
+    video_file_size: Mapped[int | None] = mapped_column(Integer)
+    transcription_info: Mapped[Any | None] = mapped_column(JSONB)
+    topic_timestamps: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
+    main_topics: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
 
     # Временные метки
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
@@ -80,5 +57,67 @@ class RecordingModel(Base):
         DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
+    source: Mapped["SourceMetadataModel"] = relationship(
+        "SourceMetadataModel",
+        back_populates="recording",
+        uselist=False,
+        cascade="all, delete-orphan",
+        foreign_keys="SourceMetadataModel.recording_id",
+        primaryjoin="RecordingModel.id==SourceMetadataModel.recording_id",
+    )
+    outputs: Mapped[list["OutputTargetModel"]] = relationship(
+        "OutputTargetModel", back_populates="recording", cascade="all, delete-orphan"
+    )
+
     def __repr__(self) -> str:
-        return f"<Recording(id={self.id}, topic='{self.topic}', status={self.status})>"
+        return f"<Recording(id={self.id}, display_name='{self.display_name}', status={self.status})>"
+
+
+class SourceMetadataModel(Base):
+    """Метаданные источника записи."""
+
+    __tablename__ = "source_metadata"
+
+    __table_args__ = (
+        UniqueConstraint("source_type", "source_key", "recording_id", name="unique_source_per_recording"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
+    recording_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("recordings.id", ondelete="CASCADE"), unique=True
+    )
+    source_type: Mapped[str] = mapped_column(Enum(SourceType))
+    source_key: Mapped[str] = mapped_column(String(1000))
+    meta: Mapped[Any | None] = mapped_column("metadata", JSONB)
+
+    recording: Mapped[RecordingModel] = relationship(
+        "RecordingModel",
+        back_populates="source",
+        foreign_keys=[recording_id],
+        primaryjoin="SourceMetadataModel.recording_id==RecordingModel.id",
+    )
+
+
+class OutputTargetModel(Base):
+    """Целевая платформа/хранилище для выгрузки."""
+
+    __tablename__ = "output_targets"
+
+    __table_args__ = (
+        UniqueConstraint("recording_id", "target_type", name="unique_target_per_recording"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
+    recording_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("recordings.id", ondelete="CASCADE")
+    )
+    target_type: Mapped[str] = mapped_column(Enum(TargetType))
+    status: Mapped[str] = mapped_column(Enum(TargetStatus), default=TargetStatus.NOT_UPLOADED)
+    target_meta: Mapped[Any | None] = mapped_column(JSONB)
+    uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    recording: Mapped[RecordingModel] = relationship("RecordingModel", back_populates="outputs")

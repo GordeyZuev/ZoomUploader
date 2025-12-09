@@ -1,16 +1,30 @@
+"""Унифицированная конфигурация приложения с валидацией через Pydantic"""
+
 import json
 import os
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from logger import get_logger
 
 logger = get_logger()
 
 
-class PlatformConfig(ABC):
+class PlatformConfig(BaseSettings, ABC):
     """Базовый класс конфигурации платформы"""
+
+    model_config = SettingsConfigDict(
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    enabled: bool = Field(
+        default=True,
+        description="Включена ли платформа",
+    )
 
     @abstractmethod
     def validate(self) -> bool:
@@ -18,23 +32,40 @@ class PlatformConfig(ABC):
         pass
 
 
-@dataclass
 class YouTubeConfig(PlatformConfig):
     """Конфигурация YouTube API"""
 
-    enabled: bool = True
-    client_secrets_file: str = "config/youtube_client_secrets.json"
-    credentials_file: str = "config/youtube_credentials.json"
-    scopes: list[str] = None
-    default_privacy: str = "unlisted"
-    default_language: str = "ru"
+    client_secrets_file: str = Field(
+        default="config/youtube_client_secrets.json",
+        description="Путь к файлу с секретами клиента",
+    )
+    credentials_file: str = Field(
+        default="config/youtube_credentials.json",
+        description="Путь к файлу с credentials",
+    )
+    scopes: list[str] = Field(
+        default_factory=lambda: [
+            'https://www.googleapis.com/auth/youtube.upload',
+            'https://www.googleapis.com/auth/youtube.force-ssl',
+        ],
+        description="Scopes для YouTube API",
+    )
+    default_privacy: Literal["private", "unlisted", "public"] = Field(
+        default="unlisted",
+        description="Приватность по умолчанию",
+    )
+    default_language: str = Field(
+        default="ru",
+        description="Язык по умолчанию",
+    )
 
-    def __post_init__(self):
-        if self.scopes is None:
-            self.scopes = [
-                'https://www.googleapis.com/auth/youtube.upload',
-                'https://www.googleapis.com/auth/youtube.force-ssl',
-            ]
+    @field_validator("scopes")
+    @classmethod
+    def validate_scopes(cls, v: list[str]) -> list[str]:
+        """Валидация scopes."""
+        if not v:
+            logger.warning("⚠️ Не указаны scopes для YouTube API")
+        return v
 
     def validate(self) -> bool:
         """Валидация конфигурации YouTube"""
@@ -43,11 +74,6 @@ class YouTubeConfig(PlatformConfig):
 
         if not os.path.exists(self.client_secrets_file):
             logger.warning(f"⚠️ Файл с секретами клиента не найден: {self.client_secrets_file}")
-            # Не блокируем загрузку, просто предупреждаем
-
-        if not self.scopes:
-            logger.warning("⚠️ Не указаны scopes для YouTube API")
-            # Не блокируем загрузку
 
         if self.default_privacy not in ['private', 'unlisted', 'public']:
             logger.error(f"❌ Неверный статус приватности: {self.default_privacy}")
@@ -56,20 +82,45 @@ class YouTubeConfig(PlatformConfig):
         return True
 
 
-@dataclass
 class VKConfig(PlatformConfig):
     """Конфигурация VK API"""
 
-    enabled: bool = True
-    access_token: str = ""
-    group_id: int | None = None
-    album_id: int | None = None
-    name: str = ""
-    description: str = ""
-    privacy_view: str = "0"
-    privacy_comment: str = "1"
-    no_comments: bool = False
-    repeat: bool = False
+    access_token: str = Field(
+        default="",
+        description="VK access token",
+    )
+    group_id: int | None = Field(
+        default=None,
+        description="ID группы VK",
+    )
+    album_id: int | None = Field(
+        default=None,
+        description="ID альбома VK (не используется, берется из правил маппинга)",
+    )
+    name: str = Field(
+        default="",
+        description="Название (не используется)",
+    )
+    description: str = Field(
+        default="",
+        description="Описание (не используется)",
+    )
+    privacy_view: Literal["0", "1", "2"] = Field(
+        default="0",
+        description="Настройки приватности просмотра",
+    )
+    privacy_comment: Literal["0", "1", "2"] = Field(
+        default="1",
+        description="Настройки приватности комментариев",
+    )
+    no_comments: bool = Field(
+        default=False,
+        description="Отключить комментарии",
+    )
+    repeat: bool = Field(
+        default=False,
+        description="Повторять загрузку",
+    )
 
     def validate(self) -> bool:
         """Валидация конфигурации VK"""
@@ -78,33 +129,45 @@ class VKConfig(PlatformConfig):
 
         if not self.access_token:
             logger.warning("⚠️ VK access_token не указан")
-            # Не блокируем загрузку, просто предупреждаем
-
-        if self.privacy_view not in ['0', '1', '2']:
-            logger.error(f"❌ Неверный privacy_view: {self.privacy_view}")
-            return False
-
-        if self.privacy_comment not in ['0', '1', '2']:
-            logger.error(f"❌ Неверный privacy_comment: {self.privacy_comment}")
-            return False
 
         return True
 
 
-@dataclass
-class UploadSettings:
+class UploadSettings(BaseSettings):
     """Настройки загрузки"""
 
-    max_file_size_mb: int = 5000
-    supported_formats: list[str] = None
-    retry_attempts: int = 3
-    retry_delay: int = 5
-    interactive_mode: bool = True
-    default_privacy: str = "unlisted"
+    model_config = SettingsConfigDict(
+        extra="ignore",
+        case_sensitive=False,
+    )
 
-    def __post_init__(self):
-        if self.supported_formats is None:
-            self.supported_formats = ['mp4', 'avi', 'mov', 'mkv', 'webm', 'm4v']
+    max_file_size_mb: int = Field(
+        default=5000,
+        ge=1,
+        description="Максимальный размер файла в МБ",
+    )
+    supported_formats: list[str] = Field(
+        default_factory=lambda: ['mp4', 'avi', 'mov', 'mkv', 'webm', 'm4v'],
+        description="Поддерживаемые форматы файлов",
+    )
+    retry_attempts: int = Field(
+        default=3,
+        ge=1,
+        description="Количество попыток при ошибке",
+    )
+    retry_delay: int = Field(
+        default=5,
+        ge=0,
+        description="Задержка между попытками в секундах",
+    )
+    interactive_mode: bool = Field(
+        default=True,
+        description="Интерактивный режим",
+    )
+    default_privacy: Literal["private", "unlisted", "public"] = Field(
+        default="unlisted",
+        description="Приватность по умолчанию",
+    )
 
     def validate_file(self, file_path: str) -> tuple[bool, str]:
         """Валидация файла перед загрузкой"""
@@ -113,7 +176,10 @@ class UploadSettings:
 
         file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
         if file_size_mb > self.max_file_size_mb:
-            return False, f"Файл слишком большой: {file_size_mb:.1f}MB > {self.max_file_size_mb}MB"
+            return (
+                False,
+                f"Файл слишком большой: {file_size_mb:.1f}MB > {self.max_file_size_mb}MB"
+            )
 
         file_ext = os.path.splitext(file_path)[1].lower().lstrip('.')
         if file_ext not in self.supported_formats:
@@ -122,34 +188,73 @@ class UploadSettings:
         return True, "OK"
 
 
-@dataclass
-class VideoTitleMapping:
+class VideoTitleMapping(BaseSettings):
     """Конфигурация маппинга названий видео"""
 
-    mapping_rules: list[dict[str, Any]]
-    default_rules: dict[str, Any]
-    date_format: str = "DD.MM.YYYY"
-    thumbnail_directory: str = "thumbnails/"
+    model_config = SettingsConfigDict(
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    mapping_rules: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Правила маппинга названий",
+    )
+    default_rules: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Правила по умолчанию",
+    )
+    date_format: str = Field(
+        default="DD.MM.YYYY",
+        description="Формат даты",
+    )
+    thumbnail_directory: str = Field(
+        default="thumbnails/",
+        description="Директория для миниатюр",
+    )
 
 
-@dataclass
-class AppConfig:
+class AppConfig(BaseSettings):
     """Главная конфигурация приложения"""
 
-    video_title_mapping: VideoTitleMapping
-    platforms: dict[str, PlatformConfig]
-    upload_settings: UploadSettings
+    model_config = SettingsConfigDict(
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    video_title_mapping: VideoTitleMapping = Field(
+        default_factory=VideoTitleMapping,
+        description="Конфигурация маппинга названий",
+    )
+    platforms: dict[str, PlatformConfig] = Field(
+        default_factory=dict,
+        description="Конфигурации платформ",
+    )
+    upload_settings: UploadSettings = Field(
+        default_factory=UploadSettings,
+        description="Настройки загрузки",
+    )
+
+    @model_validator(mode="after")
+    def validate_platforms(self) -> "AppConfig":
+        """Валидация конфигураций платформ."""
+        for platform_name, platform_config in self.platforms.items():
+            if not isinstance(platform_config, PlatformConfig):
+                raise ValueError(
+                    f"Платформа {platform_name} должна быть экземпляром PlatformConfig"
+                )
+            if not platform_config.validate():
+                raise ValueError(f"Ошибка валидации платформы {platform_name}")
+        return self
 
     def validate_all(self) -> bool:
         """Валидация всех конфигураций"""
-        valid = True
-
-        for platform_name, platform_config in self.platforms.items():
-            if not platform_config.validate():
-                logger.error(f"❌ Ошибка валидации платформы {platform_name}")
-                valid = False
-
-        return valid
+        try:
+            self.validate_platforms()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка валидации: {e}")
+            return False
 
 
 class UnifiedConfigLoader:
@@ -205,16 +310,11 @@ class UnifiedConfigLoader:
 
         # Создаем конфигурацию маппинга названий
         mapping_data = data.get("video_title_mapping", {})
-        video_title_mapping = VideoTitleMapping(
-            mapping_rules=mapping_data.get("mapping_rules", []),
-            default_rules=mapping_data.get("default_rules", {}),
-            date_format=mapping_data.get("date_format", "DD.MM.YYYY"),
-            thumbnail_directory=mapping_data.get("thumbnail_directory", "thumbnails/"),
-        )
+        video_title_mapping = VideoTitleMapping(**mapping_data)
 
         # Создаем конфигурации платформ
         platforms_data = data.get("platforms", {})
-        platforms = {}
+        platforms: dict[str, PlatformConfig] = {}
 
         # Получаем общие настройки загрузки для использования в платформах
         upload_data = data.get("upload_settings", {})
@@ -296,16 +396,10 @@ class UnifiedConfigLoader:
                 repeat=vk_data.get("repeat", False),
             )
 
-        # Настройки загрузки (upload_data уже определен выше)
-        upload_settings = UploadSettings(
-            max_file_size_mb=upload_data.get("max_file_size_mb", 5000),
-            supported_formats=upload_data.get("supported_formats", ['mp4', 'avi', 'mov']),
-            retry_attempts=upload_data.get("retry_attempts", 3),
-            retry_delay=upload_data.get("retry_delay", 5),
-            interactive_mode=upload_data.get("interactive_mode", True),
-            default_privacy=upload_data.get("default_privacy", "unlisted"),
-        )
+        # Настройки загрузки
+        upload_settings = UploadSettings(**upload_data)
 
+        # Создаем AppConfig с валидацией Pydantic
         return AppConfig(
             video_title_mapping=video_title_mapping,
             platforms=platforms,
@@ -316,21 +410,9 @@ class UnifiedConfigLoader:
         """Сохранение конфигурации в JSON файл"""
         try:
             data = {
-                "video_title_mapping": {
-                    "mapping_rules": config.video_title_mapping.mapping_rules,
-                    "default_rules": config.video_title_mapping.default_rules,
-                    "date_format": config.video_title_mapping.date_format,
-                    "thumbnail_directory": config.video_title_mapping.thumbnail_directory,
-                },
+                "video_title_mapping": config.video_title_mapping.model_dump(),
                 "platforms": {},
-                "upload_settings": {
-                    "max_file_size_mb": config.upload_settings.max_file_size_mb,
-                    "supported_formats": config.upload_settings.supported_formats,
-                    "retry_attempts": config.upload_settings.retry_attempts,
-                    "retry_delay": config.upload_settings.retry_delay,
-                    "interactive_mode": config.upload_settings.interactive_mode,
-                    "default_privacy": config.upload_settings.default_privacy,
-                },
+                "upload_settings": config.upload_settings.model_dump(),
             }
 
             # Добавляем конфигурации платформ
