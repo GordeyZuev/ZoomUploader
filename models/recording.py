@@ -1,7 +1,14 @@
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
+
+T = TypeVar('T', bound=Enum)
+
+
+def _normalize_enum(value: T | str, enum_class: type[T]) -> T:
+    """Нормализация значения Enum: если уже Enum - возвращаем, иначе создаем из строки."""
+    return value if isinstance(value, enum_class) else enum_class(value)
 
 
 class ProcessingStatus(Enum):
@@ -98,9 +105,7 @@ class MeetingRecording:
 
         # Источник
         source_type_raw = meeting_data.get("source_type") or SourceType.ZOOM.value
-        self.source_type: SourceType = (
-            source_type_raw if isinstance(source_type_raw, SourceType) else SourceType(source_type_raw)
-        )
+        self.source_type: SourceType = _normalize_enum(source_type_raw, SourceType)
         self.source_key: str = meeting_data.get("source_key") or str(meeting_data.get("id", ""))
         self.source_metadata: dict[str, Any] = meeting_data.get("source_metadata", {}) or {}
 
@@ -131,13 +136,9 @@ class MeetingRecording:
                 self.output_targets.append(raw)
             elif isinstance(raw, dict) and "target_type" in raw:
                 try:
-                    target_type = (
-                        raw["target_type"]
-                        if isinstance(raw["target_type"], TargetType)
-                        else TargetType(raw["target_type"])
-                    )
+                    target_type = _normalize_enum(raw["target_type"], TargetType)
                     status_raw = raw.get("status", TargetStatus.NOT_UPLOADED)
-                    status = status_raw if isinstance(status_raw, TargetStatus) else TargetStatus(status_raw)
+                    status = _normalize_enum(status_raw, TargetStatus)
                     self.output_targets.append(
                         OutputTarget(
                             target_type=target_type,
@@ -149,11 +150,16 @@ class MeetingRecording:
                 except Exception:
                     continue
 
-        # Вспомогательные атрибуты для обратной совместимости с Zoom
-        self.meeting_id: str = meeting_data.get("id", "") or self.source_metadata.get("meeting_id", "")
+        self.meeting_id: str = (
+            meeting_data.get("uuid", "")
+            or meeting_data.get("id", "")
+            or self.source_metadata.get("meeting_uuid", "")
+            or self.source_metadata.get("meeting_id", "")
+        )
         self.account: str = meeting_data.get("account", "default") or self.source_metadata.get("account", "default")
+        self.part_index: int | None = meeting_data.get("part_index")
+        self.total_visible_parts: int | None = meeting_data.get("total_visible_parts")
 
-        # Обрабатываем файлы записи (для Zoom API входных данных)
         self._process_recording_files(meeting_data.get("recording_files", []))
 
     def _process_recording_files(self, recording_files: list[dict[str, Any]]) -> None:
@@ -171,7 +177,8 @@ class MeetingRecording:
         }
 
         best_mp4_file = None
-        best_priority = 0
+        best_priority = -1
+        best_size = -1
 
         for file_data in recording_files:
             file_type = file_data.get('file_type', '')
@@ -180,25 +187,16 @@ class MeetingRecording:
             recording_type = file_data.get('recording_type', '')
 
             if file_type == 'MP4':
-                # Определяем приоритет этого MP4 файла
                 priority = mp4_priorities.get(recording_type, 0)
-
-                # Если это лучший файл, сохраняем его
-                if priority > best_priority:
+                if priority > best_priority or (priority == best_priority and file_size > best_size):
                     best_priority = priority
+                    best_size = file_size or 0
                     best_mp4_file = {
                         'file_size': file_size,
                         'download_url': download_url,
                         'recording_type': recording_type
                     }
-            elif file_type == 'CHAT':
-                # Файл чата (пока не обрабатываем)
-                pass
-            elif file_type == 'TRANSCRIPT':
-                # Транскрипт (пока не обрабатываем)
-                pass
 
-        # Сохраняем лучший MP4 файл
         if best_mp4_file:
             self.video_file_size = best_mp4_file['file_size']
             self.video_file_download_url = best_mp4_file['download_url']
@@ -289,6 +287,111 @@ class MeetingRecording:
                     if files:
                         return str(files[0])
         return None
+
+    # --- Доступ к метаданным Zoom API ---
+
+    def get_zoom_metadata(self, key: str, default: Any = None) -> Any:
+        """
+        Получить значение из метаданных Zoom API с fallback на zoom_api_response.
+
+        Приоритет поиска:
+        1. Прямое значение в source_metadata (если есть)
+        2. Значение в zoom_api_response
+        3. Значение в zoom_api_details
+        4. default
+
+        Args:
+            key: Ключ для поиска (например, 'share_url', 'account_id', 'host_id')
+            default: Значение по умолчанию, если ключ не найден
+
+        Returns:
+            Значение из метаданных или zoom_api_response, или default
+        """
+        if not self.source_metadata:
+            return default
+
+        # Сначала проверяем прямое значение в source_metadata
+        if key in self.source_metadata:
+            return self.source_metadata[key]
+
+        # Затем проверяем в zoom_api_response
+        zoom_response = self.source_metadata.get("zoom_api_response")
+        if isinstance(zoom_response, dict) and key in zoom_response:
+            return zoom_response[key]
+
+        # И в zoom_api_details
+        zoom_details = self.source_metadata.get("zoom_api_details")
+        if isinstance(zoom_details, dict) and key in zoom_details:
+            return zoom_details[key]
+
+        return default
+
+    @property
+    def share_url(self) -> str | None:
+        """Ссылка на просмотр записи в Zoom."""
+        return self.get_zoom_metadata("share_url")
+
+    @property
+    def account_id(self) -> str | None:
+        """ID аккаунта Zoom."""
+        return self.get_zoom_metadata("account_id")
+
+    @property
+    def host_id(self) -> str | None:
+        """ID хоста встречи."""
+        return self.get_zoom_metadata("host_id")
+
+    @property
+    def timezone(self) -> str:
+        """Часовой пояс встречи."""
+        value = self.get_zoom_metadata("timezone")
+        return value if value else "UTC"
+
+    @property
+    def total_size(self) -> int:
+        """Общий размер всех файлов записи в байтах."""
+        value = self.get_zoom_metadata("total_size")
+        return value if value is not None else 0
+
+    @property
+    def recording_count(self) -> int:
+        """Количество файлов записи."""
+        value = self.get_zoom_metadata("recording_count")
+        return value if value is not None else 0
+
+    @property
+    def auto_delete_date(self) -> str | None:
+        """Дата автоматического удаления записи."""
+        return self.get_zoom_metadata("auto_delete_date")
+
+    @property
+    def zoom_api_response(self) -> dict[str, Any] | None:
+        """Полный ответ от Zoom API (get_recordings)."""
+        if not self.source_metadata:
+            return None
+        response = self.source_metadata.get("zoom_api_response")
+        return response if isinstance(response, dict) else None
+
+    @property
+    def zoom_api_details(self) -> dict[str, Any] | None:
+        """Полный детальный ответ от Zoom API (get_recording_details)."""
+        if not self.source_metadata:
+            return None
+        details = self.source_metadata.get("zoom_api_details")
+        return details if isinstance(details, dict) else None
+
+    def get_all_recording_files(self) -> list[dict[str, Any]]:
+        """
+        Получить все файлы записи из zoom_api_response.
+
+        Returns:
+            Список всех recording_files из полного ответа API (включая MP4, CHAT, TRANSCRIPT)
+        """
+        response = self.zoom_api_response
+        if isinstance(response, dict):
+            files = response.get("recording_files", [])
+            return files if isinstance(files, list) else []
+        return []
 
     def targets_summary(self) -> dict[str, Any]:
         summary = {}

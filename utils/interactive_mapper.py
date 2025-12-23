@@ -1,7 +1,11 @@
 from datetime import datetime
 
+from rich.console import Console
+from rich.panel import Panel
+
 from logger import get_logger
 from models import TargetStatus, TargetType
+from models.recording import _normalize_enum
 from utils.formatting import normalize_datetime_string
 
 logger = get_logger()
@@ -24,9 +28,6 @@ class InteractiveMapper:
             date_str = dt.strftime('%d.%m.%Y')
         except Exception:
             date_str = "неизвестная дата"
-
-        from rich.console import Console
-        from rich.panel import Panel
 
         console = Console(force_terminal=True, color_system="auto")
 
@@ -58,19 +59,6 @@ class InteractiveMapper:
         console.print("[bold green]" + "=" * 60 + "[/bold green]")
 
         return title, description, privacy_status
-
-    def ask_playlist_optional(self) -> str | None:
-        """Опционально запросить ID плейлиста YouTube."""
-        try:
-            print("\n📃 Плейлист (опционально): оставьте пустым чтобы пропустить")
-            playlist_id = input("   ID плейлиста (или пусто): ").strip()
-            return playlist_id or None
-        except KeyboardInterrupt:
-            print("\n   ❌ Отменено пользователем")
-            return None
-        except EOFError:
-            print("\n   ❌ Отменено")
-            return None
 
     def _get_title(self, original_title: str, date_str: str) -> str | None:
         """Получение названия видео от пользователя."""
@@ -173,8 +161,6 @@ class InteractiveMapper:
         uploaded_recordings: list = None,
     ):
         """Показывает сводку по загрузке."""
-        from rich.console import Console
-
         console = Console(force_terminal=True, color_system="auto")
 
         # Простой заголовок
@@ -203,8 +189,8 @@ class InteractiveMapper:
 
                 def _link(target_type: TargetType, current_recording=recording) -> str | None:
                     for t in getattr(current_recording, "output_targets", []):
-                        t_type = t.target_type if isinstance(t.target_type, TargetType) else TargetType(t.target_type)
-                        t_status = t.status if isinstance(t.status, TargetStatus) else TargetStatus(t.status)
+                        t_type = _normalize_enum(t.target_type, TargetType)
+                        t_status = _normalize_enum(t.status, TargetStatus)
                         if t_type == target_type and t_status == TargetStatus.UPLOADED:
                             return t.get_link()
                     return None
@@ -252,9 +238,3 @@ def get_interactive_mapper() -> InteractiveMapper:
     return _interactive_mapper
 
 
-def handle_unknown_title_interactive(
-    original_title: str, start_time: str, default_privacy: str = "unlisted"
-) -> tuple[str | None, str | None, str]:
-    """Удобная функция для интерактивной обработки неизвестного названия."""
-    mapper = get_interactive_mapper()
-    return mapper.handle_unknown_title(original_title, start_time, default_privacy)

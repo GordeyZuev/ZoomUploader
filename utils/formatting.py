@@ -93,38 +93,3 @@ def format_date(date_input: str | datetime) -> str:
         return str(date_input) if date_input else ""
 
 
-def format_status(status: str) -> str:
-    """Форматирование статуса на русском языке."""
-    status_translations = {
-        'pending': 'Ожидает',
-        'downloading': 'Загружается',
-        'downloaded': 'Загружено',
-        'processing': 'Обрабатывается',
-        'processed': 'Обработано',
-        'uploading': 'Выгружается',
-        'uploaded': 'Выгружено',
-        'failed': 'Ошибка',
-        'skipped': 'Пропущено',
-    }
-
-    return status_translations.get(status, status)
-
-
-def format_meeting_info(recording) -> str:
-    """Форматирование информации о встрече для вывода."""
-    title = getattr(recording, "display_name", None) or "Без названия"
-    date = format_date(recording.start_time)
-    duration = format_duration(recording.duration)
-    status_value = recording.status.value if hasattr(recording.status, "value") else str(recording.status)
-    status = format_status(status_value)
-
-    info = f"📅 {title}\n"
-    info += f"   ⏰ Дата: {date}\n"
-    info += f"   ⏱️  Длительность: {duration}\n"
-    info += f"   📊 {status}\n"
-
-    if getattr(recording, "video_file_size", 0) > 0:
-        video_size = format_file_size(recording.video_file_size)
-        info += f"   🎬 Видео: {video_size}\n"
-
-    return info

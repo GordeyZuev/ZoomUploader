@@ -1,5 +1,8 @@
+import os
+import shutil
 from datetime import datetime
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 import asyncpg
 from sqlalchemy import select
@@ -15,6 +18,7 @@ from models.recording import (
     SourceType,
     TargetStatus,
     TargetType,
+    _normalize_enum,
 )
 
 from .config import DatabaseConfig
@@ -29,17 +33,13 @@ def _parse_start_time(start_time_str: str) -> datetime:
         raise ValueError("start_time не может быть пустым")
 
     try:
-        # Zoom всегда возвращает формат с 'Z' в конце (UTC)
-        # Заменяем 'Z' на '+00:00' для правильного парсинга
         if start_time_str.endswith('Z'):
             time_str = start_time_str[:-1] + '+00:00'
         else:
             time_str = start_time_str
 
         dt = datetime.fromisoformat(time_str)
-        # Убеждаемся, что timezone установлен (должен быть UTC)
         if dt.tzinfo is None:
-            from zoneinfo import ZoneInfo
             dt = dt.replace(tzinfo=ZoneInfo("UTC"))
         return dt
     except Exception as e:
@@ -48,7 +48,7 @@ def _parse_start_time(start_time_str: str) -> datetime:
 
 
 def _build_source_metadata_payload(recording: MeetingRecording) -> dict:
-    """Формируем JSONB метаданных источника из модели."""
+    """Формирует JSONB метаданных источника из модели."""
     meta = dict(recording.source_metadata or {})
 
     zoom_fields = {
@@ -58,6 +58,8 @@ def _build_source_metadata_payload(recording: MeetingRecording) -> dict:
         "download_access_token": getattr(recording, "download_access_token", None),
         "password": getattr(recording, "password", None),
         "recording_play_passcode": getattr(recording, "recording_play_passcode", None),
+        "part_index": getattr(recording, "part_index", None),
+        "total_visible_parts": getattr(recording, "total_visible_parts", None),
     }
     for key, value in zoom_fields.items():
         if value:
@@ -98,12 +100,12 @@ class DatabaseManager:
 
             if not result:
                 await conn.execute(f'CREATE DATABASE "{self.config.database}"')
-                logger.info(f"✅ База данных '{self.config.database}' создана")
+                logger.info(f"База данных создана: database={self.config.database}")
 
             await conn.close()
 
         except Exception as e:
-            logger.error(f"❌ Ошибка создания базы данных: {e}")
+            logger.error(f"Ошибка создания базы данных: database={self.config.database} | error={e}")
             raise
 
     async def recreate_database(self):
@@ -143,36 +145,29 @@ class DatabaseManager:
                         AND pid <> pg_backend_pid()
                     """, self.config.database)
                 except Exception as e:
-                    # Игнорируем ошибки при завершении соединений
-                    logger.warning(f"⚠️  Не удалось завершить все соединения: {e}")
+                    logger.warning(f"Не удалось завершить все соединения: database={self.config.database} | error={e}")
 
-                # Удаляем базу данных
-                # Экранируем двойные кавычки для идентификатора
                 db_name_quoted = self.config.database.replace('"', '""')
                 await conn.execute(f'DROP DATABASE IF EXISTS "{db_name_quoted}"')
-                logger.info(f"🗑️  База данных '{self.config.database}' удалена")
+                logger.info(f"База данных удалена: database={self.config.database}")
 
-            # Создаем базу данных заново
-            # Экранируем двойные кавычки для идентификатора
             db_name_quoted = self.config.database.replace('"', '""')
             await conn.execute(f'CREATE DATABASE "{db_name_quoted}"')
-            logger.info(f"✅ База данных '{self.config.database}' создана")
+            logger.info(f"База данных создана: database={self.config.database}")
 
             await conn.close()
 
-            # Пересоздаем engine для новой БД
             self.engine = create_async_engine(self.config.url, echo=False)
             self.async_session = async_sessionmaker(
                 self.engine, class_=AsyncSession, expire_on_commit=False
             )
 
-            # Создаем таблицы
             await self.create_tables()
 
-            logger.info("✅ База данных полностью пересоздана")
+            logger.info(f"База данных полностью пересоздана: database={self.config.database}")
 
         except Exception as e:
-            logger.error(f"❌ Ошибка пересоздания базы данных: {e}")
+            logger.error(f"Ошибка пересоздания базы данных: database={self.config.database} | error={e}")
             raise
 
     async def create_tables(self):
@@ -180,9 +175,9 @@ class DatabaseManager:
         try:
             async with self.engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-            logger.info("✅ Таблицы созданы")
+            logger.info("Таблицы созданы")
         except Exception as e:
-            logger.error(f"❌ Ошибка создания таблиц: {e}")
+            logger.error(f"Ошибка создания таблиц: error={e}")
             raise
 
     async def save_recordings(self, recordings: list[MeetingRecording]) -> int:
@@ -202,19 +197,25 @@ class DatabaseManager:
                             await self._create_new_recording(session, recording)
                         saved_count += 1
                     except IntegrityError as e:
-                        logger.warning(f"⚠️ Запись уже существует: {recording.display_name} - {e}")
+                        logger.warning(
+                            f"Запись уже существует: recording={recording.display_name} | recording_id={recording.db_id} | error={e}"
+                        )
+                        await session.rollback()
                         continue
                     except Exception as e:
-                        logger.error(f"❌ Ошибка сохранения записи {recording.display_name}: {e}")
+                        logger.error(
+                            f"Ошибка сохранения записи: recording={recording.display_name} | recording_id={recording.db_id} | error={e}"
+                        )
+                        await session.rollback()
                         continue
 
                 await session.commit()
-                logger.info(f"✅ Сохранено записей: {saved_count}/{len(recordings)}")
+                logger.info(f"Сохранено записей: {saved_count}/{len(recordings)}")
                 return saved_count
 
             except Exception as e:
                 await session.rollback()
-                logger.error(f"❌ Ошибка транзакции: {e}")
+                logger.error(f"Ошибка транзакции: error={e}")
                 raise
 
     async def _find_existing_recording(
@@ -223,11 +224,13 @@ class DatabaseManager:
         """Поиск существующей записи по (source_type, source_key, start_time)."""
         try:
             start_time = _parse_start_time(recording.start_time)
-            source_type = (
-                recording.source_type if isinstance(recording.source_type, SourceType) else SourceType(recording.source_type)
-            )
+            source_type = _normalize_enum(recording.source_type, SourceType)
             stmt = (
                 select(RecordingModel)
+                .options(
+                    selectinload(RecordingModel.source),
+                    selectinload(RecordingModel.outputs),
+                )
                 .join(SourceMetadataModel)
                 .where(
                     SourceMetadataModel.source_type == source_type,
@@ -238,7 +241,9 @@ class DatabaseManager:
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
         except Exception as e:
-            logger.error(f"Ошибка поиска существующей записи: {e}")
+            logger.error(
+                f"Ошибка поиска существующей записи: source_type={recording.source_type} | source_key={recording.source_key} | error={e}"
+            )
             return None
 
     async def _update_existing_recording(
@@ -250,8 +255,7 @@ class DatabaseManager:
         existing.video_file_size = recording.video_file_size
         existing.is_mapped = recording.is_mapped if recording.is_mapped is not None else existing.is_mapped
 
-        # Обновляем статус без излишних ограничений, чтобы фиксировать прогресс
-        new_status = recording.status if isinstance(recording.status, ProcessingStatus) else ProcessingStatus(recording.status)
+        new_status = _normalize_enum(recording.status, ProcessingStatus)
         if existing.status != new_status:
             existing.status = new_status
         existing.expire_at = recording.expire_at
@@ -265,33 +269,32 @@ class DatabaseManager:
         existing.main_topics = recording.main_topics
         existing.downloaded_at = recording.downloaded_at
 
-        # Обновляем источник
         meta = _build_source_metadata_payload(recording)
         if existing.source is None:
             source = SourceMetadataModel(
                 recording_id=existing.id,
-                source_type=recording.source_type if isinstance(recording.source_type, SourceType) else SourceType(recording.source_type),
+                source_type=_normalize_enum(recording.source_type, SourceType),
                 source_key=recording.source_key,
                 metadata=meta,
             )
             session.add(source)
         else:
-            existing.source.source_type = (
-                recording.source_type if isinstance(recording.source_type, SourceType) else SourceType(recording.source_type)
-            )
+            existing.source.source_type = _normalize_enum(recording.source_type, SourceType)
             existing.source.source_key = recording.source_key
-            existing.source.meta = meta
+            existing_meta = existing.source.meta or {}
+            merged_meta = dict(existing_meta)
+            merged_meta.update(meta)
+            existing.source.meta = merged_meta
 
-        # Синхронизация output targets
         existing_outputs: dict[TargetType, OutputTargetModel] = {}
         for out in existing.outputs:
-            key = out.target_type if isinstance(out.target_type, TargetType) else TargetType(out.target_type)
+            key = _normalize_enum(out.target_type, TargetType)
             existing_outputs[key] = out
 
         for target in recording.output_targets:
-            target_type_value = target.target_type if isinstance(target.target_type, TargetType) else TargetType(target.target_type)
+            target_type_value = _normalize_enum(target.target_type, TargetType)
             db_target = existing_outputs.get(target_type_value)
-            target_status = target.status if isinstance(target.status, TargetStatus) else TargetStatus(target.status)
+            target_status = _normalize_enum(target.status, TargetStatus)
             if db_target:
                 db_target.status = target_status
                 db_target.target_meta = target.target_meta
@@ -336,24 +339,22 @@ class DatabaseManager:
         await session.flush()
         recording.db_id = db_recording.id
 
-        # Источник
         meta = _build_source_metadata_payload(recording)
         source_model = SourceMetadataModel(
             recording_id=db_recording.id,
-            source_type=recording.source_type if isinstance(recording.source_type, SourceType) else SourceType(recording.source_type),
+            source_type=_normalize_enum(recording.source_type, SourceType),
             source_key=recording.source_key,
             meta=meta,
         )
         session.add(source_model)
         await session.flush()
 
-        # Выходы
         for target in recording.output_targets:
             session.add(
                 OutputTargetModel(
                     recording_id=db_recording.id,
-                    target_type=target.target_type if isinstance(target.target_type, TargetType) else TargetType(target.target_type),
-                    status=target.status if isinstance(target.status, TargetStatus) else TargetStatus(target.status),
+                    target_type=_normalize_enum(target.target_type, TargetType),
+                    status=_normalize_enum(target.status, TargetStatus),
                     target_meta=target.target_meta,
                     uploaded_at=target.uploaded_at,
                 )
@@ -381,11 +382,11 @@ class DatabaseManager:
                     recording = self._convert_db_to_model(db_recording)
                     recordings.append(recording)
 
-                logger.debug(f"📋 Получено записей из БД: {len(recordings)}")
+                logger.debug(f"Получено записей из БД: count={len(recordings)} | status={status.value if status else 'all'}")
                 return recordings
 
             except Exception as e:
-                logger.error(f"❌ Ошибка получения записей: {e}")
+                logger.error(f"Ошибка получения записей: status={status.value if status else 'all'} | error={e}")
                 return []
 
     async def get_recordings_by_ids(self, recording_ids: list[int]) -> list[MeetingRecording]:
@@ -408,11 +409,11 @@ class DatabaseManager:
                     recording = self._convert_db_to_model(db_recording)
                     recordings.append(recording)
 
-                logger.debug(f"📋 Получено записей по ID: {len(recordings)}")
+                logger.debug(f"Получено записей по ID: count={len(recordings)} | requested={len(recording_ids)}")
                 return recordings
 
             except Exception as e:
-                logger.error(f"❌ Ошибка получения записей по ID: {e}")
+                logger.error(f"Ошибка получения записей по ID: recording_ids={recording_ids} | error={e}")
                 return []
 
     async def get_records_older_than(self, cutoff_date: datetime) -> list[MeetingRecording]:
@@ -438,11 +439,11 @@ class DatabaseManager:
                     recording = self._convert_db_to_model(db_recording)
                     recordings.append(recording)
 
-                logger.debug(f"📋 Получено старых записей: {len(recordings)}")
+                logger.debug(f"Получено старых записей: count={len(recordings)} | cutoff_date={cutoff_date}")
                 return recordings
 
             except Exception as e:
-                logger.error(f"❌ Ошибка получения старых записей: {e}")
+                logger.error(f"Ошибка получения старых записей: cutoff_date={cutoff_date} | error={e}")
                 return []
 
     async def update_recording(self, recording: MeetingRecording):
@@ -458,26 +459,24 @@ class DatabaseManager:
                     ],
                 )
                 if not db_recording:
-                    logger.error(f"❌ Запись с ID {recording.db_id} не найдена")
+                    logger.error(f"Запись не найдена: recording_id={recording.db_id}")
                     return
 
                 await self._update_existing_recording(session, db_recording, recording)
 
                 await session.commit()
 
-                logger.debug(f"✅ Запись {recording.display_name} обновлена в БД")
+                logger.debug(f"Запись обновлена: recording={recording.display_name} | recording_id={recording.db_id}")
 
             except Exception as e:
                 await session.rollback()
-                logger.error(f"❌ Ошибка обновления записи {recording.display_name}: {e}")
+                logger.error(f"Ошибка обновления записи: recording={recording.display_name} | recording_id={recording.db_id} | error={e}")
                 raise
 
     def _convert_db_to_model(self, db_recording: RecordingModel) -> MeetingRecording:
         """Преобразование записи из БД в модель."""
         # Конвертируем datetime из БД в формат Zoom API (2021-03-18T05:41:36Z)
         if isinstance(db_recording.start_time, datetime):
-            from zoneinfo import ZoneInfo
-
             dt = db_recording.start_time
             # Конвертируем в UTC (PostgreSQL хранит в UTC, но может вернуть в timezone сессии)
             if dt.tzinfo is not None:
@@ -493,14 +492,14 @@ class DatabaseManager:
             start_time_str = str(db_recording.start_time)
 
         source_type_raw = db_recording.source.source_type if db_recording.source else SourceType.ZOOM
-        source_type = source_type_raw if isinstance(source_type_raw, SourceType) else SourceType(source_type_raw)
+        source_type = _normalize_enum(source_type_raw, SourceType)
         source_key = db_recording.source.source_key if db_recording.source else ""
-        source_meta = db_recording.source.meta if db_recording.source else {}
+        source_meta = (db_recording.source.meta if db_recording.source and db_recording.source.meta else {}) or {}
 
         outputs: list[OutputTarget] = []
         for out in db_recording.outputs:
-            out_type = out.target_type if isinstance(out.target_type, TargetType) else TargetType(out.target_type)
-            out_status = out.status if isinstance(out.status, TargetStatus) else TargetStatus(out.status)
+            out_type = _normalize_enum(out.target_type, TargetType)
+            out_status = _normalize_enum(out.status, TargetStatus)
             outputs.append(
                 OutputTarget(
                     target_type=out_type,
@@ -540,6 +539,8 @@ class DatabaseManager:
             meeting_data["download_access_token"] = source_meta.get("download_access_token")
             meeting_data["password"] = source_meta.get("password")
             meeting_data["recording_play_passcode"] = source_meta.get("recording_play_passcode")
+            meeting_data["part_index"] = source_meta.get("part_index")
+            meeting_data["total_visible_parts"] = source_meta.get("total_visible_parts")
 
         recording = MeetingRecording(meeting_data)
         recording.db_id = db_recording.id
@@ -554,8 +555,6 @@ class DatabaseManager:
         Returns:
             Словарь с результатами сброса
         """
-        import os
-
         reset_count = 0
         by_status = {}
 
@@ -574,7 +573,7 @@ class DatabaseManager:
                     # Если нужно оставить загруженные записи – проверяем наличие uploaded таргетов
                     if keep_uploaded:
                         uploaded_exists = any(
-                            (t.status == TargetStatus.UPLOADED or (not isinstance(t.status, TargetStatus) and t.status == TargetStatus.UPLOADED.value))
+                            _normalize_enum(t.status, TargetStatus) == TargetStatus.UPLOADED
                             for t in db_recording.outputs
                         )
                         if uploaded_exists:
@@ -584,33 +583,30 @@ class DatabaseManager:
                     if db_recording.local_video_path and os.path.exists(db_recording.local_video_path):
                         try:
                             os.remove(db_recording.local_video_path)
-                            logger.info(f"🗑️ Удален файл: {db_recording.local_video_path}")
+                            logger.debug(f"Удален файл: path={db_recording.local_video_path} | recording_id={db_recording.id}")
                         except Exception as e:
-                            logger.warning(f"⚠️ Не удалось удалить файл {db_recording.local_video_path}: {e}")
+                            logger.warning(f"Не удалось удалить файл: path={db_recording.local_video_path} | recording_id={db_recording.id} | error={e}")
 
                     if db_recording.processed_video_path and os.path.exists(db_recording.processed_video_path):
                         try:
                             os.remove(db_recording.processed_video_path)
-                            logger.info(f"🗑️ Удален файл: {db_recording.processed_video_path}")
+                            logger.debug(f"Удален файл: path={db_recording.processed_video_path} | recording_id={db_recording.id}")
                         except Exception as e:
-                            logger.warning(f"⚠️ Не удалось удалить файл {db_recording.processed_video_path}: {e}")
+                            logger.warning(f"Не удалось удалить файл: path={db_recording.processed_video_path} | recording_id={db_recording.id} | error={e}")
 
                     if db_recording.processed_audio_dir and os.path.exists(db_recording.processed_audio_dir):
                         try:
-                            import shutil
                             shutil.rmtree(db_recording.processed_audio_dir)
-                            logger.info(f"🗑️ Удалена папка аудио: {db_recording.processed_audio_dir}")
+                            logger.debug(f"Удалена папка аудио: path={db_recording.processed_audio_dir} | recording_id={db_recording.id}")
                         except Exception as e:
-                            logger.warning(f"⚠️ Не удалось удалить аудио директорию {db_recording.processed_audio_dir}: {e}")
+                            logger.warning(f"Не удалось удалить аудио директорию: path={db_recording.processed_audio_dir} | recording_id={db_recording.id} | error={e}")
 
-                    # Удаляем папку транскрипции, если она существует
                     if db_recording.transcription_dir and os.path.exists(db_recording.transcription_dir):
                         try:
-                            import shutil
                             shutil.rmtree(db_recording.transcription_dir)
-                            logger.info(f"🗑️ Удалена папка транскрипции: {db_recording.transcription_dir}")
+                            logger.debug(f"Удалена папка транскрипции: path={db_recording.transcription_dir} | recording_id={db_recording.id}")
                         except Exception as e:
-                            logger.warning(f"⚠️ Не удалось удалить папку транскрипции {db_recording.transcription_dir}: {e}")
+                            logger.warning(f"Не удалось удалить папку транскрипции: path={db_recording.transcription_dir} | recording_id={db_recording.id} | error={e}")
 
                     # Подсчитываем по статусам
                     old_status = db_recording.status.value if hasattr(db_recording.status, 'value') else str(db_recording.status)
@@ -644,7 +640,7 @@ class DatabaseManager:
                     reset_count += 1
 
                 await session.commit()
-                logger.info(f"✅ Сброшено записей: {reset_count}")
+                logger.info(f"Сброшено записей: count={reset_count} | by_status={by_status} | keep_uploaded={keep_uploaded}")
 
                 return {
                     'total_reset': reset_count,
@@ -653,11 +649,11 @@ class DatabaseManager:
 
             except Exception as e:
                 await session.rollback()
-                logger.error(f"❌ Ошибка сброса записей: {e}")
+                logger.error(f"Ошибка сброса записей: keep_uploaded={keep_uploaded} | error={e}")
                 raise
 
     async def close(self):
         """Закрытие соединения с базой данных."""
         if hasattr(self, 'engine') and self.engine is not None:
             await self.engine.dispose()
-            logger.info("🔌 Соединение с БД закрыто")
+            logger.info("Соединение с БД закрыто")

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from config.unified_config import AppConfig, load_app_config
+from config.unified_config import AppConfig, get_config_loader, load_app_config
 from logger import get_logger
 from utils.formatting import normalize_datetime_string
 
@@ -203,8 +203,6 @@ class TitleMapper:
     def _save_config(self) -> bool:
         """Сохранение конфигурации в файл."""
         try:
-            from config.unified_config import get_config_loader
-
             loader = get_config_loader()
             return loader.save_config(self.app_config)
 
@@ -231,7 +229,3 @@ def get_title_mapper() -> TitleMapper:
     return _title_mapper
 
 
-def map_video_title(original_title: str, start_time: str, duration: int = 0) -> MappingResult:
-    """Удобная функция для маппинга названия видео."""
-    mapper = get_title_mapper()
-    return mapper.map_title(original_title, start_time, duration)

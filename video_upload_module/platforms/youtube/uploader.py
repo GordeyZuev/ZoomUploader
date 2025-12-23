@@ -126,10 +126,13 @@ class YouTubeUploader(BaseUploader):
                 return None
 
         try:
+            final_description = description if description else f"Загружено {self._get_timestamp()}"
+            self.logger.debug(f"Длина описания для YouTube: {len(final_description)} символов")
+
             body = {
                 'snippet': {
                     'title': title,
-                    'description': description or f"Загружено {self._get_timestamp()}",
+                    'description': final_description,
                     'defaultLanguage': self.config.default_language,
                     'defaultAudioLanguage': self.config.default_language,
                 },

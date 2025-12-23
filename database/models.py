@@ -64,9 +64,13 @@ class RecordingModel(Base):
         cascade="all, delete-orphan",
         foreign_keys="SourceMetadataModel.recording_id",
         primaryjoin="RecordingModel.id==SourceMetadataModel.recording_id",
+        lazy="selectin",
     )
     outputs: Mapped[list["OutputTargetModel"]] = relationship(
-        "OutputTargetModel", back_populates="recording", cascade="all, delete-orphan"
+        "OutputTargetModel",
+        back_populates="recording",
+        cascade="all, delete-orphan",
+        lazy="selectin",
     )
 
     def __repr__(self) -> str:
@@ -95,6 +99,7 @@ class SourceMetadataModel(Base):
         back_populates="source",
         foreign_keys=[recording_id],
         primaryjoin="SourceMetadataModel.recording_id==RecordingModel.id",
+        lazy="selectin",
     )
 
 
@@ -120,4 +125,6 @@ class OutputTargetModel(Base):
         DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
-    recording: Mapped[RecordingModel] = relationship("RecordingModel", back_populates="outputs")
+    recording: Mapped[RecordingModel] = relationship(
+        "RecordingModel", back_populates="outputs", lazy="selectin"
+    )

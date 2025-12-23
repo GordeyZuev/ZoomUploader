@@ -27,8 +27,8 @@
 - Нормализация БД: `source_metadata` + `output_targets` с `TargetStatus`
 - Расширенные статусы обработки: `TRANSCRIBING`, `UPLOADING`, `UPLOADED`
 - Фундамент для multi-source/multi-output (YouTube/VK и будущие диски/webhook)
-
----
+- Унифицированная структура хранения файлов: `media/video/`, `media/processed_audio/`, `media/transcriptions/`
+- Конфигурация через `unified_config` с Pydantic валидацией
 
 ---
 

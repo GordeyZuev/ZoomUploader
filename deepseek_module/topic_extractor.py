@@ -486,17 +486,25 @@ class TopicExtractor:
                     ],
                     **self.config.to_request_params(),
                 )
+                # Проверяем, что response является объектом с атрибутом choices
+                if not hasattr(response, 'choices') or not response.choices:
+                    error_msg = f"Неожиданный формат ответа от DeepSeek API: response type={type(response)}, value={response}"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
                 content = response.choices[0].message.content.strip()
 
             if not content:
                 return {'main_topics': [], 'topic_timestamps': []}
 
-            logger.debug(f"📝 Промпт отправлен в DeepSeek (первые 1000 символов):\n{prompt[:1000]}...")
-            logger.debug(f"📝 Полный ответ от DeepSeek:\n{content}")
+            logger.debug(f"Промпт отправлен в DeepSeek: preview={prompt[:1000]}... | total_length={len(prompt)}")
+            logger.debug(f"Полный ответ от DeepSeek: length={len(content)} | preview={content[:200]}...")
 
             parsed = self._parse_structured_response(content, total_duration)
             parsed['long_pauses'] = long_pauses
-            logger.debug(f"📊 Результат парсинга: main_topics={parsed.get('main_topics')}, topic_timestamps={len(parsed.get('topic_timestamps', []))}")
+            logger.debug(
+                f"Результат парсинга: main_topics={len(parsed.get('main_topics', []))} | "
+                f"topic_timestamps={len(parsed.get('topic_timestamps', []))} | total_duration={total_duration}s"
+            )
 
             return parsed
 
@@ -580,7 +588,7 @@ class TopicExtractor:
 
         timeout = httpx.Timeout(self.config.timeout, connect=10.0)
 
-        logger.debug(f"📤 Fireworks API запрос: URL={url}, модель={self.config.model}, параметры={list(params.keys())}")
+        logger.debug(f"Fireworks API запрос: url={url} | model={self.config.model} | params={list(params.keys())}")
 
         async with httpx.AsyncClient(timeout=timeout) as client:
             try:
@@ -722,7 +730,6 @@ class TopicExtractor:
                             # Основная тема должна быть короткой (2-4 слова)
                             if 2 <= len(words) <= 4:
                                 main_topics.append(topic_candidate)
-                                logger.debug(f"✅ Найдена основная тема (перед секцией детализированных топиков): {topic_candidate}")
                                 found_main_topic_before_section = True
                                 break
                 break
@@ -743,7 +750,6 @@ class TopicExtractor:
                     words = topic_candidate.split()
                     if 2 <= len(words) <= 4:
                         main_topics.append(topic_candidate)
-                        logger.debug(f"✅ Найдена основная тема (в начале ответа): {topic_candidate}")
                         break
 
         for i, line in enumerate(lines):
@@ -768,7 +774,6 @@ class TopicExtractor:
                             words = topic_candidate.split()
                             if len(words) <= 4:
                                 main_topics.append(topic_candidate)
-                                logger.debug(f"✅ Найдена основная тема (сразу после заголовка): {topic_candidate}")
                 continue
             elif 'ДЕТАЛИЗИРОВАННЫЕ ТОПИКИ' in line.upper() or 'ТОПИКИ С ТАЙМКОДАМИ' in line.upper():
                 in_main_topics = False
@@ -820,7 +825,6 @@ class TopicExtractor:
                     elif len(topic) > 150:
                         topic = topic[:150].rsplit(' ', 1)[0] + '...'
                     main_topics.append(topic)
-                    logger.debug(f"✅ Найдена основная тема: {topic}")
 
             elif in_detailed_topics:
                 match = re.match(timestamp_pattern, line)
@@ -881,7 +885,7 @@ class TopicExtractor:
             topic_timestamps = self._parse_simple_timestamps(text, total_duration)
 
         if main_topics_section_found and not main_topics:
-            logger.debug("⚠️ Секция основных тем найдена, но темы не извлечены. Пробуем найти тему в начале ответа...")
+            logger.debug("Секция основных тем найдена, но темы не извлечены. Поиск темы в начале ответа")
             for i, line in enumerate(lines):
                 if 'ОСНОВНЫЕ ТЕМЫ' in line.upper() or 'ОСНОВНЫЕ ТЕМЫ ПАРЫ' in line.upper():
                     for j in range(i + 1, min(i + 5, len(lines))):
@@ -896,7 +900,6 @@ class TopicExtractor:
                                 words = topic_candidate.split()
                                 if 2 <= len(words) <= 4:
                                     main_topics.append(topic_candidate)
-                                    logger.debug(f"✅ Найдена основная тема (fallback): {topic_candidate}")
                                     break
                     break
 
@@ -909,6 +912,8 @@ class TopicExtractor:
                     topic = ' '.join(words[:7]) + '...'
                 processed_main_topics.append(topic)
 
+        if processed_main_topics:
+            logger.info(f"🧭 Основная тема: {processed_main_topics[0]}")
         if not processed_main_topics and main_topics_section_found:
             logger.warning(f"⚠️ Секция основных тем найдена, но не удалось извлечь тему. Первые строки ответа:\n{chr(10).join(lines[:10])}")
 

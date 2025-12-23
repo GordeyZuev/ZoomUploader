@@ -92,6 +92,9 @@ class ZoomAPI:
                 if response.status_code == 200:
                     data = response.json()
                     logger.info(f"Получено записей: {len(data.get('meetings', []))}")
+                    # Логируем сырые данные от Zoom API
+                    import json
+                    logger.debug(f"Сырые данные от Zoom API (get_recordings):\n{json.dumps(data, indent=2, ensure_ascii=False)}")
                     return data
                 else:
                     logger.error(
@@ -142,7 +145,11 @@ class ZoomAPI:
                 )
 
                 if response.status_code == 200:
-                    return response.json()
+                    data = response.json()
+                    # Логируем сырые данные от Zoom API
+                    import json
+                    logger.debug(f"Сырые данные от Zoom API (get_recording_details для meeting_id={meeting_id}):\n{json.dumps(data, indent=2, ensure_ascii=False)}")
+                    return data
                 else:
                     logger.error(
                         f"Ошибка API для аккаунта {self.config.account} "

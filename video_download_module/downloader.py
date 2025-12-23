@@ -73,6 +73,7 @@ class ZoomDownloader:
         download_access_token: str = None,
         oauth_token: str = None,
         max_retries: int = 10,
+        completed_offset: int = 0,
     ) -> bool:
         """Загрузка файла по URL с поддержкой возобновления и retry механизмом."""
 
@@ -178,7 +179,7 @@ class ZoomDownloader:
 
                         # Обновляем прогресс с учетом уже загруженного
                         if progress and task_id and total_size > 0:
-                            progress.update(task_id, total=total_size, completed=downloaded)
+                            progress.update(task_id, total=total_size, completed=completed_offset + downloaded)
 
                         # Открываем файл в нужном режиме (wb или ab)
                         with open(filepath, mode) as f:
@@ -198,7 +199,7 @@ class ZoomDownloader:
                                     try:
                                         # Проверяем, что задача существует в прогресс-баре
                                         if task_id in progress.task_ids:
-                                            progress.update(task_id, completed=downloaded)
+                                            progress.update(task_id, completed=completed_offset + downloaded)
                                             last_update_downloaded = downloaded
                                     except Exception:
                                         pass  # Игнорируем ошибки обновления прогресса
@@ -207,7 +208,7 @@ class ZoomDownloader:
                             if progress and task_id is not None and downloaded > last_update_downloaded:
                                 try:
                                     if task_id in progress.task_ids:
-                                        progress.update(task_id, completed=downloaded)
+                                        progress.update(task_id, completed=completed_offset + downloaded)
                                 except Exception:
                                     pass
 
@@ -229,7 +230,7 @@ class ZoomDownloader:
                             filepath.unlink()
                         return False
 
-                logger.debug(f"✅ {description} успешно загружен: {filepath}")
+                logger.debug(f"Файл успешно загружен: description={description} | path={filepath}")
                 return True
 
             except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError, httpx.ReadTimeout) as e:
@@ -249,9 +250,22 @@ class ZoomDownloader:
                     return False
 
             except httpx.HTTPStatusError as e:
-                logger.error(f"❌ HTTP ошибка при загрузке {description}: {e.response.status_code}")
+                status = e.response.status_code
+                # Специальная обработка 416 Range Not Satisfiable — файл мог быть уже докачан или размер изменился
+                if status == 416 and filepath.exists():
+                    logger.warning("⚠️ Получен 416 Range Not Satisfiable — перезапускаем загрузку с нуля")
+                    try:
+                        filepath.unlink()
+                        downloaded = 0  # сбрасываем размер для следующей попытки
+                    except Exception:
+                        pass
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(1)
+                        continue
+
+                logger.error(f"❌ HTTP ошибка при загрузке {description}: {status}")
                 # При HTTP ошибках (401, 403, 404 и т.д.) повторять бесполезно
-                if filepath.exists() and e.response.status_code >= 400:
+                if filepath.exists() and status >= 400:
                     filepath.unlink()
                 return False
 
@@ -320,7 +334,7 @@ class ZoomDownloader:
                         logger.error("Файл не является корректным MP4 видео")
                         return False
 
-            logger.debug(f"✅ Файл прошел валидацию: {file_size} байт ({file_size / (1024 * 1024):.1f} MB)")
+            logger.debug(f"Файл прошел валидацию: path={filepath} | size={file_size}bytes ({file_size / (1024 * 1024):.1f}MB)")
             return True
 
         except Exception as e:
@@ -334,7 +348,7 @@ class ZoomDownloader:
         task_id: TaskID = None,
         force_download: bool = False,
     ) -> bool:
-        """Загрузка записи (только видео)."""
+        """Загрузка одной записи (один MP4)."""
         logger.debug(f"Начинаю загрузку записи: {recording.display_name}")
 
         if not recording.video_file_download_url:
@@ -342,19 +356,20 @@ class ZoomDownloader:
             recording.update_status(ProcessingStatus.FAILED, "Нет ссылки на видео")
             return False
 
-        if not force_download and recording.status not in [
-            ProcessingStatus.INITIALIZED,
-            ProcessingStatus.SKIPPED,
-        ]:
-            logger.info(
-                f"⏭️ Запись уже обработана (статус: {recording.status.value}), пропускаем загрузку: {recording.display_name}"
-            )
+        # Пропускаем только если уже загружено и файл существует (если force=False)
+        if (
+            not force_download
+            and recording.status == ProcessingStatus.DOWNLOADED
+            and recording.local_video_path
+            and Path(recording.local_video_path).exists()
+        ):
+            logger.info(f"⏭️ Запись уже загружена, пропускаем: {recording.display_name}")
             return False
 
         recording.update_status(ProcessingStatus.DOWNLOADING)
 
-        video_filename = self._get_filename(recording)
-        video_path = self.download_dir / video_filename
+        base_filename = self._get_filename(recording)
+        final_path = self.download_dir / base_filename
 
         fresh_download_token = None
         if recording.download_access_token:
@@ -393,30 +408,41 @@ class ZoomDownloader:
         except Exception as e:
             logger.error(f"❌ Ошибка получения OAuth токена: {e}")
 
-        if await self.download_file(
+        total_size = recording.video_file_size or 0
+        if progress and task_id and total_size > 0:
+            try:
+                progress.update(task_id, total=total_size)
+            except Exception:
+                pass
+
+        success = await self.download_file(
             recording.video_file_download_url,
-            video_path,
+            final_path,
             "видео",
             progress,
             task_id,
-            recording.video_file_size,
+            total_size,
             recording.password,
             recording.recording_play_passcode,
             fresh_download_token or recording.download_access_token,
             oauth_token,
-        ):
-            try:
-                recording.local_video_path = str(video_path.relative_to(Path.cwd()))
-            except ValueError:
-                recording.local_video_path = str(video_path)
-            recording.update_status(ProcessingStatus.DOWNLOADED)
-            recording.downloaded_at = datetime.now()
-            logger.debug(f"✅ Запись {recording.display_name} успешно загружена: {video_path}")
-            return True
-        else:
+            max_retries=10,
+            completed_offset=0,
+        )
+
+        if not success:
             recording.update_status(ProcessingStatus.FAILED)
             logger.error(f"❌ Ошибка загрузки записи {recording.display_name}")
             return False
+
+        try:
+            recording.local_video_path = str(final_path.relative_to(Path.cwd()))
+        except ValueError:
+            recording.local_video_path = str(final_path)
+        recording.update_status(ProcessingStatus.DOWNLOADED)
+        recording.downloaded_at = datetime.now()
+        logger.debug(f"Запись успешно загружена: recording={recording.display_name} | recording_id={recording.db_id} | path={recording.local_video_path}")
+        return True
 
     async def download_multiple(
         self,

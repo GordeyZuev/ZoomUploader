@@ -4,29 +4,52 @@
 
 import asyncio
 import os
+import re
+import shutil
 import time
+from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console, RenderableType
-from rich.progress import BarColumn, ProgressColumn
+from rich.padding import Padding
+from rich.progress import (
+    BarColumn,
+    Progress,
+    ProgressColumn,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
+from rich.table import Table
 from rich.text import Text
 
+from api import ZoomAPI
 from config.unified_config import AppConfig, load_app_config
 from database import DatabaseManager
+from deepseek_module import DeepSeekConfig
 from fireworks_module import FireworksConfig
 from logger import get_logger
 from models import MeetingRecording, ProcessingStatus, TargetStatus, TargetType
+from models.recording import _normalize_enum
+from subtitle_module import SubtitleGenerator
+from transcription_module import TranscriptionService
 from utils import (
     filter_available_recordings,
     filter_recordings_by_date_range,
+    format_date,
+    format_duration,
+    get_recordings_by_date_range,
 )
 from utils.formatting import normalize_datetime_string
 from utils.interactive_mapper import get_interactive_mapper
 from utils.title_mapper import TitleMapper
 from video_download_module import ZoomDownloader
+from video_processing_module.video_processor import ProcessingConfig, VideoProcessor
+from video_upload_module.config_factory import UploadConfigFactory
 from video_upload_module.core.base import UploadResult
+from video_upload_module.core.manager import UploadManager
 
 logger = get_logger()
 
@@ -88,23 +111,9 @@ class PipelineManager:
 
     def _has_any_uploaded(self, recording: MeetingRecording) -> bool:
         return any(
-            (t.status == TargetStatus.UPLOADED or (not isinstance(t.status, TargetStatus) and t.status == TargetStatus.UPLOADED.value))
+            _normalize_enum(t.status, TargetStatus) == TargetStatus.UPLOADED
             for t in getattr(recording, "output_targets", [])
         )
-
-    async def list_recordings(
-        self, from_date: str, to_date: str | None = None, status: ProcessingStatus | None = None
-    ) -> list[MeetingRecording]:
-        """Получение списка записей"""
-        if status:
-            recordings = await self.db_manager.get_recordings(status=status)
-        else:
-            recordings = await self.db_manager.get_recordings()
-
-        if from_date or to_date:
-            recordings = filter_recordings_by_date_range(recordings, from_date, to_date)
-
-        return recordings
 
     async def get_recordings_from_db(
         self, from_date: str, to_date: str | None = None
@@ -113,16 +122,16 @@ class PipelineManager:
         all_recordings = await self.db_manager.get_recordings()
 
         if not all_recordings:
-            self.logger.info("📋 Записи в БД не найдены")
+            self.logger.info("Записи в БД не найдены")
             return []
 
         filtered_recordings = filter_recordings_by_date_range(all_recordings, from_date, to_date)
         self.logger.info(
-            f"📋 Записей за период {from_date} - {to_date or 'текущая дата'}: {len(filtered_recordings)}"
+            f"Записей за период {from_date} - {to_date or 'текущая дата'}: {len(filtered_recordings)}"
         )
 
-        available_recordings = filter_available_recordings(filtered_recordings, min_size_mb=40)
-        print(f"📋 Доступных записей (>30 мин, >40 МБ): {len(available_recordings)}")
+        available_recordings = filter_available_recordings(filtered_recordings, min_duration_minutes=25, min_size_mb=30)
+        print(f"📋 Доступных записей (>25 мин, >30 МБ): {len(available_recordings)}")
 
         return available_recordings
 
@@ -131,37 +140,19 @@ class PipelineManager:
         if not recordings:
             return 0
 
-        filtered_recordings = []
-        filtered_count = 0
-
-        for recording in recordings:
-            if recording.duration < 30:
-                filtered_count += 1
-                topic = recording.display_name.strip() if recording.display_name else "Без названия"
-                self.logger.info(
-                    f"⏭️ Запись '{topic}' пропущена (длительность {recording.duration} мин < 30 мин)"
-                )
-                continue
-
-            size_mb = recording.video_file_size / (1024 * 1024) if recording.video_file_size else 0
-            if size_mb < 40:
-                filtered_count += 1
-                topic = recording.display_name.strip() if recording.display_name else "Без названия"
-                self.logger.info(
-                    f"⏭️ Запись '{topic}' пропущена (размер {size_mb:.1f} МБ < 40 МБ)"
-                )
-                continue
-
-            filtered_recordings.append(recording)
+        filtered_recordings = filter_available_recordings(
+            recordings, min_duration_minutes=25, min_size_mb=30
+        )
+        filtered_count = len(recordings) - len(filtered_recordings)
 
         if filtered_count > 0:
-            self.logger.info(f"📊 Отфильтровано записей: {filtered_count}")
+            self.logger.info(f"Отфильтровано записей: {filtered_count} (не соответствуют критериям)")
 
         for recording in filtered_recordings:
             self._check_and_set_mapping(recording)
 
         synced_count = await self.db_manager.save_recordings(filtered_recordings)
-        self.logger.info(f"✅ Синхронизировано записей: {synced_count}")
+        self.logger.info(f"Синхронизировано записей: {synced_count}/{len(filtered_recordings)}")
         return synced_count
 
     async def reset_specific_recordings(self, recording_ids: list[int]) -> dict:
@@ -176,7 +167,7 @@ class PipelineManager:
             try:
                 recording = recordings_by_id.get(recording_id)
                 if not recording:
-                    self.logger.warning(f"⚠️ Запись {recording_id} не найдена")
+                    self.logger.warning(f"Запись не найдена: recording_id={recording_id}")
                     continue
 
                 deleted_files = []
@@ -184,10 +175,10 @@ class PipelineManager:
                     try:
                         os.remove(recording.local_video_path)
                         deleted_files.append(recording.local_video_path)
-                        self.logger.info(f"🗑️ Удален файл: {recording.local_video_path}")
+                        self.logger.debug(f"Удален файл: {recording.local_video_path} | recording_id={recording_id}")
                     except Exception as e:
                         self.logger.warning(
-                            f"⚠️ Не удалось удалить файл {recording.local_video_path}: {e}"
+                            f"Не удалось удалить файл: {recording.local_video_path} | recording_id={recording_id} | error={e}"
                         )
 
                 if recording.processed_video_path and os.path.exists(
@@ -196,33 +187,30 @@ class PipelineManager:
                     try:
                         os.remove(recording.processed_video_path)
                         deleted_files.append(recording.processed_video_path)
-                        self.logger.info(f"🗑️ Удален файл: {recording.processed_video_path}")
+                        self.logger.debug(f"Удален файл: {recording.processed_video_path} | recording_id={recording_id}")
                     except Exception as e:
                         self.logger.warning(
-                            f"⚠️ Не удалось удалить файл {recording.processed_video_path}: {e}"
+                            f"Не удалось удалить файл: {recording.processed_video_path} | recording_id={recording_id} | error={e}"
                         )
 
                 if recording.processed_audio_dir and os.path.exists(recording.processed_audio_dir):
                     try:
-                        import shutil
                         shutil.rmtree(recording.processed_audio_dir)
                         deleted_files.append(recording.processed_audio_dir)
-                        self.logger.info(f"🗑️ Удалена папка аудио: {recording.processed_audio_dir}")
+                        self.logger.debug(f"Удалена папка аудио: {recording.processed_audio_dir} | recording_id={recording_id}")
                     except Exception as e:
                         self.logger.warning(
-                            f"⚠️ Не удалось удалить папку аудио {recording.processed_audio_dir}: {e}"
+                            f"Не удалось удалить папку аудио: {recording.processed_audio_dir} | recording_id={recording_id} | error={e}"
                         )
 
-                # Удаляем папку транскрипции, если она существует
                 if recording.transcription_dir and os.path.exists(recording.transcription_dir):
                     try:
-                        import shutil
                         shutil.rmtree(recording.transcription_dir)
                         deleted_files.append(recording.transcription_dir)
-                        self.logger.info(f"🗑️ Удалена папка транскрипции: {recording.transcription_dir}")
+                        self.logger.debug(f"Удалена папка транскрипции: {recording.transcription_dir} | recording_id={recording_id}")
                     except Exception as e:
                         self.logger.warning(
-                            f"⚠️ Не удалось удалить папку транскрипции {recording.transcription_dir}: {e}"
+                            f"Не удалось удалить папку транскрипции: {recording.transcription_dir} | recording_id={recording_id} | error={e}"
                         )
 
                 if recording.is_mapped:
@@ -247,7 +235,7 @@ class PipelineManager:
                 total_deleted_files += len(deleted_files)
 
             except Exception as e:
-                self.logger.error(f"❌ Ошибка при сбросе записи {recording_id}: {e}")
+                self.logger.error(f"Ошибка при сбросе записи: recording_id={recording_id} | error={e}")
 
         return {
             'total_reset': reset_count,
@@ -274,7 +262,7 @@ class PipelineManager:
         results = await downloader.download_multiple(recordings, max_concurrent, force_download)
 
         success_count = sum(results)
-        self.logger.info(f"✅ Загружено записей: {success_count}/{len(recordings)}")
+        self.logger.info(f"Загружено записей: {success_count}/{len(recordings)} | max_concurrent={max_concurrent}")
 
         for recording, success in zip(recordings, results, strict=False):
             if success:
@@ -291,9 +279,9 @@ class PipelineManager:
         eligible = [r for r in recordings if r.status == ProcessingStatus.DOWNLOADED]
         skipped = len(recordings) - len(eligible)
         if skipped:
-            self.logger.info(f"⏭️ Пропущено записей (не DOWNLOADED): {skipped}")
+            self.logger.info(f"Пропущено записей: {skipped} (статус не DOWNLOADED)")
         if not eligible:
-            self.logger.warning("❌ Нет записей со статусом DOWNLOADED для обработки")
+            self.logger.warning("Нет записей со статусом DOWNLOADED для обработки")
             return 0
 
         success_count = 0
@@ -303,7 +291,7 @@ class PipelineManager:
             if await self._process_single_recording(recording):
                 success_count += 1
 
-        self.logger.info(f"✅ Обработано записей: {success_count}/{len(eligible)}")
+        self.logger.info(f"Обработано записей: {success_count}/{len(eligible)}")
         return success_count
 
     async def transcribe_recordings(
@@ -330,15 +318,14 @@ class PipelineManager:
         eligible = [r for r in recordings if r.status == ProcessingStatus.PROCESSED]
         skipped = len(recordings) - len(eligible)
         if skipped:
-            self.logger.info(f"⏭️ Пропущено записей (не PROCESSED): {skipped}")
+            self.logger.info(f"Пропущено записей: {skipped} (статус не PROCESSED)")
         if not eligible:
-            self.logger.warning("❌ Нет записей со статусом PROCESSED для транскрибации")
+            self.logger.warning("Нет записей со статусом PROCESSED для транскрибации")
             return 0
 
         self.logger.info(
-            f"🎤 Параллельная транскрибация {len(eligible)} записей "
-            f"(модель аудио: {transcription_model}, модель тем: {topic_model}, режим тем: {topic_mode}, "
-            f"макс. параллельно: {max_concurrent})..."
+            f"Запуск транскрибации: count={len(eligible)} | audio_model={transcription_model} | "
+            f"topic_model={topic_model} | topic_mode={topic_mode} | max_concurrent={max_concurrent}"
         )
 
         semaphore = asyncio.Semaphore(max_concurrent)
@@ -354,7 +341,9 @@ class PipelineManager:
                         topic_model=topic_model,
                     )
                 except Exception as e:
-                    self.logger.error(f"❌ Ошибка транскрибации записи {recording.display_name}: {e}")
+                    self.logger.error(
+                        f"Ошибка транскрибации: recording={recording.display_name} | recording_id={recording.db_id} | error={e}"
+                    )
                     return False
 
         tasks = [transcribe_with_limit(recording) for recording in eligible]
@@ -363,11 +352,15 @@ class PipelineManager:
         success_count = 0
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                self.logger.error(f"❌ Ошибка транскрибации записи {recordings[i].display_name}: {result}")
+                recording_name = eligible[i].display_name if i < len(eligible) else "unknown"
+                recording_id = eligible[i].db_id if i < len(eligible) else None
+                self.logger.error(
+                    f"Ошибка транскрибации: recording={recording_name} | recording_id={recording_id} | error={result}"
+                )
             elif result:
                 success_count += 1
 
-        self.logger.info(f"✅ Транскрибировано записей: {success_count}/{len(recordings)}")
+        self.logger.info(f"Транскрибировано записей: {success_count}/{len(eligible)}")
         return success_count
 
     async def generate_subtitles(
@@ -392,11 +385,8 @@ class PipelineManager:
             return 0
 
         self.logger.info(
-            f"📝 Генерация субтитров для {len(recordings)} записей "
-            f"(форматы: {', '.join(formats)})..."
+            f"Генерация субтитров: count={len(recordings)} | formats={', '.join(formats)}"
         )
-
-        from subtitle_module import SubtitleGenerator
 
         generator = SubtitleGenerator()
         success_count = 0
@@ -405,24 +395,22 @@ class PipelineManager:
             try:
                 if not recording.transcription_dir:
                     self.logger.warning(
-                        f"⚠️ У записи {recording.display_name} нет папки транскрипции, пропускаем"
+                        f"Пропущена запись: recording={recording.display_name} | recording_id={recording.db_id} | reason=нет папки транскрипции"
                     )
                     continue
 
                 if not os.path.exists(recording.transcription_dir):
                     self.logger.warning(
-                        f"⚠️ Папка транскрипции не найдена: {recording.transcription_dir}"
+                        f"Папка транскрипции не найдена: path={recording.transcription_dir} | recording_id={recording.db_id}"
                     )
                     continue
 
-                # Генерируем субтитры из words.txt в папке транскрипции
                 words_path = os.path.join(recording.transcription_dir, "words.txt")
                 if not os.path.exists(words_path):
-                    # Fallback: используем segments.txt
                     words_path = os.path.join(recording.transcription_dir, "segments.txt")
                     if not os.path.exists(words_path):
                         self.logger.warning(
-                            f"⚠️ Не найден файл words.txt или segments.txt в {recording.transcription_dir}"
+                            f"Файл транскрипции не найден: path={recording.transcription_dir} | recording_id={recording.db_id}"
                         )
                         continue
 
@@ -432,10 +420,9 @@ class PipelineManager:
                     formats=formats
                 )
 
-                # Выводим информацию о созданных файлах
                 for fmt, path in result.items():
-                    self.logger.info(
-                        f"✅ Создан файл субтитров ({fmt.upper()}): {path}"
+                    self.logger.debug(
+                        f"Создан файл субтитров: format={fmt.upper()} | path={path} | recording_id={recording.db_id}"
                     )
                     if not self.console.is_terminal:
                         self.console.print(
@@ -446,10 +433,10 @@ class PipelineManager:
 
             except Exception as e:
                 self.logger.error(
-                    f"❌ Ошибка генерации субтитров для записи {recording.display_name}: {e}"
+                    f"Ошибка генерации субтитров: recording={recording.display_name} | recording_id={recording.db_id} | error={e}"
                 )
 
-        self.logger.info(f"✅ Субтитры сгенерированы для {success_count}/{len(recordings)} записей")
+        self.logger.info(f"Субтитры сгенерированы: success={success_count}/{len(recordings)}")
         return success_count
 
     async def _process_single_video_complete(
@@ -522,30 +509,22 @@ class PipelineManager:
             if recording.status in [ProcessingStatus.INITIALIZED, ProcessingStatus.SKIPPED]:
                 update_progress("Скачивание", 0, "⬇️", show_bar=True, status_color="yellow")
                 downloader = ZoomDownloader()
-
-                # Создаем адаптер для обновления нашего progress на основе прогресса скачивания
-                # download_recording использует свой progress, но мы можем обновлять наш вручную
-                # Для этого используем download_recording напрямую
                 estimated_size = recording.video_file_size or (200 * 1024 * 1024)
 
-                # Обновляем total для прогресс-бара
                 if progress and task_id is not None:
                     try:
                         progress.update(task_id, total=estimated_size, completed=0)
                     except Exception:
                         pass
 
-                # Используем download_recording с нашим progress для обновления прогресс-бара
                 success = await downloader.download_recording(
                     recording, progress, task_id, force_download
                 )
 
                 if success:
                     result['download_success'] = True
-                    # Обновляем прогресс до 25% после скачивания
                     if progress and task_id is not None:
                         try:
-                            # Сбрасываем total обратно на 100 для следующих этапов
                             progress.update(task_id, total=100, completed=25)
                             update_progress("Скачано", 25, "✅", show_bar=False, status_color="green")
                         except Exception:
@@ -567,7 +546,7 @@ class PipelineManager:
             # ЭТАП 2: ОБРАБОТКА
             if recording.status == ProcessingStatus.DOWNLOADED and recording.local_video_path:
                 update_progress("Обработка", 30, "⚙️", show_bar=False, status_color="yellow")
-                if await self._process_single_recording(recording, progress, task_id, silent=True):
+                if await self._process_single_recording(recording, progress, task_id):
                     result['process_success'] = True
                     update_progress("Обработано", 50, "✅", show_bar=False, status_color="green")
                     updated = await self.db_manager.get_recordings_by_ids([recording.db_id])
@@ -596,7 +575,6 @@ class PipelineManager:
                     topic_mode=topic_mode,
                     progress=progress,
                     task_id=task_id,
-                    silent=True,
                 ):
                     result['transcribe_success'] = True
                     update_progress("Транскрибировано", 75, "✅", show_bar=False, status_color="green")
@@ -620,7 +598,7 @@ class PipelineManager:
                 and not self._has_any_uploaded(recording)
             ):
                 update_progress("Загрузка", 80, "📤", show_bar=False, status_color="yellow")
-                if await self._upload_single_recording(recording, platforms, progress, task_id, silent=True):
+                if await self._upload_single_recording(recording, platforms, progress, task_id):
                     result['upload_success'] = True
                     update_progress("Загружено", 100, "✅", show_bar=False, status_color="green")
                     updated = await self.db_manager.get_recordings_by_ids([recording.db_id])
@@ -637,7 +615,9 @@ class PipelineManager:
         except Exception as e:
             result['error'] = str(e)
             update_progress("Ошибка", 0, "❌", show_bar=False, status_color="red")
-            self.logger.error(f"❌ Ошибка обработки видео {recording.display_name}: {e}")
+            self.logger.error(
+                f"Ошибка обработки видео: recording={recording.display_name} | recording_id={recording.db_id} | error={e}"
+            )
 
         return result
 
@@ -658,10 +638,12 @@ class PipelineManager:
         ]
         skipped = len(recordings) - len(eligible)
         if skipped:
-            self.logger.info(f"⏭️ Пропущено записей (не PROCESSED/TRANSCRIBED): {skipped}")
+            self.logger.info(f"Пропущено записей: {skipped} (статус не PROCESSED/TRANSCRIBED)")
         if not eligible:
-            self.logger.warning("❌ Нет записей со статусами PROCESSED/TRANSCRIBED для загрузки")
+            self.logger.warning("Нет записей со статусами PROCESSED/TRANSCRIBED для загрузки")
             return 0, []
+
+        self.logger.info(f"Загрузка на платформы: count={len(eligible)} | platforms={', '.join(platforms)}")
 
         tasks = [
             self._upload_single_recording(recording, platforms, upload_captions=upload_captions)
@@ -673,11 +655,14 @@ class PipelineManager:
         uploaded_recordings = []
         for recording, result in zip(eligible, results, strict=False):
             if isinstance(result, Exception):
-                self.logger.error(f"❌ Ошибка загрузки записи {recording.display_name}: {result}")
+                self.logger.error(
+                    f"Ошибка загрузки: recording={recording.display_name} | recording_id={recording.db_id} | error={result}"
+                )
             elif result:
                 success_count += 1
                 uploaded_recordings.append(recording)
 
+        self.logger.info(f"Загружено записей: {success_count}/{len(eligible)}")
         return success_count, uploaded_recordings
 
     def display_uploaded_videos(self, uploaded_recordings: list[MeetingRecording]) -> None:
@@ -706,69 +691,6 @@ class PipelineManager:
                         f"    [bold blue]📘 VK:[/bold blue] [link={vk_link}]{vk_link}[/link]"
                     )
 
-    def _create_upload_config_from_app_config(self):
-        """Создание конфигурации загрузки из конфигурации приложения"""
-        from video_upload_module.config_factory import UploadConfigFactory
-
-        return UploadConfigFactory.from_app_config(self.app_config)
-
-    async def get_recordings_by_selection(
-        self, select_all: bool, recordings: list[str], from_date: str, to_date: str | None = None
-    ) -> list[MeetingRecording]:
-        """Получение записей по выбору"""
-        all_recordings = await self.get_recordings_from_db(from_date, to_date)
-
-        if select_all:
-            return all_recordings
-
-        if recordings:
-            return [r for r in all_recordings if r.display_name in recordings]
-
-        return []
-
-    async def get_recordings_by_numbers(
-        self, recording_ids: list[int], from_date: str, to_date: str | None = None
-    ) -> list[MeetingRecording]:
-        """Получение записей по номерам"""
-        all_recordings = await self.get_recordings_from_db(from_date, to_date)
-
-        target_recordings = []
-        for recording in all_recordings:
-            if recording.db_id in recording_ids:
-                if (
-                    recording.duration >= 30
-                    and recording.video_file_size >= 30 * 1024 * 1024
-                    and recording.status == ProcessingStatus.INITIALIZED
-                ):
-                    target_recordings.append(recording)
-
-        return target_recordings
-
-    async def get_all_zoom_recordings(
-        self, configs: dict, from_date: str, to_date: str | None = None
-    ) -> list[MeetingRecording]:
-        """Получение всех записей из Zoom"""
-        from api.zoom_api import ZoomAPI
-        from utils import get_recordings_by_date_range
-
-        all_recordings = []
-
-        for account, config in configs.items():
-            try:
-                api = ZoomAPI(config)
-                recordings = await get_recordings_by_date_range(
-                    api, start_date=from_date, end_date=to_date, filter_video_only=False
-                )
-                # Добавляем информацию об аккаунте к каждой записи
-                for recording in recordings:
-                    recording.account = account
-                all_recordings.extend(recordings)
-                self.logger.info(f"📥 Получено записей от аккаунта {account}: {len(recordings)}")
-            except Exception as e:
-                self.logger.error(f"❌ Ошибка получения записей от аккаунта {account}: {e}")
-
-        return all_recordings
-
     def _check_and_set_mapping(self, recording: MeetingRecording) -> None:
         """Проверка маппинга записи и установка соответствующего статуса"""
         try:
@@ -781,17 +703,19 @@ class PipelineManager:
                 recording.is_mapped = True
                 recording.status = ProcessingStatus.INITIALIZED
                 self.logger.debug(
-                    f"✅ Маппинг найден для '{topic}' -> '{mapping_result.title}'"
+                    f"Маппинг найден: original='{topic}' | mapped='{mapping_result.title}' | recording_id={recording.db_id}"
                 )
             else:
                 recording.is_mapped = False
                 recording.status = ProcessingStatus.SKIPPED
-                self.logger.debug(f"⏭️ Маппинг не найден для '{topic}'")
+                self.logger.debug(f"Маппинг не найден: topic='{topic}' | recording_id={recording.db_id}")
 
         except Exception as e:
             recording.is_mapped = False
             recording.status = ProcessingStatus.SKIPPED
-            self.logger.warning(f"   ❌ Ошибка проверки маппинга для '{recording.display_name}': {e}")
+            self.logger.warning(
+                f"Ошибка проверки маппинга: recording={recording.display_name} | recording_id={recording.db_id} | error={e}"
+            )
 
     async def _check_and_update_skipped_recordings(
         self, from_date: str, to_date: str | None = None
@@ -810,7 +734,7 @@ class PipelineManager:
             return 0
 
         self.logger.info(
-            f"🔍 Проверка {len(filtered_skipped)} пропущенных записей на наличие нового маппинга..."
+            f"Проверка пропущенных записей: count={len(filtered_skipped)} | period={from_date} - {to_date or 'текущая дата'}"
         )
 
         updated_count = 0
@@ -822,27 +746,27 @@ class PipelineManager:
             topic = recording.display_name.strip() if recording.display_name else "Без названия"
 
             self.logger.debug(
-                f"🔍 Проверка записи: «{topic}» (статус: {old_status.value}, is_mapped: {old_is_mapped})"
+                f"Проверка записи: recording='{topic}' | recording_id={recording.db_id} | status={old_status.value} | is_mapped={old_is_mapped}"
             )
 
             self._check_and_set_mapping(recording)
 
             if old_status == ProcessingStatus.SKIPPED and recording.status == ProcessingStatus.INITIALIZED:
                 self.logger.info(
-                    f"✅ Найден маппинг для пропущенной записи: «{topic}» - статус обновлён на INITIALIZED (is_mapped: {recording.is_mapped})"
+                    f"Найден маппинг для пропущенной записи: recording='{topic}' | recording_id={recording.db_id} | status=INITIALIZED | is_mapped={recording.is_mapped}"
                 )
                 recordings_to_update.append(recording)
                 updated_count += 1
             elif old_is_mapped != recording.is_mapped:
                 self.logger.info(
-                    f"🔄 Изменён is_mapped для записи: «{topic}»: {old_is_mapped} -> {recording.is_mapped}"
+                    f"Изменён is_mapped: recording='{topic}' | recording_id={recording.db_id} | is_mapped={old_is_mapped} -> {recording.is_mapped}"
                 )
                 recordings_to_update.append(recording)
                 updated_count += 1
 
         if recordings_to_update:
             await self.db_manager.save_recordings(recordings_to_update)
-            self.logger.info(f"✅ Обновлено пропущенных записей: {updated_count}")
+            self.logger.info(f"Обновлено пропущенных записей: {updated_count}/{len(filtered_skipped)}")
 
         return updated_count
 
@@ -920,10 +844,10 @@ class PipelineManager:
             target_recordings = [r for r in all_recordings if r.status in allowed_statuses]
 
         if not target_recordings:
-            self.logger.warning("❌ Нет записей для обработки")
+            self.logger.warning("Нет записей для обработки")
             return {"success": False, "message": "Нет записей для обработки"}
 
-        self.logger.info(f"🚀 Запуск полного пайплайна для {len(target_recordings)} записей")
+        self.logger.info(f"Запуск полного пайплайна: count={len(target_recordings)} | period={from_date} - {to_date or 'текущая дата'}")
 
         pipeline_start_time = time.time()
 
@@ -932,13 +856,6 @@ class PipelineManager:
         self.console.print("[bold blue]🚀 ПАРАЛЛЕЛЬНАЯ ОБРАБОТКА ВИДЕО[/bold blue]")
         self.console.print("[bold blue]" + "=" * 70 + "[/bold blue]")
         self.console.print()
-
-        # Создаем единый Progress объект для всех видео
-        from rich.progress import (
-            Progress,
-            TextColumn,
-            TimeElapsedColumn,
-        )
 
         with Progress(
             TextColumn("[cyan]{task.fields[date]}[/cyan]"),  # Дата слева
@@ -952,10 +869,8 @@ class PipelineManager:
             console=self.console,
             transient=False,
         ) as progress:
-            # Создаем задачи для каждого видео
             task_ids = {}
             for recording in target_recordings:
-                # Получаем дату
                 try:
                     normalized_time = normalize_datetime_string(recording.start_time)
                     meeting_dt = datetime.fromisoformat(normalized_time)
@@ -966,18 +881,17 @@ class PipelineManager:
                 topic_short = recording.display_name[:43] + "..." if len(recording.display_name) > 43 else recording.display_name
 
                 task_id = progress.add_task(
-                    "",  # Пустое описание, используем fields
+                    "",
                     total=100,
                     completed=0,
                     date=date_str,
-                    index=str(recording.db_id),  # Используем db_id вместо порядкового номера
+                    index=str(recording.db_id),
                     name=topic_short,
                     status="[dim]⏳ Ожидание[/dim]",
-                    show_bar=False,  # Флаг для показа прогресс-бара
+                    show_bar=False,
                 )
                 task_ids[recording.db_id] = task_id
 
-            # Обертка для обновления прогресса
             async def process_with_progress(recording: MeetingRecording):
                 task_id = task_ids.get(recording.db_id)
                 return await self._process_single_video_complete(
@@ -990,7 +904,7 @@ class PipelineManager:
                     topic_model=topic_model,
                     progress=progress,
                     task_id=task_id,
-                    recording_index=str(recording.db_id),  # Используем db_id
+                    recording_index=str(recording.db_id),
                 )
 
             tasks = [
@@ -1039,7 +953,7 @@ class PipelineManager:
         all_recordings = await self.db_manager.get_records_older_than(cutoff_date)
 
         if not all_recordings:
-            self.logger.info("📋 Старые записи для очистки не найдены")
+            self.logger.info(f"Старые записи для очистки не найдены: days_ago={days_ago}")
             return {'cleaned_count': 0, 'freed_space_mb': 0, 'cleaned_recordings': []}
 
         cleaned_count = 0
@@ -1055,11 +969,13 @@ class PipelineManager:
                     os.remove(recording.local_video_path)
                     freed_space_mb += file_size
                     file_deleted = True
-                    self.logger.info(
-                        f"🗑️ Удален файл: {recording.local_video_path} ({file_size:.1f} МБ)"
+                    self.logger.debug(
+                        f"Удален файл: path={recording.local_video_path} | size={file_size:.1f}MB | recording_id={recording.db_id}"
                     )
                 except Exception as e:
-                    self.logger.error(f"❌ Ошибка удаления файла {recording.local_video_path}: {e}")
+                    self.logger.error(
+                        f"Ошибка удаления файла: path={recording.local_video_path} | recording_id={recording.db_id} | error={e}"
+                    )
 
             if recording.processed_video_path and os.path.exists(recording.processed_video_path):
                 try:
@@ -1067,30 +983,28 @@ class PipelineManager:
                     os.remove(recording.processed_video_path)
                     freed_space_mb += file_size
                     file_deleted = True
-                    self.logger.info(
-                        f"🗑️ Удален файл: {recording.processed_video_path} ({file_size:.1f} МБ)"
+                    self.logger.debug(
+                        f"Удален файл: path={recording.processed_video_path} | size={file_size:.1f}MB | recording_id={recording.db_id}"
                     )
                 except Exception as e:
                     self.logger.error(
-                        f"❌ Ошибка удаления файла {recording.processed_video_path}: {e}"
+                        f"Ошибка удаления файла: path={recording.processed_video_path} | recording_id={recording.db_id} | error={e}"
                     )
 
             if recording.processed_audio_dir and os.path.exists(recording.processed_audio_dir):
                 try:
-                    import shutil
                     total_before = freed_space_mb
-                    # приблизительная оценка размера директории
                     for p in Path(recording.processed_audio_dir).rglob("*"):
                         if p.is_file():
                             freed_space_mb += p.stat().st_size / (1024 * 1024)
                     shutil.rmtree(recording.processed_audio_dir)
                     file_deleted = True
-                    self.logger.info(
-                        f"🗑️ Удалена папка аудио: {recording.processed_audio_dir} ({freed_space_mb - total_before:.1f} МБ)"
+                    self.logger.debug(
+                        f"Удалена папка аудио: path={recording.processed_audio_dir} | size={freed_space_mb - total_before:.1f}MB | recording_id={recording.db_id}"
                     )
                 except Exception as e:
                     self.logger.error(
-                        f"❌ Ошибка удаления папки {recording.processed_audio_dir}: {e}"
+                        f"Ошибка удаления папки: path={recording.processed_audio_dir} | recording_id={recording.db_id} | error={e}"
                     )
 
             if file_deleted:
@@ -1102,7 +1016,7 @@ class PipelineManager:
                 )
 
         self.logger.info(
-            f"✅ Очищено записей: {cleaned_count}, освобождено места: {freed_space_mb:.1f} МБ"
+            f"Очищено записей: count={cleaned_count} | freed_space={freed_space_mb:.1f}MB | days_ago={days_ago}"
         )
         return {
             'cleaned_count': cleaned_count,
@@ -1115,9 +1029,6 @@ class PipelineManager:
         self, configs: dict, from_date: str, to_date: str | None = None
     ) -> int:
         """Синхронизация записей из Zoom API с базой данных за указанный период"""
-        from api import ZoomAPI
-        from utils import get_recordings_by_date_range
-
         self.logger.info(
             f"📥 Синхронизация записей из Zoom API за период {from_date} - {to_date or 'текущая дата'}..."
         )
@@ -1128,7 +1039,6 @@ class PipelineManager:
 
             try:
                 api = ZoomAPI(config)
-                # Загружаем записи только за указанный период
                 recordings = await get_recordings_by_date_range(
                     api, start_date=from_date, end_date=to_date, filter_video_only=False
                 )
@@ -1172,9 +1082,6 @@ class PipelineManager:
         self.console.print(f"\n[bold blue]📋 Доступных записей: {len(recordings)}[/bold blue]")
         self.console.print("[dim]" + "=" * 80 + "[/dim]")
 
-        from collections import defaultdict
-        from datetime import datetime
-
         dates = defaultdict(list)
         for recording in recordings:
             if recording.start_time:
@@ -1215,8 +1122,6 @@ class PipelineManager:
             for recording in date_recordings:
                 display_id = recording.db_id
 
-                from utils import format_date, format_duration
-
                 date_human = format_date(recording.start_time)
                 dur_human = format_duration(recording.duration)
                 status_text = self._format_status(recording.status)
@@ -1253,11 +1158,7 @@ class PipelineManager:
 
     def _display_recording_meta(self, recording: MeetingRecording):
         """Отображает метаданные записи (темы и топики)"""
-        from rich.table import Table
-
-        # Если есть детализированные топики с временными метками
         if hasattr(recording, 'topic_timestamps') and recording.topic_timestamps:
-            # Показываем основную тему если есть
             if hasattr(recording, 'main_topics') and recording.main_topics:
                 main_topic = recording.main_topics[0]
                 self.console.print(f"     📝 [bold yellow]Тема видео: «{main_topic}»:[/bold yellow]")
@@ -1266,7 +1167,6 @@ class PipelineManager:
 
             self.console.print()
 
-            # Создаем компактную таблицу
             table = Table(
                 show_header=True,
                 header_style="bold magenta",
@@ -1309,9 +1209,6 @@ class PipelineManager:
                     topic
                 )
 
-            # Добавляем отступ для таблицы
-            from rich.padding import Padding
-
             padded_table = Padding(table, (0, 0, 0, 5))
             self.console.print(padded_table)
             self.console.print()
@@ -1334,91 +1231,14 @@ class PipelineManager:
         }
         return status_map.get(status, f"[dim]{status.value}[/dim]")
 
-    async def _download_single_recording(self, recording: MeetingRecording) -> bool:
-        """Скачивание одной записи с прогресс-баром"""
-        try:
-            from rich.progress import (
-                BarColumn,
-                DownloadColumn,
-                Progress,
-                SpinnerColumn,
-                TextColumn,
-                TimeElapsedColumn,
-                TransferSpeedColumn,
-            )
-
-            from video_download_module.downloader import ZoomDownloader
-
-            downloader = ZoomDownloader()
-
-            # Показываем прогресс-бар во время скачивания
-            with Progress(
-                SpinnerColumn(style="blue"),
-                TextColumn("[bold blue]Скачивание"),
-                "•",
-                BarColumn(),
-                DownloadColumn(),
-                TransferSpeedColumn(),
-                TimeElapsedColumn(),
-                transient=False,
-                console=self.console,
-            ) as progress:
-                # Создаем задачу для прогресс-бара
-                try:
-                    from datetime import datetime
-
-                    from utils.formatting import normalize_datetime_string
-
-                    normalized_time = normalize_datetime_string(recording.start_time)
-                    meeting_dt = datetime.fromisoformat(normalized_time)
-                    date_str = meeting_dt.strftime("%d.%m.%y")
-                except Exception:
-                    date_str = "??/??/??"
-
-                title = f"{recording.display_name[:45]}{'...' if len(recording.display_name) > 45 else recording.display_name}"
-                estimated_size = recording.video_file_size or (
-                    200 * 1024 * 1024
-                )  # 200 МБ по умолчанию
-                task_id = progress.add_task(title, total=estimated_size, date=date_str)
-
-                # Используем download_recording с прогресс-баром
-                success = await downloader.download_recording(
-                    recording, progress, task_id, force_download=True
-                )
-
-            if success:
-                recording.status = ProcessingStatus.DOWNLOADED
-                await self.db_manager.update_recording(recording)
-                self.logger.debug(f"Статус записи {recording.display_name} обновлен на DOWNLOADED")
-            else:
-                recording.status = ProcessingStatus.FAILED
-                await self.db_manager.update_recording(recording)
-                self.logger.debug(f"Статус записи {recording.display_name} обновлен на FAILED")
-
-            return success
-        except Exception as e:
-            self.logger.error(f"Ошибка скачивания записи {recording.display_name}: {e}")
-            await self.db_manager.update_recording(recording)
-            return False
-
     async def _process_single_recording(
-        self, recording: MeetingRecording, progress=None, task_id=None, silent: bool = False
+        self, recording: MeetingRecording, progress=None, task_id=None
     ) -> bool:
         """Обработка одной записи с прогресс-баром"""
         try:
-            from rich.progress import (
-                Progress,
-                SpinnerColumn,
-                TextColumn,
-                TimeElapsedColumn,
-            )
-
-            from video_processing_module.video_processor import ProcessingConfig, VideoProcessor
-
             config = ProcessingConfig()
             processor = VideoProcessor(config)
 
-            # Проверяем существование файла
             file_path = recording.local_video_path
             if not file_path:
                 self.logger.error("Путь к файлу не указан")
@@ -1435,18 +1255,22 @@ class PipelineManager:
                 await self.db_manager.update_recording(recording)
                 return False
 
-            # Получаем информацию о видео для оценки времени
             video_info = await processor.get_video_info(file_path)
             duration_minutes = video_info['duration'] / 60
 
-            if not silent:
-                self.console.print(
-                    f"[dim]📊 Видео: {duration_minutes:.1f} мин, обработка с детекцией звука[/dim]"
-                )
+            self.console.print(
+                f"[dim]📊 Видео: {duration_minutes:.1f} мин, обработка с детекцией звука[/dim]"
+            )
 
-            # Если silent=True, не создаем отдельный Progress, используем переданный
-            if silent and progress and task_id is not None:
-                # Используем переданный progress, просто выполняем обработку
+            with Progress(
+                SpinnerColumn(style="yellow"),
+                TextColumn("[bold yellow]Обработка видео[/bold yellow]"),
+                TimeElapsedColumn(),
+                transient=False,
+                console=self.console,
+            ) as local_progress:
+                local_progress.add_task("Обработка", total=None)
+
                 try:
                     process_task = asyncio.create_task(
                         processor.process_video_with_audio_detection(
@@ -1457,8 +1281,7 @@ class PipelineManager:
                     success, processed_path = await process_task
 
                 except asyncio.CancelledError:
-                    if not silent:
-                        self.console.print("\n[bold red]❌ Обработка прервана пользователем[/bold red]")
+                    self.console.print("\n[bold red]❌ Обработка прервана пользователем[/bold red]")
                     recording.status = ProcessingStatus.FAILED
                     await self.db_manager.update_recording(recording)
                     return False
@@ -1467,36 +1290,6 @@ class PipelineManager:
                     recording.status = ProcessingStatus.FAILED
                     await self.db_manager.update_recording(recording)
                     return False
-            else:
-                # Создаем отдельный Progress для не-silent режима
-                with Progress(
-                    SpinnerColumn(style="yellow"),
-                    TextColumn("[bold yellow]Обработка видео[/bold yellow]"),
-                    TimeElapsedColumn(),
-                    transient=False,
-                    console=self.console,
-                ) as local_progress:
-                    local_progress.add_task("Обработка", total=None)
-
-                    try:
-                        process_task = asyncio.create_task(
-                            processor.process_video_with_audio_detection(
-                                file_path, recording.display_name, recording.start_time
-                            )
-                        )
-
-                        success, processed_path = await process_task
-
-                    except asyncio.CancelledError:
-                        self.console.print("\n[bold red]❌ Обработка прервана пользователем[/bold red]")
-                        recording.status = ProcessingStatus.FAILED
-                        await self.db_manager.update_recording(recording)
-                        return False
-                    except Exception as e:
-                        self.logger.error(f"Ошибка обработки видео: {e}")
-                        recording.status = ProcessingStatus.FAILED
-                        await self.db_manager.update_recording(recording)
-                        return False
 
             if success and processed_path:
                 recording.status = ProcessingStatus.PROCESSED
@@ -1548,20 +1341,19 @@ class PipelineManager:
                     self.logger.warning(f"⚠️ Ошибка при извлечении аудио: {e}")
 
                 await self.db_manager.update_recording(recording)
-                self.logger.debug(f"Статус записи {recording.display_name} обновлен на PROCESSED")
-                if not silent:
-                    self.console.print(
-                        f"[bold green]✅ Обработано успешно: {processed_path}[/bold green]"
-                    )
+                self.logger.debug(f"Статус записи обновлен: recording={recording.display_name} | recording_id={recording.db_id} | status=PROCESSED")
+                self.console.print(
+                    f"[bold green]✅ Обработано успешно: {processed_path}[/bold green]"
+                )
             else:
                 recording.status = ProcessingStatus.FAILED
                 await self.db_manager.update_recording(recording)
-                self.logger.debug(f"Статус записи {recording.display_name} обновлен на FAILED")
+                self.logger.debug(f"Статус записи обновлен: recording={recording.display_name} | recording_id={recording.db_id} | status=FAILED")
 
             return success
 
         except Exception as e:
-            self.logger.error(f"Ошибка обработки записи {recording.display_name}: {e}")
+            self.logger.error(f"Ошибка обработки записи: recording={recording.display_name} | recording_id={recording.db_id} | error={e}")
             await self.db_manager.update_recording(recording)
             return False
 
@@ -1573,25 +1365,20 @@ class PipelineManager:
         topic_model: str = "deepseek",
         progress=None,
         task_id=None,
-        silent: bool = False,
     ) -> bool:
         """Транскрибация одной записи с прогресс-баром"""
         try:
-            import os
-
-            from rich.progress import (
-                Progress,
-                SpinnerColumn,
-                TextColumn,
-                TimeElapsedColumn,
-            )
             audio_path = recording.get_primary_audio_path()
             if not audio_path:
                 audio_path = recording.processed_video_path
                 if audio_path:
-                    self.logger.info(f"Используем видео файл для транскрибации: {recording.display_name}")
+                    self.logger.debug(
+                        f"Используется видео файл для транскрибации: recording={recording.display_name} | recording_id={recording.db_id}"
+                    )
                 else:
-                    self.logger.error(f"Аудио или видео файл не найден для записи: {recording.display_name}")
+                    self.logger.error(
+                        f"Аудио или видео файл не найден: recording={recording.display_name} | recording_id={recording.db_id}"
+                    )
                     recording.status = ProcessingStatus.FAILED
                     await self.db_manager.update_recording(recording)
                     return False
@@ -1600,27 +1387,24 @@ class PipelineManager:
                 audio_path = os.path.join(os.getcwd(), audio_path)
 
             if not os.path.exists(audio_path):
-                self.logger.error(f"Файл не найден: {audio_path}")
+                self.logger.error(
+                    f"Файл не найден: path={audio_path} | recording={recording.display_name} | recording_id={recording.db_id}"
+                )
                 recording.status = ProcessingStatus.FAILED
                 await self.db_manager.update_recording(recording)
                 return False
 
             if recording.status == ProcessingStatus.TRANSCRIBED and recording.transcription_dir:
-                self.logger.info(f"✅ Запись уже транскрибирована: {recording.display_name}")
+                self.logger.debug(
+                    f"Запись уже транскрибирована: recording={recording.display_name} | recording_id={recording.db_id}"
+                )
                 return True
 
-            if not silent:
-                self.console.print(
-                    f"[dim]🎤 Транскрибация аудио: {recording.display_name}[/dim]"
-                )
+            self.console.print(
+                f"[dim]🎤 Транскрибация аудио: {recording.display_name}[/dim]"
+            )
 
             try:
-                from deepseek_module import DeepSeekConfig
-                from transcription_module import TranscriptionService
-
-                # Выбор конфигурации для модели топиков:
-                #  - "deepseek"           -> прямой DeepSeek API
-                #  - "fireworks_deepseek" -> DeepSeek v3.2 через Fireworks
                 if topic_model == "fireworks_deepseek":
                     deepseek_config = DeepSeekConfig.from_file("config/deepseek_fireworks_creds.json")
                 else:
@@ -1637,9 +1421,15 @@ class PipelineManager:
                 await self.db_manager.update_recording(recording)
                 return False
 
-            # Если silent=True, не создаем отдельный Progress, используем переданный
-            if silent and progress and task_id is not None:
-                # Используем переданный progress, просто выполняем транскрибацию
+            with Progress(
+                SpinnerColumn(style="cyan"),
+                TextColumn("[bold cyan]Транскрибация аудио[/bold cyan]"),
+                TimeElapsedColumn(),
+                transient=False,
+                console=self.console,
+            ) as local_progress:
+                local_progress.add_task("Транскрибация", total=None)
+
                 try:
                     recording.status = ProcessingStatus.TRANSCRIBING
                     await self.db_manager.update_recording(recording)
@@ -1660,21 +1450,19 @@ class PipelineManager:
 
                     await self.db_manager.update_recording(recording)
 
-                    self.logger.debug(f"Статус записи {recording.display_name} обновлен на TRANSCRIBED")
-                    if not silent:
-                        self.console.print(
+                    self.logger.debug(f"Статус записи обновлен: recording={recording.display_name} | recording_id={recording.db_id} | status=TRANSCRIBED")
+                    self.console.print(
                         f"[bold green]✅ Транскрибировано успешно: {recording.display_name}[/bold green]"
+                    )
+                    if recording.main_topics:
+                        self.console.print(
+                            f"[bold green]📝 Основные темы: {', '.join(recording.main_topics)}[/bold green]"
                         )
-                        if recording.main_topics:
-                            self.console.print(
-                                f"[bold green]📝 Основные темы: {', '.join(recording.main_topics)}[/bold green]"
-                            )
 
                     return True
 
                 except asyncio.CancelledError:
-                    if not silent:
-                        self.console.print("\n[bold red]❌ Транскрибация прервана пользователем[/bold red]")
+                    self.console.print("\n[bold red]❌ Транскрибация прервана пользователем[/bold red]")
                     recording.status = ProcessingStatus.FAILED
                     await self.db_manager.update_recording(recording)
                     return False
@@ -1683,59 +1471,6 @@ class PipelineManager:
                     recording.status = ProcessingStatus.FAILED
                     await self.db_manager.update_recording(recording)
                     return False
-            else:
-                # Создаем отдельный Progress для не-silent режима
-                with Progress(
-                    SpinnerColumn(style="cyan"),
-                    TextColumn("[bold cyan]Транскрибация аудио[/bold cyan]"),
-                    TimeElapsedColumn(),
-                    transient=False,
-                    console=self.console,
-                ) as local_progress:
-                    local_progress.add_task("Транскрибация", total=None)
-
-                    try:
-                        recording.status = ProcessingStatus.TRANSCRIBING
-                        await self.db_manager.update_recording(recording)
-
-                        result = await transcription_service.process_audio(
-                            audio_path=audio_path,
-                            recording_id=recording.db_id,
-                            recording_topic=recording.display_name,
-                            recording_start_time=recording.start_time,
-                            granularity="short" if topic_mode == "short" else "long",
-                        )
-
-                        recording.transcription_dir = result['transcription_dir']
-                        recording.topic_timestamps = result.get('topic_timestamps', [])
-                        recording.main_topics = result.get('main_topics', [])
-                        recording.transcription_info = result.get('fireworks_raw', result)
-                        recording.status = ProcessingStatus.TRANSCRIBED
-
-                        await self.db_manager.update_recording(recording)
-
-                        self.logger.debug(f"Статус записи {recording.display_name} обновлен на TRANSCRIBED")
-                        if not silent:
-                            self.console.print(
-                                f"[bold green]✅ Транскрибировано успешно: {recording.display_name}[/bold green]"
-                            )
-                            if recording.main_topics:
-                                self.console.print(
-                                    f"[bold green]📝 Основные темы: {', '.join(recording.main_topics)}[/bold green]"
-                                )
-
-                        return True
-
-                    except asyncio.CancelledError:
-                        self.console.print("\n[bold red]❌ Транскрибация прервана пользователем[/bold red]")
-                        recording.status = ProcessingStatus.FAILED
-                        await self.db_manager.update_recording(recording)
-                        return False
-                    except Exception as e:
-                        self.logger.error(f"Ошибка транскрибации: {e}")
-                        recording.status = ProcessingStatus.FAILED
-                        await self.db_manager.update_recording(recording)
-                        return False
 
         except Exception as e:
             self.logger.error(f"Ошибка транскрибации записи {recording.display_name}: {e}")
@@ -1748,28 +1483,19 @@ class PipelineManager:
         platforms: list[str],
         progress=None,
         task_id=None,
-        silent: bool = False,
         upload_captions: bool | None = None,
     ) -> bool:
         """Загрузка одной записи на платформы с крутящимся индикатором"""
         try:
-            from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
-
-            from video_upload_module.config_factory import UploadConfigFactory
-            from video_upload_module.core.manager import UploadManager
-
-            # Помечаем статус UPLOADING перед стартом
             if recording.status != ProcessingStatus.UPLOADED:
                 recording.status = ProcessingStatus.UPLOADING
                 await self.db_manager.update_recording(recording)
 
-            # Показываем информацию о загружаемой записи
             name = recording.display_name or ""
             topic_short = name[:50] + "..." if len(name) > 50 else name
-            if not silent:
-                self.console.print(
-                    f"[dim]📤 Загрузка: {topic_short}[/dim]"
-                )
+            self.console.print(
+                f"[dim]📤 Загрузка: {topic_short}[/dim]"
+            )
 
             upload_config = UploadConfigFactory.from_app_config(self.app_config)
             upload_manager = UploadManager(upload_config)
@@ -1795,11 +1521,10 @@ class PipelineManager:
 
             common_metadata = {}
             if not recording.is_mapped or not mapping_result or not mapping_result.matched_rule:
-                if not silent:
-                    self.console.print(
-                        f"\n[yellow]⚠️ Правило маппинга не найдено для '{recording.display_name}'[/yellow]"
-                    )
-                    self.console.print("[cyan]📤 Требуется ввод метаданных для загрузки[/cyan]")
+                self.console.print(
+                    f"\n[yellow]⚠️ Правило маппинга не найдено для '{recording.display_name}'[/yellow]"
+                )
+                self.console.print("[cyan]📤 Требуется ввод метаданных для загрузки[/cyan]")
                 common_metadata = self._get_common_metadata(recording)
 
             platform_configs = {}
@@ -1807,7 +1532,13 @@ class PipelineManager:
 
             for platform in platforms:
                 try:
-                    topics_description = self._format_topics_description(recording.topic_timestamps, platform)
+                    # Определяем максимальную длину описания для платформы
+                    if platform == 'youtube':
+                        max_description_length = 5000  # YouTube лимит
+                    elif platform == 'vk':
+                        max_description_length = 5000  # VK позволяет больше
+                    else:
+                        max_description_length = 5000  # Значение по умолчанию
 
                     if (
                         not recording.is_mapped
@@ -1852,14 +1583,32 @@ class PipelineManager:
                         if album_id:
                             upload_kwargs['album_id'] = album_id
 
-                    parts = []
-                    if description:
-                        parts.append(description)
-                    if topics_description:
-                        parts.append(topics_description)
-                    parts.append(f"Видео выложено: {upload_time_str}")
-                    parts.append("P.S. Сформировано автоматически, возможны неточности.")
-                    final_description = "\n\n".join([p for p in parts if p])
+                    # Добавляем префикс части после маппинга только если видимых частей > 1.
+                    part_idx = 0
+                    meta = getattr(recording, "source_metadata", {}) or {}
+                    try:
+                        part_idx = int(meta.get("part_index") or recording.part_index or 0)
+                    except Exception:
+                        part_idx = 0
+
+                    # Берём только total_visible_parts (устанавливается после фильтров).
+                    total_visible_parts = getattr(recording, "total_visible_parts", None)
+                    if total_visible_parts is None:
+                        try:
+                            total_visible_parts = int(meta.get("total_visible_parts")) if meta else None
+                        except Exception:
+                            total_visible_parts = None
+
+                    if part_idx > 0 and total_visible_parts and total_visible_parts > 1:
+                        title = f"[{part_idx}] {title}"
+
+                    # Используем унифицированную функцию для формирования описания
+                    final_description = self._format_video_description(
+                        topic_timestamps=recording.topic_timestamps,
+                        upload_time_str=upload_time_str,
+                        max_length=max_description_length,
+                        additional_description=description if description else None,
+                    )
 
                     platform_configs[platform] = {
                         'title': title,
@@ -1870,9 +1619,19 @@ class PipelineManager:
                     self.logger.error(f"Ошибка подготовки метаданных для {platform}: {e}")
                     continue
 
-            # Если silent=True, не создаем отдельный Progress, используем переданный
-            if silent and progress and task_id is not None:
-                # Используем переданный progress, просто выполняем загрузку
+            with Progress(
+                SpinnerColumn(style="green"),
+                TextColumn("[bold green]Загрузка на платформы[/bold green]"),
+                TextColumn("[dim]{task.description}[/dim]"),
+                TimeElapsedColumn(),
+                transient=False,
+                console=self.console,
+            ) as local_progress:
+                local_progress.add_task(
+                    f"Загрузка: {', '.join(platforms)}",
+                    total=None
+                )
+
                 async def upload_single_platform(platform: str, config: dict) -> tuple[str, UploadResult | None]:
                     try:
                         result = await upload_manager.upload_to_platform(
@@ -1893,41 +1652,6 @@ class PipelineManager:
                 ]
 
                 results = await asyncio.gather(*upload_tasks, return_exceptions=True)
-            else:
-                # Создаем отдельный Progress для не-silent режима
-                with Progress(
-                    SpinnerColumn(style="green"),
-                    TextColumn("[bold green]Загрузка на платформы[/bold green]"),
-                    TextColumn("[dim]{task.description}[/dim]"),
-                    TimeElapsedColumn(),
-                    transient=False,
-                    console=self.console,
-                ) as local_progress:
-                    local_progress.add_task(
-                        f"Загрузка: {', '.join(platforms)}",
-                        total=None
-                    )
-
-                    async def upload_single_platform(platform: str, config: dict) -> tuple[str, UploadResult | None]:
-                        try:
-                            result = await upload_manager.upload_to_platform(
-                                platform=platform,
-                                video_path=recording.processed_video_path,
-                                title=config['title'],
-                                description=config['description'],
-                                **config['upload_kwargs'],
-                            )
-                            return platform, result
-                        except Exception as e:
-                            self.logger.error(f"Ошибка загрузки на {platform}: {e}")
-                            return platform, None
-
-                    upload_tasks = [
-                        upload_single_platform(platform, config)
-                        for platform, config in platform_configs.items()
-                    ]
-
-                    results = await asyncio.gather(*upload_tasks, return_exceptions=True)
 
             success_count = 0
             for result in results:
@@ -1938,7 +1662,6 @@ class PipelineManager:
                 platform, upload_result = result
                 if upload_result and upload_result.status == 'uploaded':
                     success_count += 1
-                    # Обновляем таргет в модели
                     if platform == 'youtube':
                         target = recording.ensure_target(TargetType.YOUTUBE)
                         target.status = TargetStatus.UPLOADED
@@ -1951,10 +1674,9 @@ class PipelineManager:
                             }
                         )
                         target.target_meta = target_meta
+
                         target.uploaded_at = upload_result.upload_time
-                    if platform == 'youtube':
-                        if not silent:
-                            self.console.print(f"[bold green]✅ Загружено на YouTube: {upload_result.video_url}[/bold green]")
+                        self.console.print(f"[bold green]✅ Загружено на YouTube: {upload_result.video_url}[/bold green]")
                         # Попытка загрузки субтитров (если есть транскрипт)
                         if self._captions_enabled(upload_captions):
                             caption_path = self._get_caption_path(recording.transcription_dir, platform="youtube")
@@ -1971,7 +1693,7 @@ class PipelineManager:
                                     language=caption_lang,
                                     name="Transcript",
                                 )
-                                if caption_ok and not silent:
+                                if caption_ok:
                                     self.console.print("[bold green]📝 Субтитры загружены на YouTube[/bold green]")
                                 elif not caption_ok:
                                     self.logger.warning("⚠️ Не удалось загрузить субтитры на YouTube")
@@ -1988,18 +1710,17 @@ class PipelineManager:
                         )
                         target.target_meta = target_meta
                         target.uploaded_at = upload_result.upload_time
-                        if not silent:
-                            self.console.print(f"[bold green]✅ Загружено на VK: {upload_result.video_url}[/bold green]")
+                        self.console.print(f"[bold green]✅ Загружено на VK: {upload_result.video_url}[/bold green]")
 
             if success_count > 0 and recording.status != ProcessingStatus.UPLOADED:
                 recording.status = ProcessingStatus.UPLOADED
-                self.logger.debug(f"Статус записи {recording.display_name} обновлен на UPLOADED")
+                self.logger.debug(f"Статус записи обновлен: recording={recording.display_name} | recording_id={recording.db_id} | status=UPLOADED")
                 await self.db_manager.update_recording(recording)
 
             return success_count > 0
 
         except Exception as e:
-            self.logger.error(f"Ошибка загрузки записи {recording.display_name}: {e}")
+            self.logger.error(f"Ошибка загрузки записи: recording={recording.display_name} | recording_id={recording.db_id} | error={e}")
             return False
 
     def _get_common_metadata(self, recording: MeetingRecording) -> dict[str, Any]:
@@ -2071,76 +1792,177 @@ class PipelineManager:
         self.console.print(f"[bold green]✅ Метаданные для {platform.upper()} настроены[/bold green]")
         return metadata
 
-    def _format_topics_description(
-        self, topic_timestamps: list[dict[str, Any]] | None, platform: str
+    def _format_video_description(
+        self,
+        topic_timestamps: list[dict[str, Any]] | None,
+        upload_time_str: str,
+        max_length: int = 5000,
+        additional_description: str | None = None,
     ) -> str:
-        """
-        Форматирование топиков в описание для видео.
+        """Формирует описание видео с темами и временными метками."""
+        upload_line = f"Видео выложено: {upload_time_str}"
+        ps_line = "P.S. Сформировано автоматически, возможны неточности."
 
-        Формат B: с разделителем
-        📚 Оглавление лекции:
+        parts = []
+        if additional_description and additional_description.strip():
+            parts.append(additional_description.strip())
 
-        00:00:00 - Введение в курс...
-        00:04:21 - Концепция итераторов...
+        topics_text = ""
+        if topic_timestamps and len(topic_timestamps) > 0:
+            valid_items = [
+                t for t in topic_timestamps
+                if (t.get('type') == 'pause') or (t.get('topic', '').strip())
+            ]
 
-        Args:
-            topic_timestamps: Список топиков с временными метками
-            platform: Платформа ('youtube' или 'vk')
+            if valid_items:
+                topic_lines = ["🔹 Темы видео:", ""]
+                total_valid_count = len(valid_items)
+                added_count = 0
 
-        Returns:
-            Отформатированная строка с топиками или пустая строка
-        """
-        if not topic_timestamps or len(topic_timestamps) == 0:
-            return ""
+                for item_data in valid_items:
+                    is_pause = item_data.get('type') == 'pause'
 
-        max_length = 5000
-        lines = ["🔹 Темы лекции:", ""]
-        current_length = len('\n'.join(lines))
+                    if is_pause:
+                        topic = 'Перерыв'
+                    else:
+                        topic = item_data.get('topic', '').strip()
 
-        valid_items = [
-            t for t in topic_timestamps
-            if (t.get('type') == 'pause') or (t.get('topic', '').strip())
-        ]
-        total_valid_count = len(valid_items)
+                    start = item_data.get('start', 0)
+                    hours = int(start // 3600)
+                    minutes = int((start % 3600) // 60)
+                    seconds = int(start % 60)
+                    time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-        added_count = 0
-        for item_data in valid_items:
-            is_pause = item_data.get('type') == 'pause'
+                    item_line = f"{time_str} — {topic}"
+                    topic_lines.append(item_line)
+                    added_count += 1
 
-            if is_pause:
-                topic = 'Перерыв'
+                topics_text = '\n'.join(topic_lines)
+
+        has_topics = topic_timestamps and len(topic_timestamps) > 0 and bool(topics_text)
+
+        if not has_topics:
+            if additional_description and additional_description.strip():
+                full_description = f"{additional_description.strip()}\n\n{upload_line}"
+                if len(full_description) > max_length:
+                    available_for_desc = max_length - len(upload_line) - len("\n\n")
+                    if available_for_desc > 0:
+                        desc = additional_description.strip()[:available_for_desc]
+                        full_description = f"{desc}\n\n{upload_line}"
+                    else:
+                        full_description = upload_line
             else:
-                topic = item_data.get('topic', '').strip()
+                full_description = upload_line
+            return full_description
 
-            start = item_data.get('start', 0)
-            hours = int(start // 3600)
-            minutes = int((start % 3600) // 60)
-            seconds = int(start % 60)
-            time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        separator = "\n\n"
+        base_parts = []
+        if topics_text:
+            base_parts.append(topics_text)
+        base_parts.append(upload_line)
+        if has_topics:
+            base_parts.append(ps_line)
 
-            item_line = f"{time_str} — {topic}"
+        if additional_description and additional_description.strip():
+            base_parts.insert(0, additional_description.strip())
 
-            new_length = current_length + len(item_line) + 1
-            if new_length > max_length:
-                remaining_count = total_valid_count - added_count
-                if remaining_count > 0:
-                    lines.append(f"... и еще {remaining_count} тем")
-                break
+        full_description = separator.join(base_parts)
 
-            lines.append(item_line)
-            current_length = new_length
-            added_count += 1
+        if len(full_description) > max_length:
+            required_parts = []
+            if additional_description and additional_description.strip():
+                required_parts.append(additional_description.strip())
+            required_parts.append(upload_line)
+            if has_topics:
+                required_parts.append(ps_line)
 
-        result = '\n'.join(lines)
+            required_text = separator.join(required_parts)
+            required_length = len(required_text) + len(separator) * (len(required_parts) - 1)
 
-        if len(result) > max_length:
-            result = result[:max_length]
-            last_newline = result.rfind('\n')
-            if last_newline > max_length * 0.9:
-                result = result[:last_newline]
-            result += "\n... (описание обрезано)"
+            available_for_topics = max_length - required_length - len(separator) * 2
 
-        return result
+            if available_for_topics > 50 and topics_text:
+                topic_lines = ["🔹 Темы видео:", ""]
+                current_length = len('\n'.join(topic_lines))
+
+                valid_items = [
+                    t for t in topic_timestamps
+                    if (t.get('type') == 'pause') or (t.get('topic', '').strip())
+                ]
+                total_valid_count = len(valid_items)
+                added_count = 0
+
+                for item_data in valid_items:
+                    is_pause = item_data.get('type') == 'pause'
+
+                    if is_pause:
+                        topic = 'Перерыв'
+                    else:
+                        topic = item_data.get('topic', '').strip()
+
+                    start = item_data.get('start', 0)
+                    hours = int(start // 3600)
+                    minutes = int((start % 3600) // 60)
+                    seconds = int(start % 60)
+                    time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+                    item_line = f"{time_str} — {topic}"
+
+                    remaining_count = total_valid_count - added_count
+                    remaining_text = f"... и еще {remaining_count} тем" if remaining_count > 0 else ""
+                    test_length = current_length + len(item_line) + 1
+                    if remaining_text:
+                        test_length += len(remaining_text) + 1
+
+                    if test_length > available_for_topics:
+                        if remaining_count > 0:
+                            topic_lines.append(f"... и еще {remaining_count} тем")
+                        break
+
+                    topic_lines.append(item_line)
+                    current_length += len(item_line) + 1
+                    added_count += 1
+
+                topics_text = '\n'.join(topic_lines)
+            else:
+                topics_text = ""
+
+            final_parts = []
+            if additional_description and additional_description.strip():
+                final_parts.append(additional_description.strip())
+            if topics_text:
+                final_parts.append(topics_text)
+            final_parts.append(upload_line)
+            if has_topics:
+                final_parts.append(ps_line)
+
+            full_description = separator.join(final_parts)
+
+        # Очищаем описание от невалидных символов для YouTube API
+        # Удаляем управляющие символы, кроме разрешенных (\n, \r, \t)
+        # Разрешенные: \n (0x0A), \r (0x0D), \t (0x09)
+        if full_description:
+            sanitized = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]', '', full_description)
+
+            # Убеждаемся, что строка валидна UTF-8
+            try:
+                sanitized = sanitized.encode('utf-8', errors='ignore').decode('utf-8')
+            except Exception:
+                sanitized = full_description.encode('utf-8', errors='ignore').decode('utf-8')
+
+            # Финальная проверка длины (на случай, если очистка изменила длину)
+            if len(sanitized) > max_length:
+                truncated = sanitized[:max_length]
+                last_newline = truncated.rfind('\n')
+                if last_newline > max_length * 0.9:
+                    sanitized = truncated[:last_newline] + "\n... (описание обрезано)"
+                else:
+                    sanitized = truncated + "... (описание обрезано)"
+
+            return sanitized
+
+        return full_description
+
 
     def _get_caption_path(self, transcription_dir: str | None, platform: str = "youtube") -> str | None:
         """Возвращает путь к файлу субтитров в папке транскрипции.

@@ -11,6 +11,7 @@ import click
 
 from config import get_config_by_account, load_config_from_file
 from config.settings import settings
+from config.unified_config import load_app_config
 from database import DatabaseConfig, DatabaseManager
 from logger import get_logger, setup_logger
 from models import MeetingRecording, ProcessingStatus, SourceType
@@ -629,9 +630,6 @@ async def _setup_pipeline(use_db: bool) -> tuple[PipelineManager | None, Databas
         await db_manager.create_database_if_not_exists()
         await db_manager.create_tables()
         print("🗄️ \033[1;34mПодключение к базе данных...\033[0m")
-
-    # Загружаем унифицированную конфигурацию
-    from config.unified_config import load_app_config
 
     app_config = load_app_config()
     pipeline = PipelineManager(db_manager, app_config)

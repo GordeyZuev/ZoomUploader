@@ -196,16 +196,14 @@ class FireworksTranscriptionService:
             elif isinstance(response, dict):
                 payload = response
             else:
-                logger.debug("🔍 Сырой ответ Fireworks: объект без стандартных методов сериализации")
+                logger.debug("Сырой ответ Fireworks: объект без стандартных методов сериализации")
                 return
 
-            # Логируем структуру ответа
-            logger.debug(f"🔍 Структура ответа Fireworks: ключи = {list(payload.keys())}")
+            logger.debug(f"Структура ответа Fireworks: keys={list(payload.keys())}")
 
-            # Логируем первые несколько words (только в DEBUG режиме)
             words = payload.get("words", [])
             if isinstance(words, list) and len(words) > 0:
-                logger.debug("🔍 Первые 10 words из ответа Fireworks:")
+                logger.debug(f"Первые 10 words из ответа Fireworks: count={len(words)}")
                 for i, word in enumerate(words[:10]):
                     if hasattr(word, "model_dump"):
                         word_dict = word.model_dump()
@@ -222,14 +220,12 @@ class FireworksTranscriptionService:
                     duration = float(word_end) - float(word_start) if word_start and word_end else 0.0
 
                     logger.debug(
-                        f"   [{i+1}] '{word_text}': "
-                        f"start={word_start}, end={word_end}, duration={duration:.3f}с"
+                        f"Word [{i+1}]: text='{word_text}' | start={word_start} | end={word_end} | duration={duration:.3f}s"
                     )
 
-            # Логируем первые несколько segments (только в DEBUG режиме)
             segments = payload.get("segments", [])
             if isinstance(segments, list) and len(segments) > 0:
-                logger.debug("🔍 Первые 5 segments из ответа Fireworks:")
+                logger.debug(f"Первые 5 segments из ответа Fireworks: total={len(segments)}")
                 for i, seg in enumerate(segments[:5]):
                     if hasattr(seg, "model_dump"):
                         seg_dict = seg.model_dump()
@@ -526,7 +522,7 @@ class FireworksTranscriptionService:
             raw_words = payload["words"]
 
             # DEBUG: Логируем первые 10 words с ПОЛНОЙ структурой от Fireworks для диагностики (только в DEBUG режиме)
-            logger.debug("🔍 Первые 10 words с ПОЛНОЙ структурой от Fireworks (для диагностики):")
+            logger.debug(f"Первые 10 words с полной структурой от Fireworks: total={len(raw_words)}")
             for i, word_item in enumerate(raw_words[:10]):
                 if hasattr(word_item, "model_dump"):
                     word_dict = word_item.model_dump()
@@ -538,16 +534,15 @@ class FireworksTranscriptionService:
                     continue
 
                 # Логируем ВСЕ поля слова для диагностики
-                logger.debug(f"   [{i+1}] Полная структура слова: {word_dict}")
+                logger.debug(f"Word [{i+1}] полная структура: {word_dict}")
 
                 word_start = word_dict.get("start") or word_dict.get("start_time") or word_dict.get("offset")
                 word_end = word_dict.get("end") or word_dict.get("end_time") or word_dict.get("offset_end")
                 word_text = word_dict.get("word") or word_dict.get("text") or ""
 
                 logger.debug(
-                    f"   [{i+1}] '{word_text}': "
-                    f"start={word_start}, end={word_end}, "
-                    f"duration={float(word_end) - float(word_start) if word_start and word_end else 0.0:.3f}с"
+                    f"Word [{i+1}]: text='{word_text}' | start={word_start} | end={word_end} | "
+                    f"duration={float(word_end) - float(word_start) if word_start and word_end else 0.0:.3f}s"
                 )
         else:
             logger.warning(

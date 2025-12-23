@@ -41,13 +41,15 @@ pip install -r requirements.txt
 ### Создание базы данных `PostgreSQL`
 
 ```bash
-# Создание базы данных
-createdb zoom_publishing
+# Создание базы данных (по умолчанию используется название zoom_manager)
+createdb zoom_manager
 
 # Или через psql
 psql -U postgres
-CREATE DATABASE zoom_publishing;
+CREATE DATABASE zoom_manager;
 ```
+
+> 💡 Название базы данных можно изменить через переменную окружения `DATABASE__DATABASE` в файле `.env`
 
 ### Инициализация схемы
 
@@ -104,12 +106,12 @@ uv run python main.py recreate-db
   "max_file_size_mb": 1024,
   "audio_bitrate": "64k",
   "audio_sample_rate": 16000,
-  "retry_attempts": 2,
+  "retry_attempts": 3,
   "retry_delay": 2.0
 }
 ```
 
-> ℹ️ Для детерминированных ответов мы отключаем VAD и повторные попытки, а также не используем `alignment_model`. Эти параметры могут по-разному разбивать аудио или вызывать дополнительные запросы, что приводит к расхождениям в транскрипции даже при нулевой температуре.
+> ℹ️ Для детерминированных ответов мы отключаем VAD и не используем `alignment_model`. Эти параметры могут по-разному разбивать аудио или вызывать дополнительные запросы, что приводит к расхождениям в транскрипции даже при нулевой температуре. Количество повторных попыток увеличено до 3 для повышения надежности.
 
 **Как получить API ключ:**
 1. Зарегистрируйтесь на [`Fireworks AI`](https://fireworks.ai/)
@@ -257,13 +259,20 @@ uv run python main.py full-process --all
 Создайте файл `.env`:
 
 ```bash
-# База данных
-DATABASE_URL=postgresql://user:password@localhost:5432/zoom_publishing
+# База данных (используется префикс DATABASE__)
+DATABASE__HOST=localhost
+DATABASE__PORT=5432
+DATABASE__DATABASE=zoom_manager
+DATABASE__USERNAME=postgres
+DATABASE__PASSWORD=password
 
-# Логирование
-LOG_LEVEL=INFO
-LOG_FILE=logs/app.log
-ERROR_LOG_FILE=logs/error.log
+# Логирование (используется префикс LOGGING__)
+LOGGING__LEVEL=INFO
+LOGGING__FILE_PATH=logs/app.log
+
+# Общие настройки
+TIMEZONE=Europe/Moscow
+DEBUG=false
 ```
 
 ### Systemd сервис (Linux)
@@ -322,7 +331,7 @@ sudo systemctl start zoom-publishing
 uv run python main.py list
 
 # Проверка статуса базы данных
-psql -U postgres -d zoom_publishing -c "SELECT COUNT(*) FROM recordings;"
+psql -U postgres -d zoom_manager -c "SELECT COUNT(*) FROM recordings;"
 ```
 
 ## Резервное копирование
@@ -331,10 +340,10 @@ psql -U postgres -d zoom_publishing -c "SELECT COUNT(*) FROM recordings;"
 
 ```bash
 # Создание бэкапа
-pg_dump -U postgres zoom_publishing > backup_$(date +%Y%m%d).sql
+pg_dump -U postgres zoom_manager > backup_$(date +%Y%m%d).sql
 
 # Восстановление
-psql -U postgres zoom_publishing < backup_YYYYMMDD.sql
+psql -U postgres zoom_manager < backup_YYYYMMDD.sql
 ```
 
 ### Конфигурация
@@ -366,7 +375,7 @@ alembic upgrade head
 
 ```bash
 # Проверка подключения
-psql -U postgres -d zoom_publishing -c "SELECT 1;"
+psql -U postgres -d zoom_manager -c "SELECT 1;"
 
 # Пересоздание БД (⚠️ удалит все данные)
 uv run python main.py recreate-db
@@ -382,5 +391,5 @@ uv run python main.py recreate-db
 
 - Проверьте наличие `FFmpeg`: `ffmpeg -version`
 - Убедитесь в наличии свободного места на диске
-- Проверьте права доступа к папкам `video/`
+- Проверьте права доступа к папкам `media/video/`, `media/processed_audio/`, `media/transcriptions/`
 
