@@ -12,33 +12,31 @@ from googleapiclient.errors import HttpError
 class YouTubeTokenSetup:
     """Интерактивная настройка OAuth для YouTube и сохранение токена в bundle."""
 
-    def __init__(self,
-                 bundle_path: str = "config/youtube_creds.json",
-                 default_scopes: list[str] | None = None):
+    def __init__(self, bundle_path: str = "config/youtube_creds.json", default_scopes: list[str] | None = None):
         self.bundle_path = bundle_path
         self.default_scopes = default_scopes or [
-            'https://www.googleapis.com/auth/youtube.upload',
-            'https://www.googleapis.com/auth/youtube.force-ssl',
+            "https://www.googleapis.com/auth/youtube.upload",
+            "https://www.googleapis.com/auth/youtube.force-ssl",
         ]
 
     def _load_bundle(self) -> dict:
         if not os.path.exists(self.bundle_path):
             return {}
         try:
-            with open(self.bundle_path, encoding='utf-8') as f:
+            with open(self.bundle_path, encoding="utf-8") as f:
                 return json.load(f) or {}
         except Exception:
             return {}
 
     def _save_bundle(self, bundle: dict) -> None:
         os.makedirs(os.path.dirname(self.bundle_path), exist_ok=True)
-        with open(self.bundle_path, 'w', encoding='utf-8') as f:
+        with open(self.bundle_path, "w", encoding="utf-8") as f:
             json.dump(bundle, f, ensure_ascii=False, indent=2)
         print(f"✅ Данные сохранены в {self.bundle_path}")
 
     def _ensure_client_secrets(self, bundle: dict) -> dict:
         # Если client_secrets уже есть — выходим
-        if isinstance(bundle.get('client_secrets'), dict):
+        if isinstance(bundle.get("client_secrets"), dict):
             return bundle
 
         print("\n🔧 Требуются client_secrets для Google OAuth")
@@ -50,13 +48,13 @@ class YouTubeTokenSetup:
         if raw:
             try:
                 data = json.loads(raw)
-                if 'installed' in data:
-                    client_secrets = {"installed": data['installed']}
-                elif 'web' in data:
-                    client_secrets = {"installed": data['web']}
+                if "installed" in data:
+                    client_secrets = {"installed": data["installed"]}
+                elif "web" in data:
+                    client_secrets = {"installed": data["web"]}
                 else:
                     client_secrets = data
-                bundle['client_secrets'] = client_secrets
+                bundle["client_secrets"] = client_secrets
                 self._save_bundle(bundle)
                 return bundle
             except Exception as e:
@@ -64,7 +62,7 @@ class YouTubeTokenSetup:
 
         client_id = input("client_id: ").strip()
         client_secret = input("client_secret: ").strip()
-        bundle['client_secrets'] = {
+        bundle["client_secrets"] = {
             "installed": {
                 "client_id": client_id,
                 "project_id": "youtube-upload",
@@ -80,17 +78,17 @@ class YouTubeTokenSetup:
 
     def _build_credentials_from_bundle(self, bundle: dict, scopes: list[str]) -> Credentials | None:
         # Пробуем восстановить из сохранённого токена
-        token_obj = bundle.get('token')
+        token_obj = bundle.get("token")
         if isinstance(token_obj, dict):
             try:
                 # Восстановление через словарь параметров
                 creds = Credentials(
-                    token=token_obj.get('token'),
-                    refresh_token=token_obj.get('refresh_token'),
-                    token_uri=token_obj.get('token_uri'),
-                    client_id=token_obj.get('client_id'),
-                    client_secret=token_obj.get('client_secret'),
-                    scopes=token_obj.get('scopes') or scopes,
+                    token=token_obj.get("token"),
+                    refresh_token=token_obj.get("refresh_token"),
+                    token_uri=token_obj.get("token_uri"),
+                    client_id=token_obj.get("client_id"),
+                    client_secret=token_obj.get("client_secret"),
+                    scopes=token_obj.get("scopes") or scopes,
                 )
                 return creds
             except Exception:
@@ -111,7 +109,7 @@ class YouTubeTokenSetup:
             return None
 
     def _get_flow(self, bundle: dict, scopes: list[str]) -> InstalledAppFlow:
-        client_secrets_data = bundle.get('client_secrets')
+        client_secrets_data = bundle.get("client_secrets")
         if isinstance(client_secrets_data, dict):
             return InstalledAppFlow.from_client_config(client_secrets_data, scopes)
 
@@ -119,11 +117,11 @@ class YouTubeTokenSetup:
         if os.path.exists(self.bundle_path):
             return InstalledAppFlow.from_client_secrets_file(self.bundle_path, scopes)
 
-        env_path = os.getenv('YT_CLIENT_SECRETS')
+        env_path = os.getenv("YT_CLIENT_SECRETS")
         if env_path and os.path.exists(env_path):
             return InstalledAppFlow.from_client_secrets_file(env_path, scopes)
 
-        default_secrets = os.path.join('config', 'youtube_client_secrets.json')
+        default_secrets = os.path.join("config", "youtube_client_secrets.json")
         if os.path.exists(default_secrets):
             return InstalledAppFlow.from_client_secrets_file(default_secrets, scopes)
 
@@ -150,28 +148,28 @@ class YouTubeTokenSetup:
         print("=" * 50)
 
         bundle = self._load_bundle()
-        scopes = bundle.get('scopes') or (bundle.get('token', {}) or {}).get('scopes') or self.default_scopes
+        scopes = bundle.get("scopes") or (bundle.get("token", {}) or {}).get("scopes") or self.default_scopes
 
         # Если доступный токен уже рабочий — как в setup_vk, просто выходим
         existing = self._build_credentials_from_bundle(bundle, scopes)
         existing = self._ensure_token_fresh(existing, scopes) if existing else None
         if existing:
             try:
-                service = build('youtube', 'v3', credentials=existing)
-                service.channels().list(part='id', mine=True).execute()
+                service = build("youtube", "v3", credentials=existing)
+                service.channels().list(part="id", mine=True).execute()
                 print("✅ Существующий токен действителен!")
                 # Обновим сохранение после refresh
                 try:
                     token_json = json.loads(existing.to_json())
-                    if isinstance(bundle.get('client_secrets'), dict):
-                        bundle['token'] = token_json
-                        bundle['scopes'] = scopes
+                    if isinstance(bundle.get("client_secrets"), dict):
+                        bundle["token"] = token_json
+                        bundle["scopes"] = scopes
                         self._save_bundle(bundle)
                 except Exception:
                     pass
                 print("\n📚 Примеры использования:")
                 print("1. Загрузка одной записи:")
-                print("   uv run python main.py --upload --youtube --recordings \"название_записи\"")
+                print('   uv run python main.py --upload --youtube --recordings "название_записи"')
                 print("\n2. Загрузка всех готовых записей:")
                 print("   uv run python main.py --upload --youtube --all")
                 return True
@@ -192,8 +190,8 @@ class YouTubeTokenSetup:
 
         # Быстрая проверка: пробуем выполнить простой вызов API
         try:
-            service = build('youtube', 'v3', credentials=creds)
-            service.channels().list(part='id', mine=True).execute()
+            service = build("youtube", "v3", credentials=creds)
+            service.channels().list(part="id", mine=True).execute()
             print("✅ Проверка API прошла успешно")
         except HttpError as e:
             # Если, несмотря на creds, получаем проблемы доступа — переавторизуемся
@@ -213,20 +211,20 @@ class YouTubeTokenSetup:
             return False
 
         # Если в bundle есть client_secrets — сохраняем token рядом; иначе пишем как plain credentials
-        if isinstance(bundle.get('client_secrets'), dict):
-            bundle['token'] = token_json
-            bundle['scopes'] = scopes
+        if isinstance(bundle.get("client_secrets"), dict):
+            bundle["token"] = token_json
+            bundle["scopes"] = scopes
             self._save_bundle(bundle)
         else:
             # Пишем как обычный credentials файл
-            with open(self.bundle_path, 'w', encoding='utf-8') as f:
+            with open(self.bundle_path, "w", encoding="utf-8") as f:
                 f.write(creds.to_json())
             print(f"✅ Токен сохранен в {self.bundle_path}")
 
         print("\n🎉 Настройка YouTube завершена успешно!")
         print("\n📚 Примеры использования:")
         print("1. Загрузка одной записи:")
-        print("   uv run python main.py --upload --youtube --recordings \"название_записи\"")
+        print('   uv run python main.py --upload --youtube --recordings "название_записи"')
         print("\n2. Загрузка всех готовых записей:")
         print("   uv run python main.py --upload --youtube --all")
         return True
@@ -244,5 +242,3 @@ if __name__ == "__main__":
     if not success:
         raise SystemExit(1)
     raise SystemExit(0)
-
-

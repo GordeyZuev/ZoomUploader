@@ -110,7 +110,7 @@ class TopicExtractor:
                 )
             )
 
-        total_duration = segments[-1].get('end', 0) if segments else 0
+        total_duration = segments[-1].get("end", 0) if segments else 0
         duration_minutes = total_duration / 60
         logger.info(
             format_log(
@@ -142,8 +142,8 @@ class TopicExtractor:
                 segments=segments,
             )
 
-            main_topics = result.get('main_topics', [])
-            topic_timestamps = result.get('topic_timestamps', [])
+            main_topics = result.get("main_topics", [])
+            topic_timestamps = result.get("topic_timestamps", [])
 
             topic_timestamps_with_end = self._add_end_timestamps(topic_timestamps, total_duration)
 
@@ -156,9 +156,9 @@ class TopicExtractor:
             )
 
             return {
-                'topic_timestamps': topic_timestamps_with_end,
-                'main_topics': main_topics,
-                'long_pauses': result.get('long_pauses', []),
+                "topic_timestamps": topic_timestamps_with_end,
+                "main_topics": main_topics,
+                "long_pauses": result.get("long_pauses", []),
             }
         except Exception as error:
             logger.exception(
@@ -168,8 +168,8 @@ class TopicExtractor:
                 )
             )
             return {
-                'topic_timestamps': [],
-                'main_topics': [],
+                "topic_timestamps": [],
+                "main_topics": [],
             }
 
     async def extract_topics_from_file(
@@ -196,14 +196,12 @@ class TopicExtractor:
 
         segments = []
         transcription_text_parts = []
-        timestamp_pattern = re.compile(
-            r'\[(\d{2}):(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2}):(\d{2})\]\s*(.+)'
-        )
+        timestamp_pattern = re.compile(r"\[(\d{2}):(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2}):(\d{2})\]\s*(.+)")
         timestamp_pattern_ms = re.compile(
-            r'\[(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})\]\s*(.+)'
+            r"\[(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})\]\s*(.+)"
         )
 
-        with open(segments_file_path, encoding='utf-8') as f:
+        with open(segments_file_path, encoding="utf-8") as f:
             for line_num, line in enumerate(f, 1):
                 line = line.strip()
                 if not line:
@@ -227,11 +225,13 @@ class TopicExtractor:
                             end_seconds = end_h * 3600 + end_m * 60 + end_s
 
                         if text:
-                            segments.append({
-                                'start': float(start_seconds),
-                                'end': float(end_seconds),
-                                'text': text,
-                            })
+                            segments.append(
+                                {
+                                    "start": float(start_seconds),
+                                    "end": float(end_seconds),
+                                    "text": text,
+                                }
+                            )
                             transcription_text_parts.append(text)
                     except (ValueError, IndexError) as e:
                         logger.warning(
@@ -239,17 +239,15 @@ class TopicExtractor:
                         )
                         continue
                 else:
-                    if line and not line.startswith('['):
+                    if line and not line.startswith("["):
                         transcription_text_parts.append(line)
 
         if not segments:
             raise ValueError(f"Не удалось извлечь сегменты из файла {segments_file_path}")
 
-        transcription_text = ' '.join(transcription_text_parts)
+        transcription_text = " ".join(transcription_text_parts)
 
-        logger.info(
-            f"✅ Прочитано {len(segments)} сегментов из файла {segments_file_path}"
-        )
+        logger.info(f"✅ Прочитано {len(segments)} сегментов из файла {segments_file_path}")
 
         return await self.extract_topics(
             transcription_text=transcription_text,
@@ -277,10 +275,10 @@ class TopicExtractor:
         # Оцениваем, есть ли длинное окно шума (15+ минут подряд)
         noise_times = []
         for seg in segments:
-            text0 = (seg.get('text') or '').strip().lower()
+            text0 = (seg.get("text") or "").strip().lower()
             if text0 and any(re.search(pat, text0) for pat in noise_patterns):
                 try:
-                    noise_times.append(float(seg.get('start', 0)))
+                    noise_times.append(float(seg.get("start", 0)))
                 except Exception:
                     pass
         exclude_from = None
@@ -292,8 +290,8 @@ class TopicExtractor:
                 exclude_from, exclude_to = first_noise, last_noise
 
         for seg in segments:
-            start = seg.get('start', 0)
-            text = seg.get('text', '').strip()
+            start = seg.get("start", 0)
+            text = seg.get("text", "").strip()
             if text:
                 lowered = text.lower()
                 # Пропускаем шумовые строки
@@ -391,7 +389,11 @@ class TopicExtractor:
                 f"- {self._format_time(pause['start'])} – {self._format_time(pause['end'])} (≈{pause['duration_minutes']:.1f} мин)"
                 for pause in long_pauses
             ]
-            pauses_instruction = "\n\n⚠️ ВАЖНО: Найдены перерывы >=8 минут. ОБЯЗАТЕЛЬНО добавь их в список тем:\n" + "\n".join(pauses_lines) + "\n\nДля каждой паузы: [HH:MM:SS] - Перерыв (где HH:MM:SS — время начала из списка выше)."
+            pauses_instruction = (
+                "\n\n⚠️ ВАЖНО: Найдены перерывы >=8 минут. ОБЯЗАТЕЛЬНО добавь их в список тем:\n"
+                + "\n".join(pauses_lines)
+                + "\n\nДля каждой паузы: [HH:MM:SS] - Перерыв (где HH:MM:SS — время начала из списка выше)."
+            )
 
         if granularity == "short":
             # Короткий режим: упрощенный промпт с крупными темами
@@ -487,20 +489,22 @@ class TopicExtractor:
                     **self.config.to_request_params(),
                 )
                 # Проверяем, что response является объектом с атрибутом choices
-                if not hasattr(response, 'choices') or not response.choices:
-                    error_msg = f"Неожиданный формат ответа от DeepSeek API: response type={type(response)}, value={response}"
+                if not hasattr(response, "choices") or not response.choices:
+                    error_msg = (
+                        f"Неожиданный формат ответа от DeepSeek API: response type={type(response)}, value={response}"
+                    )
                     logger.error(error_msg)
                     raise ValueError(error_msg)
                 content = response.choices[0].message.content.strip()
 
             if not content:
-                return {'main_topics': [], 'topic_timestamps': []}
+                return {"main_topics": [], "topic_timestamps": []}
 
             logger.debug(f"Промпт отправлен в DeepSeek: preview={prompt[:1000]}... | total_length={len(prompt)}")
             logger.debug(f"Полный ответ от DeepSeek: length={len(content)} | preview={content[:200]}...")
 
             parsed = self._parse_structured_response(content, total_duration)
-            parsed['long_pauses'] = long_pauses
+            parsed["long_pauses"] = long_pauses
             logger.debug(
                 f"Результат парсинга: main_topics={len(parsed.get('main_topics', []))} | "
                 f"topic_timestamps={len(parsed.get('topic_timestamps', []))} | total_duration={total_duration}s"
@@ -515,7 +519,7 @@ class TopicExtractor:
                     ошибка=str(error),
                 )
             )
-            return {'main_topics': [], 'topic_timestamps': []}
+            return {"main_topics": [], "topic_timestamps": []}
 
     async def _fireworks_request(self, prompt: str) -> str:
         """
@@ -570,7 +574,7 @@ class TopicExtractor:
             "messages": [
                 {
                     "role": "system",
-                    "content": "Ты — самый лучший аналитик учебных материалов на магистратуре Computer Science. Анализируй транскрипции и выделяй структуру лекций."
+                    "content": "Ты — самый лучший аналитик учебных материалов на магистратуре Computer Science. Анализируй транскрипции и выделяй структуру лекций.",
                 },
                 {
                     "role": "user",
@@ -645,22 +649,22 @@ class TopicExtractor:
         min_gap_seconds = min_gap_minutes * 60
         pauses: list[dict] = []
 
-        sorted_segments = sorted(segments, key=lambda s: s.get('start', 0))
+        sorted_segments = sorted(segments, key=lambda s: s.get("start", 0))
 
         for idx in range(len(sorted_segments) - 1):
             current = sorted_segments[idx]
             nxt = sorted_segments[idx + 1]
 
-            current_end = float(current.get('end', current.get('start', 0) or 0))
-            next_start = float(nxt.get('start', 0) or 0)
+            current_end = float(current.get("end", current.get("start", 0) or 0))
+            next_start = float(nxt.get("start", 0) or 0)
 
             gap = next_start - current_end
             if gap >= min_gap_seconds:
                 pauses.append(
                     {
-                        'start': current_end,
-                        'end': next_start,
-                        'duration_minutes': gap / 60,
+                        "start": current_end,
+                        "end": next_start,
+                        "duration_minutes": gap / 60,
                     }
                 )
 
@@ -698,13 +702,13 @@ class TopicExtractor:
         main_topics = []
         topic_timestamps = []
 
-        lines = text.split('\n')
+        lines = text.split("\n")
 
         in_main_topics = False
         in_detailed_topics = False
         main_topics_section_found = False
 
-        timestamp_pattern = r'\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]\s*[-–—]?\s*(.+)'
+        timestamp_pattern = r"\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]\s*[-–—]?\s*(.+)"
 
         # Сначала ищем основную тему в начале ответа (до секции детализированных топиков)
         found_main_topic_before_section = False
@@ -714,17 +718,21 @@ class TopicExtractor:
                 continue
 
             # Если нашли секцию детализированных топиков, проверяем все строки до неё
-            if 'ДЕТАЛИЗИРОВАННЫЕ ТОПИКИ' in line_stripped.upper() or 'ТОПИКИ С ТАЙМКОДАМИ' in line_stripped.upper():
+            if "ДЕТАЛИЗИРОВАННЫЕ ТОПИКИ" in line_stripped.upper() or "ТОПИКИ С ТАЙМКОДАМИ" in line_stripped.upper():
                 # Ищем тему во всех строках до этой секции (но не слишком далеко - максимум 10 строк)
                 for j in range(max(0, i - 10), i):
                     candidate = lines[j].strip()
-                    if candidate and not candidate.startswith('##') and not candidate.startswith('#'):
-                        if 'выведи' in candidate.lower() or 'тема' in candidate.lower() or 'пример' in candidate.lower():
+                    if candidate and not candidate.startswith("##") and not candidate.startswith("#"):
+                        if (
+                            "выведи" in candidate.lower()
+                            or "тема" in candidate.lower()
+                            or "пример" in candidate.lower()
+                        ):
                             continue
                         if re.match(timestamp_pattern, candidate):
                             continue
-                        topic_candidate = re.sub(r'^[-*•\d.)]+\s*', '', candidate).strip()
-                        topic_candidate = re.sub(r'^\[.*?\]\s*', '', topic_candidate).strip()
+                        topic_candidate = re.sub(r"^[-*•\d.)]+\s*", "", candidate).strip()
+                        topic_candidate = re.sub(r"^\[.*?\]\s*", "", topic_candidate).strip()
                         if topic_candidate:
                             words = topic_candidate.split()
                             # Основная тема должна быть короткой (2-4 слова)
@@ -738,14 +746,18 @@ class TopicExtractor:
         if not found_main_topic_before_section:
             for _, line in enumerate(lines[:10]):
                 line_stripped = line.strip()
-                if not line_stripped or line_stripped.startswith('##') or line_stripped.startswith('#'):
+                if not line_stripped or line_stripped.startswith("##") or line_stripped.startswith("#"):
                     continue
                 if re.match(timestamp_pattern, line_stripped):
                     break
-                if 'выведи' in line_stripped.lower() or 'тема' in line_stripped.lower() or 'пример' in line_stripped.lower():
+                if (
+                    "выведи" in line_stripped.lower()
+                    or "тема" in line_stripped.lower()
+                    or "пример" in line_stripped.lower()
+                ):
                     continue
-                topic_candidate = re.sub(r'^[-*•\d.)]+\s*', '', line_stripped).strip()
-                topic_candidate = re.sub(r'^\[.*?\]\s*', '', topic_candidate).strip()
+                topic_candidate = re.sub(r"^[-*•\d.)]+\s*", "", line_stripped).strip()
+                topic_candidate = re.sub(r"^\[.*?\]\s*", "", topic_candidate).strip()
                 if topic_candidate:
                     words = topic_candidate.split()
                     if 2 <= len(words) <= 4:
@@ -758,28 +770,28 @@ class TopicExtractor:
                 continue
 
             if (
-                'ОСНОВНЫЕ ТЕМЫ' in line.upper()
-                or 'ОСНОВНЫЕ ТЕМЫ ПАРЫ' in line.upper()
-                or 'ОСНОВНАЯ ТЕМА' in line.upper()
+                "ОСНОВНЫЕ ТЕМЫ" in line.upper()
+                or "ОСНОВНЫЕ ТЕМЫ ПАРЫ" in line.upper()
+                or "ОСНОВНАЯ ТЕМА" in line.upper()
             ):
                 in_main_topics = True
                 in_detailed_topics = False
                 main_topics_section_found = True
                 if i + 1 < len(lines):
                     next_line = lines[i + 1].strip()
-                    if next_line and not next_line.startswith('##') and not next_line.startswith('#'):
-                        topic_candidate = re.sub(r'^[-*•\d.)]+\s*', '', next_line).strip()
-                        topic_candidate = re.sub(r'^\[.*?\]\s*', '', topic_candidate).strip()
-                        if topic_candidate and len(topic_candidate) > 3 and 'выведи' not in topic_candidate.lower():
+                    if next_line and not next_line.startswith("##") and not next_line.startswith("#"):
+                        topic_candidate = re.sub(r"^[-*•\d.)]+\s*", "", next_line).strip()
+                        topic_candidate = re.sub(r"^\[.*?\]\s*", "", topic_candidate).strip()
+                        if topic_candidate and len(topic_candidate) > 3 and "выведи" not in topic_candidate.lower():
                             words = topic_candidate.split()
                             if len(words) <= 4:
                                 main_topics.append(topic_candidate)
                 continue
-            elif 'ДЕТАЛИЗИРОВАННЫЕ ТОПИКИ' in line.upper() or 'ТОПИКИ С ТАЙМКОДАМИ' in line.upper():
+            elif "ДЕТАЛИЗИРОВАННЫЕ ТОПИКИ" in line.upper() or "ТОПИКИ С ТАЙМКОДАМИ" in line.upper():
                 in_main_topics = False
                 in_detailed_topics = True
                 continue
-            elif line.startswith('##'):
+            elif line.startswith("##"):
                 in_main_topics = False
                 in_detailed_topics = False
                 continue
@@ -802,28 +814,30 @@ class TopicExtractor:
                     seconds = int(seconds_str)
                 total_seconds = hours * 3600 + minutes * 60 + seconds
                 if 0 <= total_seconds <= total_duration:
-                    topic_timestamps.append({
-                        'topic': topic.strip(),
-                        'start': float(total_seconds),
-                    })
+                    topic_timestamps.append(
+                        {
+                            "topic": topic.strip(),
+                            "start": float(total_seconds),
+                        }
+                    )
                 continue
 
             if in_main_topics:
-                if not line or line.startswith('##') or line.startswith('#'):
+                if not line or line.startswith("##") or line.startswith("#"):
                     continue
 
-                topic = re.sub(r'^[-*•\d.)]+\s*', '', line).strip()
-                topic = re.sub(r'^\[.*?\]\s*', '', topic).strip()
+                topic = re.sub(r"^[-*•\d.)]+\s*", "", line).strip()
+                topic = re.sub(r"^\[.*?\]\s*", "", topic).strip()
 
-                if topic.startswith('[') and 'выведи' in topic.lower():
+                if topic.startswith("[") and "выведи" in topic.lower():
                     continue
 
                 if topic and len(topic) > 3:
                     words = topic.split()
                     if len(words) > 7:
-                        topic = ' '.join(words[:15]) + '...'
+                        topic = " ".join(words[:15]) + "..."
                     elif len(topic) > 150:
-                        topic = topic[:150].rsplit(' ', 1)[0] + '...'
+                        topic = topic[:150].rsplit(" ", 1)[0] + "..."
                     main_topics.append(topic)
 
             elif in_detailed_topics:
@@ -843,10 +857,12 @@ class TopicExtractor:
                     total_seconds = hours * 3600 + minutes * 60 + seconds
 
                     if 0 <= total_seconds <= total_duration:
-                        topic_timestamps.append({
-                            'topic': topic.strip(),
-                            'start': float(total_seconds),
-                        })
+                        topic_timestamps.append(
+                            {
+                                "topic": topic.strip(),
+                                "start": float(total_seconds),
+                            }
+                        )
                     else:
                         logger.debug(
                             format_log(
@@ -876,10 +892,12 @@ class TopicExtractor:
                         seconds = int(seconds_str)
                     total_seconds = hours * 3600 + minutes * 60 + seconds
                     if 0 <= total_seconds <= total_duration:
-                        topic_timestamps.append({
-                            'topic': topic.strip(),
-                            'start': float(total_seconds),
-                        })
+                        topic_timestamps.append(
+                            {
+                                "topic": topic.strip(),
+                                "start": float(total_seconds),
+                            }
+                        )
 
         if not topic_timestamps and not main_topics:
             topic_timestamps = self._parse_simple_timestamps(text, total_duration)
@@ -887,16 +905,19 @@ class TopicExtractor:
         if main_topics_section_found and not main_topics:
             logger.debug("Секция основных тем найдена, но темы не извлечены. Поиск темы в начале ответа")
             for i, line in enumerate(lines):
-                if 'ОСНОВНЫЕ ТЕМЫ' in line.upper() or 'ОСНОВНЫЕ ТЕМЫ ПАРЫ' in line.upper():
+                if "ОСНОВНЫЕ ТЕМЫ" in line.upper() or "ОСНОВНЫЕ ТЕМЫ ПАРЫ" in line.upper():
                     for j in range(i + 1, min(i + 5, len(lines))):
                         candidate = lines[j].strip()
-                        if candidate and not candidate.startswith('##') and not candidate.startswith('#'):
-                            topic_candidate = re.sub(r'^[-*•\d.)]+\s*', '', candidate).strip()
-                            topic_candidate = re.sub(r'^\[.*?\]\s*', '', topic_candidate).strip()
-                            if (topic_candidate and len(topic_candidate) > 3 and
-                                'выведи' not in topic_candidate.lower() and
-                                'тема' not in topic_candidate.lower() and
-                                'пример' not in topic_candidate.lower()):
+                        if candidate and not candidate.startswith("##") and not candidate.startswith("#"):
+                            topic_candidate = re.sub(r"^[-*•\d.)]+\s*", "", candidate).strip()
+                            topic_candidate = re.sub(r"^\[.*?\]\s*", "", topic_candidate).strip()
+                            if (
+                                topic_candidate
+                                and len(topic_candidate) > 3
+                                and "выведи" not in topic_candidate.lower()
+                                and "тема" not in topic_candidate.lower()
+                                and "пример" not in topic_candidate.lower()
+                            ):
                                 words = topic_candidate.split()
                                 if 2 <= len(words) <= 4:
                                     main_topics.append(topic_candidate)
@@ -905,21 +926,23 @@ class TopicExtractor:
 
         processed_main_topics = []
         for topic in main_topics[:1]:
-            topic = ' '.join(topic.split())
+            topic = " ".join(topic.split())
             if topic and len(topic) > 3:
                 words = topic.split()
                 if len(words) > 7:
-                    topic = ' '.join(words[:7]) + '...'
+                    topic = " ".join(words[:7]) + "..."
                 processed_main_topics.append(topic)
 
         if processed_main_topics:
             logger.info(f"🧭 Основная тема: {processed_main_topics[0]}")
         if not processed_main_topics and main_topics_section_found:
-            logger.warning(f"⚠️ Секция основных тем найдена, но не удалось извлечь тему. Первые строки ответа:\n{chr(10).join(lines[:10])}")
+            logger.warning(
+                f"⚠️ Секция основных тем найдена, но не удалось извлечь тему. Первые строки ответа:\n{chr(10).join(lines[:10])}"
+            )
 
         return {
-            'main_topics': processed_main_topics,
-            'topic_timestamps': topic_timestamps,
+            "main_topics": processed_main_topics,
+            "topic_timestamps": topic_timestamps,
         }
 
     def _parse_simple_timestamps(self, text: str, total_duration: float) -> list[dict]:
@@ -936,14 +959,14 @@ class TopicExtractor:
             Список временных меток
         """
         timestamps = []
-        lines = text.split('\n')
+        lines = text.split("\n")
 
         # Паттерн для [HH:MM:SS] - [Название] или [HH:MM:SS] [Название]
-        pattern = r'\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]\s*[-–—]?\s*(.+)'
+        pattern = r"\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]\s*[-–—]?\s*(.+)"
 
         for line in lines:
             line = line.strip()
-            if not line or line.startswith('#'):
+            if not line or line.startswith("#"):
                 continue
 
             match = re.match(pattern, line)
@@ -962,10 +985,12 @@ class TopicExtractor:
                 total_seconds = hours * 3600 + minutes * 60 + seconds
 
                 if 0 <= total_seconds <= total_duration:
-                    timestamps.append({
-                        'topic': topic.strip(),
-                        'start': float(total_seconds),
-                    })
+                    timestamps.append(
+                        {
+                            "topic": topic.strip(),
+                            "start": float(total_seconds),
+                        }
+                    )
 
         return timestamps
 
@@ -992,24 +1017,24 @@ class TopicExtractor:
         duration_minutes = total_duration / 60
         min_spacing = max(180, min(300, duration_minutes * 60 * 0.04))
 
-        sorted_timestamps = sorted(timestamps, key=lambda x: x.get('start', 0))
+        sorted_timestamps = sorted(timestamps, key=lambda x: x.get("start", 0))
 
         if len(sorted_timestamps) <= max_topics:
             merged = []
 
             for ts in sorted_timestamps:
-                start = ts.get('start', 0)
-                topic = ts.get('topic', '').strip()
+                start = ts.get("start", 0)
+                topic = ts.get("topic", "").strip()
 
                 if not topic:
                     continue
 
-                if merged and (start - merged[-1].get('start', 0)) < min_spacing:
-                    prev_topic = merged[-1].get('topic', '')
+                if merged and (start - merged[-1].get("start", 0)) < min_spacing:
+                    prev_topic = merged[-1].get("topic", "")
                     if len(topic) > len(prev_topic):
-                        merged[-1]['topic'] = topic
-                    if start < merged[-1].get('start', 0):
-                        merged[-1]['start'] = start
+                        merged[-1]["topic"] = topic
+                    if start < merged[-1].get("start", 0):
+                        merged[-1]["start"] = start
                 else:
                     merged.append(ts)
 
@@ -1027,18 +1052,18 @@ class TopicExtractor:
         merged = []
 
         for ts in filtered:
-            start = ts.get('start', 0)
-            topic = ts.get('topic', '').strip()
+            start = ts.get("start", 0)
+            topic = ts.get("topic", "").strip()
 
             if not topic:
                 continue
 
-            if merged and (start - merged[-1].get('start', 0)) < min_spacing:
-                prev_topic = merged[-1].get('topic', '')
+            if merged and (start - merged[-1].get("start", 0)) < min_spacing:
+                prev_topic = merged[-1].get("topic", "")
                 if len(topic) > len(prev_topic):
-                    merged[-1]['topic'] = topic
-                if start < merged[-1].get('start', 0):
-                    merged[-1]['start'] = start
+                    merged[-1]["topic"] = topic
+                if start < merged[-1].get("start", 0):
+                    merged[-1]["start"] = start
             else:
                 merged.append(ts)
 
@@ -1051,13 +1076,13 @@ class TopicExtractor:
                 if idx < len(sorted_timestamps):
                     if idx not in added_indices:
                         ts = sorted_timestamps[idx]
-                        start = ts.get('start', 0)
-                        topic = ts.get('topic', '').strip()
+                        start = ts.get("start", 0)
+                        topic = ts.get("topic", "").strip()
 
                         if topic:
                             too_close = False
                             for existing in merged:
-                                if abs(start - existing.get('start', 0)) < min_spacing:
+                                if abs(start - existing.get("start", 0)) < min_spacing:
                                     too_close = True
                                     break
 
@@ -1066,7 +1091,7 @@ class TopicExtractor:
                                 added_indices.add(idx)
 
             # Сортируем по времени
-            merged = sorted(merged, key=lambda x: x.get('start', 0))
+            merged = sorted(merged, key=lambda x: x.get("start", 0))
 
         return merged
 
@@ -1084,24 +1109,24 @@ class TopicExtractor:
         if not timestamps:
             return []
 
-        sorted_timestamps = sorted(timestamps, key=lambda x: x.get('start', 0))
+        sorted_timestamps = sorted(timestamps, key=lambda x: x.get("start", 0))
 
         result = []
         for i, ts in enumerate(sorted_timestamps):
-            start = ts.get('start', 0)
-            topic = ts.get('topic', '').strip()
+            start = ts.get("start", 0)
+            topic = ts.get("topic", "").strip()
 
             if not topic:
                 continue
 
             if i < len(sorted_timestamps) - 1:
-                end = sorted_timestamps[i + 1].get('start', 0)
+                end = sorted_timestamps[i + 1].get("start", 0)
             else:
                 end = total_duration
 
             # Гарантируем минимальную длительность
             if end - start < 60 and i < len(sorted_timestamps) - 1:
-                end = min(start + 60, sorted_timestamps[i + 1].get('start', 0))
+                end = min(start + 60, sorted_timestamps[i + 1].get("start", 0))
 
             end = min(end, total_duration)
 
@@ -1116,12 +1141,12 @@ class TopicExtractor:
                 )
                 continue
 
-            result.append({
-                'topic': topic,
-                'start': start,
-                'end': end,
-            })
+            result.append(
+                {
+                    "topic": topic,
+                    "start": start,
+                    "end": end,
+                }
+            )
 
         return result
-
-

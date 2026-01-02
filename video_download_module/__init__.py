@@ -1,3 +1,3 @@
 from .downloader import ZoomDownloader
 
-__all__ = ['ZoomDownloader']
+__all__ = ["ZoomDownloader"]

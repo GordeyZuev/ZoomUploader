@@ -37,9 +37,9 @@ class VideoProcessor:
 
     def _sanitize_filename(self, filename: str) -> str:
         """Создание безопасного имени файла."""
-        filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
-        filename = re.sub(r'\s+', '_', filename)
-        filename = filename.strip('_')
+        filename = re.sub(r'[<>:"/\\|?*]', "_", filename)
+        filename = re.sub(r"\s+", "_", filename)
+        filename = filename.strip("_")
         if len(filename) > 200:
             filename = filename[:200]
         return filename
@@ -47,13 +47,13 @@ class VideoProcessor:
     async def get_video_info(self, video_path: str) -> dict[str, Any]:
         """Получение информации о видео."""
         cmd = [
-            'ffprobe',
-            '-v',
-            'quiet',
-            '-print_format',
-            'json',
-            '-show_format',
-            '-show_streams',
+            "ffprobe",
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
             video_path,
         ]
 
@@ -68,53 +68,51 @@ class VideoProcessor:
                 raise RuntimeError(f"FFprobe error: {stderr.decode()}")
 
             info = json.loads(stdout.decode())
-            video_stream = next((s for s in info['streams'] if s['codec_type'] == 'video'), None)
-            audio_stream = next((s for s in info['streams'] if s['codec_type'] == 'audio'), None)
+            video_stream = next((s for s in info["streams"] if s["codec_type"] == "video"), None)
+            audio_stream = next((s for s in info["streams"] if s["codec_type"] == "audio"), None)
 
             return {
-                'duration': float(info['format']['duration']),
-                'size': int(info['format']['size']),
-                'width': int(video_stream['width']) if video_stream else 0,
-                'height': int(video_stream['height']) if video_stream else 0,
-                'fps': eval(video_stream['r_frame_rate']) if video_stream else 0,
-                'video_codec': video_stream['codec_name'] if video_stream else None,
-                'audio_codec': audio_stream['codec_name'] if audio_stream else None,
-                'bitrate': int(info['format']['bit_rate']) if 'bit_rate' in info['format'] else 0,
+                "duration": float(info["format"]["duration"]),
+                "size": int(info["format"]["size"]),
+                "width": int(video_stream["width"]) if video_stream else 0,
+                "height": int(video_stream["height"]) if video_stream else 0,
+                "fps": eval(video_stream["r_frame_rate"]) if video_stream else 0,
+                "video_codec": video_stream["codec_name"] if video_stream else None,
+                "audio_codec": audio_stream["codec_name"] if audio_stream else None,
+                "bitrate": int(info["format"]["bit_rate"]) if "bit_rate" in info["format"] else 0,
             }
 
         except Exception as e:
             raise RuntimeError(f"Ошибка получения информации о видео: {e}") from e
 
-    async def trim_video(
-        self, input_path: str, output_path: str, start_time: float, end_time: float
-    ) -> bool:
+    async def trim_video(self, input_path: str, output_path: str, start_time: float, end_time: float) -> bool:
         """Обрезка видео по времени."""
         duration = end_time - start_time
 
         cmd = [
-            'ffmpeg',
-            '-i',
+            "ffmpeg",
+            "-i",
             input_path,
-            '-ss',
+            "-ss",
             str(start_time),
-            '-t',
+            "-t",
             str(duration),
-            '-c:v',
+            "-c:v",
             self.config.video_codec,
-            '-c:a',
+            "-c:a",
             self.config.audio_codec,
         ]
 
         if self.config.video_bitrate != "original":
-            cmd.extend(['-b:v', self.config.video_bitrate])
+            cmd.extend(["-b:v", self.config.video_bitrate])
         if self.config.audio_bitrate != "original":
-            cmd.extend(['-b:a', self.config.audio_bitrate])
+            cmd.extend(["-b:a", self.config.audio_bitrate])
         if self.config.video_codec != "copy" and self.config.fps > 0:
-            cmd.extend(['-r', str(self.config.fps)])
+            cmd.extend(["-r", str(self.config.fps)])
         if self.config.resolution != "original":
-            cmd.extend(['-s', self.config.resolution])
+            cmd.extend(["-s", self.config.resolution])
 
-        cmd.extend(['-y', output_path])
+        cmd.extend(["-y", output_path])
 
         try:
             logger.info(f"🔧 Команда FFmpeg: {' '.join(cmd)}")
@@ -160,7 +158,7 @@ class VideoProcessor:
 
             if self.config.remove_outro:
                 video_info = await self.get_video_info(input_path)
-                max_time = video_info['duration']
+                max_time = video_info["duration"]
                 if end_time >= max_time - self.config.outro_duration:
                     end_time = max_time - self.config.outro_duration
 
@@ -184,7 +182,7 @@ class VideoProcessor:
         """Основная функция обработки видео."""
         try:
             video_info = await self.get_video_info(video_path)
-            duration = video_info['duration']
+            duration = video_info["duration"]
 
             logger.info(f"📹 Обработка видео: {title}")
             logger.info(f"   Длительность: {duration / 60:.1f} минут")
@@ -192,9 +190,7 @@ class VideoProcessor:
             logger.info(f"   Разрешение: {video_info['width']}x{video_info['height']}")
 
             if custom_segments:
-                segments = self.segment_processor.create_segments_from_timestamps(
-                    custom_segments, title
-                )
+                segments = self.segment_processor.create_segments_from_timestamps(custom_segments, title)
             else:
                 segments = self.segment_processor.create_segments_from_duration(duration, title)
 
@@ -211,9 +207,7 @@ class VideoProcessor:
                 else:
                     logger.info(f"   ❌ Ошибка обработки сегмента: {segment.title}")
 
-            logger.info(
-                f"✅ Обработка завершена: {len(processed_segments)}/{len(segments)} сегментов"
-            )
+            logger.info(f"✅ Обработка завершена: {len(processed_segments)}/{len(segments)} сегментов")
             return processed_segments
 
         except Exception as e:
@@ -251,9 +245,7 @@ class VideoProcessor:
 
             # Если звук есть на всем протяжении видео, не обрезаем и используем исходный файл
             if last_sound is None and first_sound == 0.0:
-                logger.info(
-                    "🔊 Звук на всем протяжении видео, пропускаем обрезку и используем исходный файл"
-                )
+                logger.info("🔊 Звук на всем протяжении видео, пропускаем обрезку и используем исходный файл")
                 return True, os.path.abspath(video_path)
 
             if last_sound is None:
@@ -328,9 +320,7 @@ class VideoProcessor:
         """Получение статистики обработки."""
         total_videos = len(results)
         total_segments = sum(len(segments) for segments in results.values())
-        processed_segments = sum(
-            len([s for s in segments if s.processed]) for segments in results.values()
-        )
+        processed_segments = sum(len([s for s in segments if s.processed]) for segments in results.values())
 
         total_duration = 0
         for segments in results.values():
@@ -339,12 +329,10 @@ class VideoProcessor:
                     total_duration += segment.duration
 
         return {
-            'total_videos': total_videos,
-            'total_segments': total_segments,
-            'processed_segments': processed_segments,
-            'success_rate': (processed_segments / total_segments * 100)
-            if total_segments > 0
-            else 0,
-            'total_processed_duration': total_duration,
-            'total_processed_duration_formatted': f"{total_duration / 60:.1f} минут",
+            "total_videos": total_videos,
+            "total_segments": total_segments,
+            "processed_segments": processed_segments,
+            "success_rate": (processed_segments / total_segments * 100) if total_segments > 0 else 0,
+            "total_processed_duration": total_duration,
+            "total_processed_duration_formatted": f"{total_duration / 60:.1f} минут",
         }

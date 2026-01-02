@@ -19,14 +19,14 @@ def parse_transcription_file(file_path: str) -> tuple[str, list[dict]]:
     Returns:
         Кортеж (полный текст, список сегментов)
     """
-    with open(file_path, encoding='utf-8') as f:
+    with open(file_path, encoding="utf-8") as f:
         lines = f.readlines()
 
     segments = []
     full_text_parts = []
 
     # Паттерн для [HH:MM:SS - HH:MM:SS] текст
-    pattern = r'\[(\d{2}):(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2}):(\d{2})\]\s*(.+)'
+    pattern = r"\[(\d{2}):(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2}):(\d{2})\]\s*(.+)"
 
     for line in lines:
         line = line.strip()
@@ -41,15 +41,17 @@ def parse_transcription_file(file_path: str) -> tuple[str, list[dict]]:
             start_seconds = int(start_h) * 3600 + int(start_m) * 60 + int(start_s)
             end_seconds = int(end_h) * 3600 + int(end_m) * 60 + int(end_s)
 
-            segments.append({
-                'start': float(start_seconds),
-                'end': float(end_seconds),
-                'text': text.strip(),
-            })
+            segments.append(
+                {
+                    "start": float(start_seconds),
+                    "end": float(end_seconds),
+                    "text": text.strip(),
+                }
+            )
 
             full_text_parts.append(text.strip())
 
-    full_text = ' '.join(full_text_parts)
+    full_text = " ".join(full_text_parts)
 
     return full_text, segments
 
@@ -120,8 +122,8 @@ async def test_deepseek_extraction(
         print("📊 РЕЗУЛЬТАТЫ ИЗВЛЕЧЕНИЯ ТЕМ")
         print("=" * 80)
 
-        main_topics = result.get('main_topics', [])
-        topic_timestamps = result.get('topic_timestamps', [])
+        main_topics = result.get("main_topics", [])
+        topic_timestamps = result.get("topic_timestamps", [])
 
         if main_topics:
             print(f"\n🎯 ОСНОВНЫЕ ТЕМЫ ({len(main_topics)}):")
@@ -133,9 +135,9 @@ async def test_deepseek_extraction(
         if topic_timestamps:
             print(f"\n📝 ДЕТАЛИЗИРОВАННЫЕ ТОПИКИ ({len(topic_timestamps)}):")
             for ts in topic_timestamps:
-                start = ts.get('start', 0)
-                end = ts.get('end', 0)
-                topic = ts.get('topic', '')
+                start = ts.get("start", 0)
+                end = ts.get("end", 0)
+                topic = ts.get("topic", "")
 
                 # Форматируем время
                 start_h = int(start // 3600)
@@ -149,7 +151,7 @@ async def test_deepseek_extraction(
                 end_str = f"{end_h:02d}:{end_m:02d}:{end_s:02d}"
                 duration = end - start
 
-                print(f"   [{start_str} - {end_str}] ({duration/60:.1f} мин) {topic}")
+                print(f"   [{start_str} - {end_str}] ({duration / 60:.1f} мин) {topic}")
         else:
             print("\n⚠️ Детализированные топики не найдены")
 
@@ -160,6 +162,7 @@ async def test_deepseek_extraction(
     except Exception as e:
         logger.error(f"❌ Ошибка при извлечении тем: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
@@ -168,18 +171,18 @@ if __name__ == "__main__":
     import click
 
     @click.command()
-    @click.argument('transcription_file', type=click.Path(exists=True))
-    @click.option('--topic', '-t', help='Название курса/предмета (опционально)')
+    @click.argument("transcription_file", type=click.Path(exists=True))
+    @click.option("--topic", "-t", help="Название курса/предмета (опционально)")
     @click.option(
-        '--granularity', '-g',
-        type=click.Choice(['short', 'long']),
-        default='long',
+        "--granularity",
+        "-g",
+        type=click.Choice(["short", "long"]),
+        default="long",
         show_default=True,
-        help='Режим извлечения тем: short (меньше тем, крупнее) или long (больше тем, детальнее)'
+        help="Режим извлечения тем: short (меньше тем, крупнее) или long (больше тем, детальнее)",
     )
     def main(transcription_file, topic, granularity):
         """Тестирование извлечения тем через DeepSeek на существующей транскрипции"""
         asyncio.run(test_deepseek_extraction(transcription_file, topic, granularity))
 
     main()
-

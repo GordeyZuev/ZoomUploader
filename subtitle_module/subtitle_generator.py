@@ -26,18 +26,16 @@ class SubtitleGenerator:
     """Генератор субтитров из файлов транскрипций"""
 
     # Регулярное выражение для парсинга временных меток: [HH:MM:SS - HH:MM:SS]
-    TIMESTAMP_PATTERN = re.compile(
-        r'\[(\d{2}):(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2}):(\d{2})\]\s*(.*)'
-    )
+    TIMESTAMP_PATTERN = re.compile(r"\[(\d{2}):(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2}):(\d{2})\]\s*(.*)")
 
     # Регулярное выражение для парсинга временных меток с миллисекундами: [HH:MM:SS.mmm - HH:MM:SS.mmm]
     TIMESTAMP_PATTERN_MS = re.compile(
-        r'\[(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})\]\s*(.*)'
+        r"\[(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})\]\s*(.*)"
     )
 
     # Регулярное выражение для парсинга слов с миллисекундами (legacy)
     WORDS_TIMESTAMP_PATTERN = re.compile(
-        r'\[(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})\]\s*(.*)'
+        r"\[(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})\]\s*(.*)"
     )
 
     def __init__(self, max_chars_per_line: int = 42, max_lines: int = 2):
@@ -64,7 +62,7 @@ class SubtitleGenerator:
 
         entries = []
 
-        with open(file_path, encoding='utf-8') as f:
+        with open(file_path, encoding="utf-8") as f:
             for line_num, line in enumerate(f, 1):
                 line = line.strip()
                 if not line:
@@ -79,7 +77,9 @@ class SubtitleGenerator:
                             start_h, start_m, start_s, start_ms = map(int, match_ms.groups()[:4])
                             end_h, end_m, end_s, end_ms = map(int, match_ms.groups()[4:8])
                             text = match_ms.groups()[8]
-                            start_time = timedelta(hours=start_h, minutes=start_m, seconds=start_s, milliseconds=start_ms)
+                            start_time = timedelta(
+                                hours=start_h, minutes=start_m, seconds=start_s, milliseconds=start_ms
+                            )
                             end_time = timedelta(hours=end_h, minutes=end_m, seconds=end_s, milliseconds=end_ms)
                         else:
                             start_h, start_m, start_s = map(int, match_s.groups()[:3])
@@ -115,7 +115,7 @@ class SubtitleGenerator:
 
         logger.info(f"📖 Парсинг файла words: {file_path}")
 
-        with open(file_path, encoding='utf-8') as f:
+        with open(file_path, encoding="utf-8") as f:
             for line_num, line in enumerate(f, 1):
                 total_lines += 1
                 line = line.strip()
@@ -133,23 +133,17 @@ class SubtitleGenerator:
                         if word_text.strip():
                             # Создаем timedelta объекты с миллисекундами
                             start_time = timedelta(
-                                hours=start_h,
-                                minutes=start_m,
-                                seconds=start_s,
-                                milliseconds=start_ms
+                                hours=start_h, minutes=start_m, seconds=start_s, milliseconds=start_ms
                             )
-                            end_time = timedelta(
-                                hours=end_h,
-                                minutes=end_m,
-                                seconds=end_s,
-                                milliseconds=end_ms
-                            )
+                            end_time = timedelta(hours=end_h, minutes=end_m, seconds=end_s, milliseconds=end_ms)
 
-                            words.append({
-                                'start': start_time,
-                                'end': end_time,
-                                'text': word_text.strip(),
-                            })
+                            words.append(
+                                {
+                                    "start": start_time,
+                                    "end": end_time,
+                                    "text": word_text.strip(),
+                                }
+                            )
                             parsed_lines += 1
                     except (ValueError, IndexError) as e:
                         logger.warning(f"⚠️ Ошибка парсинга строки {line_num} в файле {file_path}: {line[:50]}... - {e}")
@@ -157,7 +151,9 @@ class SubtitleGenerator:
                 else:
                     # Логируем только первые несколько нераспознанных строк, чтобы не засорять лог
                     if line_num <= 5:
-                        logger.debug(f"Строка не соответствует формату: line_num={line_num} | preview={line[:50]}... | file={file_path}")
+                        logger.debug(
+                            f"Строка не соответствует формату: line_num={line_num} | preview={line[:50]}... | file={file_path}"
+                        )
 
         logger.info(f"📊 Парсинг завершен: обработано {total_lines} строк, распарсено {parsed_lines} слов")
 
@@ -172,10 +168,7 @@ class SubtitleGenerator:
         return entries
 
     def _group_words_into_subtitles(
-        self,
-        words: list[dict],
-        max_duration_seconds: float = 5.0,
-        pause_threshold_seconds: float = 0.5
+        self, words: list[dict], max_duration_seconds: float = 5.0, pause_threshold_seconds: float = 0.5
     ) -> list[SubtitleEntry]:
         """
         Группирует слова в субтитры на основе времени и пауз.
@@ -196,8 +189,8 @@ class SubtitleGenerator:
         current_start = None
 
         for word in words:
-            word_start = word['start']
-            word_end = word['end']
+            word_start = word["start"]
+            word_end = word["end"]
 
             # Определяем начало группы
             if current_start is None:
@@ -208,7 +201,7 @@ class SubtitleGenerator:
 
             # Проверка 1: Пауза между словами больше порога
             if current_group:
-                last_word_end = current_group[-1]['end']
+                last_word_end = current_group[-1]["end"]
                 pause_duration = (word_start - last_word_end).total_seconds()
                 if pause_duration > pause_threshold_seconds:
                     should_start_new = True
@@ -222,9 +215,9 @@ class SubtitleGenerator:
             # Если нужно начать новую группу, сохраняем текущую
             if should_start_new and current_group:
                 # Формируем текст из слов текущей группы
-                group_text = ' '.join(w['text'] for w in current_group)
+                group_text = " ".join(w["text"] for w in current_group)
                 group_start = current_start
-                group_end = current_group[-1]['end']
+                group_end = current_group[-1]["end"]
 
                 entries.append(SubtitleEntry(group_start, group_end, group_text))
 
@@ -237,9 +230,9 @@ class SubtitleGenerator:
 
         # Добавляем последнюю группу
         if current_group:
-            group_text = ' '.join(w['text'] for w in current_group)
+            group_text = " ".join(w["text"] for w in current_group)
             group_start = current_start
-            group_end = current_group[-1]['end']
+            group_end = current_group[-1]["end"]
             entries.append(SubtitleEntry(group_start, group_end, group_text))
 
         return entries
@@ -283,7 +276,7 @@ class SubtitleGenerator:
             # Если добавление слова превысит лимит, начинаем новую строку
             if current_length + word_length + (1 if current_line else 0) > self.max_chars_per_line:
                 if current_line:
-                    lines.append(' '.join(current_line))
+                    lines.append(" ".join(current_line))
                     current_line = []
                     current_length = 0
 
@@ -296,9 +289,9 @@ class SubtitleGenerator:
 
         # Добавляем оставшиеся слова
         if current_line and len(lines) < self.max_lines:
-            lines.append(' '.join(current_line))
+            lines.append(" ".join(current_line))
 
-        return lines if lines else [text[:self.max_chars_per_line]]
+        return lines if lines else [text[: self.max_chars_per_line]]
 
     def generate_srt(self, entries: list[SubtitleEntry], output_path: str) -> str:
         """
@@ -311,7 +304,7 @@ class SubtitleGenerator:
         Returns:
             Путь к созданному файлу
         """
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             for index, entry in enumerate(entries, start=1):
                 # Номер субтитра
                 f.write(f"{index}\n")
@@ -342,7 +335,7 @@ class SubtitleGenerator:
         Returns:
             Путь к созданному файлу
         """
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             # Заголовок VTT
             f.write("WEBVTT\n\n")
 
@@ -363,10 +356,7 @@ class SubtitleGenerator:
         return output_path
 
     def generate_from_transcription(
-        self,
-        transcription_path: str,
-        output_dir: str | None = None,
-        formats: list[str] = None
+        self, transcription_path: str, output_dir: str | None = None, formats: list[str] = None
     ) -> dict[str, str]:
         """
         Генерирует субтитры из файла транскрипции.
@@ -381,7 +371,7 @@ class SubtitleGenerator:
             Словарь с путями к созданным файлам: {'srt': path, 'vtt': path}
         """
         if formats is None:
-            formats = ['srt', 'vtt']
+            formats = ["srt", "vtt"]
 
         if output_dir is None:
             output_dir = os.path.dirname(transcription_path)
@@ -412,14 +402,14 @@ class SubtitleGenerator:
 
         result = {}
 
-        if 'srt' in formats:
+        if "srt" in formats:
             srt_path = os.path.join(output_dir, f"{base_name}.srt")
             self.generate_srt(entries, srt_path)
-            result['srt'] = srt_path
+            result["srt"] = srt_path
 
-        if 'vtt' in formats:
+        if "vtt" in formats:
             vtt_path = os.path.join(output_dir, f"{base_name}.vtt")
             self.generate_vtt(entries, vtt_path)
-            result['vtt'] = vtt_path
+            result["vtt"] = vtt_path
 
         return result

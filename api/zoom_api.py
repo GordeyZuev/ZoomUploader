@@ -94,22 +94,21 @@ class ZoomAPI:
                     logger.info(f"Получено записей: {len(data.get('meetings', []))}")
                     # Логируем сырые данные от Zoom API
                     import json
-                    logger.debug(f"Сырые данные от Zoom API (get_recordings):\n{json.dumps(data, indent=2, ensure_ascii=False)}")
+
+                    logger.debug(
+                        f"Сырые данные от Zoom API (get_recordings):\n{json.dumps(data, indent=2, ensure_ascii=False)}"
+                    )
                     return data
                 else:
                     logger.error(
-                        f"Ошибка API для аккаунта {self.config.account}: "
-                        f"{response.status_code} - {response.text}"
+                        f"Ошибка API для аккаунта {self.config.account}: {response.status_code} - {response.text}"
                     )
-                    raise ZoomResponseError(
-                        f"Ошибка API: {response.status_code} - {response.text}"
-                    )
+                    raise ZoomResponseError(f"Ошибка API: {response.status_code} - {response.text}")
 
         except httpx.RequestError as e:
             error_type = type(e).__name__
             logger.error(
-                f"Ошибка сетевого запроса для аккаунта {self.config.account} "
-                f"({error_type}): {e}",
+                f"Ошибка сетевого запроса для аккаунта {self.config.account} ({error_type}): {e}",
                 exc_info=True,
             )
             raise ZoomRequestError(f"Ошибка сетевого запроса: {e}") from e
@@ -118,15 +117,12 @@ class ZoomAPI:
         except Exception as e:
             error_type = type(e).__name__
             logger.error(
-                f"Неожиданная ошибка для аккаунта {self.config.account} "
-                f"({error_type}): {e}",
+                f"Неожиданная ошибка для аккаунта {self.config.account} ({error_type}): {e}",
                 exc_info=True,
             )
             raise ZoomAPIError(f"Неожиданная ошибка: {e}") from e
 
-    async def get_recording_details(
-        self, meeting_id: str, include_download_token: bool = True
-    ) -> dict[str, Any]:
+    async def get_recording_details(self, meeting_id: str, include_download_token: bool = True) -> dict[str, Any]:
         """Получение детальной информации о конкретной записи."""
         access_token = await self.get_access_token()
         if not access_token:
@@ -148,7 +144,10 @@ class ZoomAPI:
                     data = response.json()
                     # Логируем сырые данные от Zoom API
                     import json
-                    logger.debug(f"Сырые данные от Zoom API (get_recording_details для meeting_id={meeting_id}):\n{json.dumps(data, indent=2, ensure_ascii=False)}")
+
+                    logger.debug(
+                        f"Сырые данные от Zoom API (get_recording_details для meeting_id={meeting_id}):\n{json.dumps(data, indent=2, ensure_ascii=False)}"
+                    )
                     return data
                 else:
                     logger.error(
@@ -156,9 +155,7 @@ class ZoomAPI:
                         f"при получении деталей записи {meeting_id}: "
                         f"{response.status_code} - {response.text}"
                     )
-                    raise ZoomResponseError(
-                        f"Ошибка API: {response.status_code} - {response.text}"
-                    )
+                    raise ZoomResponseError(f"Ошибка API: {response.status_code} - {response.text}")
 
         except httpx.RequestError as e:
             error_type = type(e).__name__

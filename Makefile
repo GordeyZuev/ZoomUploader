@@ -4,16 +4,91 @@ clean-pycache:
 	@find . -type d -name "__pycache__" -prune -exec rm -rf {} +
 	@find . -type f \( -name "*.pyc" -o -name "*.pyo" \) -delete
 
+# ==================== Production-Ready API Commands ====================
+
+# Setup: Установка всех зависимостей
+.PHONY: install
+install:
+	@echo "📦 Установка зависимостей..."
+	@uv pip install -r requirements.txt
+	@echo "✅ Готово!"
+
+# API: Запуск FastAPI сервера
+.PHONY: api
+api:
+	uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+
+# API: Production запуск (без reload)
+.PHONY: api-prod
+api-prod:
+	uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 4
+
+# Celery: Запуск worker
+.PHONY: celery
+celery:
+	celery -A api.celery_app worker --loglevel=info --queues=processing,upload --concurrency=4
+
+# Celery: Запуск Flower (мониторинг)
+.PHONY: flower
+flower:
+	celery -A api.celery_app flower --port=5555
+
+# Docker: Запуск PostgreSQL и Redis
+.PHONY: docker-up
+docker-up:
+	docker-compose up -d postgres redis
+
+# Docker: Остановка всех сервисов
+.PHONY: docker-down
+docker-down:
+	docker-compose down
+
+# Docker: Полная сборка и запуск
+.PHONY: docker-full
+docker-full:
+	docker-compose up --build -d
+
+# Database: Применить миграции
+.PHONY: migrate
+migrate:
+	alembic upgrade head
+
+# Database: Откатить последнюю миграцию
+.PHONY: migrate-down
+migrate-down:
+	alembic downgrade -1
+
+# Database: Создать новую миграцию
+.PHONY: migration
+migration:
+	@read -p "Enter migration name: " name; \
+	alembic revision --autogenerate -m "$$name"
+
+# Tests: Запуск всех тестов
+.PHONY: test
+test:
+	pytest tests/ -v
+
 .PHONY: help
 help:
 	@echo "📦 Установка и обновление:"
-	@echo "  make install        - Установка зависимостей (uv sync)"
+	@echo "  make install        - Установка зависимостей из requirements.txt"
+	@echo "  make uv-install     - Установка через uv sync"
 	@echo "  make uv-update      - Обновить lock и синхронизировать"
 	@echo ""
 	@echo "🔍 Проверка и форматирование:"
-	@echo "  make lint           - Проверка кода ruff"
-	@echo "  make lint-fix       - Авто-исправления ruff"
-	@echo "  make format         - Форматирование ruff"
+	@echo "  make lint           - Проверка кода (ruff check)"
+	@echo "  make lint-fix       - Авто-исправления (ruff check --fix)"
+	@echo "  make format         - Форматирование (ruff format)"
+	@echo ""
+	@echo "🚀 Production API:"
+	@echo "  make api            - Запуск FastAPI (dev режим)"
+	@echo "  make api-prod       - Запуск FastAPI (production)"
+	@echo "  make celery         - Запуск Celery worker"
+	@echo "  make flower         - Запуск Flower (мониторинг)"
+	@echo "  make docker-up      - Запуск PostgreSQL + Redis"
+	@echo "  make docker-down    - Остановка сервисов"
+	@echo "  make migrate        - Применить миграции БД"
 	@echo ""
 	@echo "📋 Работа с записями:"
 	@echo "  make list           - Показать записи за сегодня"
@@ -45,9 +120,7 @@ help:
 	@echo "ℹ️ Справка:"
 	@echo "  make run-help       - Показать help приложения"
 
-.PHONY: install uv-install uv-update uv-run
-install: uv-install
-
+.PHONY: uv-install uv-update uv-run
 uv-install:
 	@uv sync
 

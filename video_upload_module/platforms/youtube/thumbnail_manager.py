@@ -19,7 +19,7 @@ class YouTubeThumbnailManager:
     def __init__(self, service, config: YouTubeConfig):
         self.service = service
         self.config = config
-        self.supported_formats = ['jpg', 'jpeg', 'png', 'gif']
+        self.supported_formats = ["jpg", "jpeg", "png", "gif"]
         self.max_file_size = 2 * 1024 * 1024  # 2MB
         self.recommended_size = (1280, 720)  # 16:9
 
@@ -32,7 +32,7 @@ class YouTubeThumbnailManager:
         if file_size > self.max_file_size:
             return False, f"Файл слишком большой: {file_size / 1024 / 1024:.1f}MB > 2MB"
 
-        file_ext = os.path.splitext(thumbnail_path)[1].lower().lstrip('.')
+        file_ext = os.path.splitext(thumbnail_path)[1].lower().lstrip(".")
         if file_ext not in self.supported_formats:
             return (
                 False,
@@ -50,7 +50,7 @@ class YouTubeThumbnailManager:
             return False
 
         try:
-            media = MediaFileUpload(thumbnail_path, mimetype='image/jpeg')
+            media = MediaFileUpload(thumbnail_path, mimetype="image/jpeg")
             self.service.thumbnails().set(videoId=video_id, media_body=media).execute()
 
             logger.info(f"🖼️ Миниатюра установлена для видео {video_id}")
@@ -66,21 +66,21 @@ class YouTubeThumbnailManager:
     async def get_thumbnail_info(self, video_id: str) -> dict[str, Any] | None:
         """Получение информации о миниатюре видео"""
         try:
-            request = self.service.videos().list(part='snippet', id=video_id)
+            request = self.service.videos().list(part="snippet", id=video_id)
             response = request.execute()
 
-            if response['items']:
-                video = response['items'][0]
-                thumbnails = video['snippet'].get('thumbnails', {})
+            if response["items"]:
+                video = response["items"][0]
+                thumbnails = video["snippet"].get("thumbnails", {})
 
                 # Возвращаем информацию о доступных миниатюрах
                 return {
-                    'video_id': video_id,
-                    'has_custom_thumbnail': 'maxres' in thumbnails or 'standard' in thumbnails,
-                    'available_sizes': list(thumbnails.keys()),
-                    'default_thumbnail': thumbnails.get('default', {}).get('url'),
-                    'high_thumbnail': thumbnails.get('high', {}).get('url'),
-                    'maxres_thumbnail': thumbnails.get('maxres', {}).get('url'),
+                    "video_id": video_id,
+                    "has_custom_thumbnail": "maxres" in thumbnails or "standard" in thumbnails,
+                    "available_sizes": list(thumbnails.keys()),
+                    "default_thumbnail": thumbnails.get("default", {}).get("url"),
+                    "high_thumbnail": thumbnails.get("high", {}).get("url"),
+                    "maxres_thumbnail": thumbnails.get("maxres", {}).get("url"),
                 }
 
             return None
@@ -89,9 +89,7 @@ class YouTubeThumbnailManager:
             logger.error(f"❌ Ошибка получения информации о миниатюре: {e}")
             return None
 
-    async def download_thumbnail(
-        self, video_id: str, output_path: str, size: str = "maxres"
-    ) -> bool:
+    async def download_thumbnail(self, video_id: str, output_path: str, size: str = "maxres") -> bool:
         """Скачивание миниатюры видео"""
         try:
             thumbnail_info = await self.get_thumbnail_info(video_id)
@@ -100,12 +98,12 @@ class YouTubeThumbnailManager:
 
             # Выбираем размер миниатюры
             thumbnail_url = None
-            if size in thumbnail_info.get('available_sizes', []):
-                thumbnail_url = thumbnail_info.get(f'{size}_thumbnail')
-            elif 'high_thumbnail' in thumbnail_info:
-                thumbnail_url = thumbnail_info['high_thumbnail']
-            elif 'default_thumbnail' in thumbnail_info:
-                thumbnail_url = thumbnail_info['default_thumbnail']
+            if size in thumbnail_info.get("available_sizes", []):
+                thumbnail_url = thumbnail_info.get(f"{size}_thumbnail")
+            elif "high_thumbnail" in thumbnail_info:
+                thumbnail_url = thumbnail_info["high_thumbnail"]
+            elif "default_thumbnail" in thumbnail_info:
+                thumbnail_url = thumbnail_info["default_thumbnail"]
 
             if not thumbnail_url:
                 logger.warning(f"❌ Миниатюра размера {size} не найдена")
@@ -115,7 +113,7 @@ class YouTubeThumbnailManager:
             async with aiohttp.ClientSession() as session:
                 async with session.get(thumbnail_url) as response:
                     if response.status == 200:
-                        with open(output_path, 'wb') as f:
+                        with open(output_path, "wb") as f:
                             async for chunk in response.content.iter_chunked(8192):
                                 f.write(chunk)
 
@@ -146,14 +144,14 @@ class YouTubeThumbnailManager:
     def get_thumbnail_recommendations(self) -> dict[str, Any] | None:
         """Получение рекомендаций по миниатюрам"""
         return {
-            'recommended_size': f"{self.recommended_size[0]}x{self.recommended_size[1]}",
-            'aspect_ratio': '16:9',
-            'max_file_size_mb': self.max_file_size / (1024 * 1024),
-            'supported_formats': self.supported_formats,
-            'tips': [
-                'Используйте яркие, контрастные цвета',
-                'Добавьте текст с названием видео',
-                'Избегайте мелких деталей',
-                'Проверьте как миниатюра выглядит на мобильных устройствах',
+            "recommended_size": f"{self.recommended_size[0]}x{self.recommended_size[1]}",
+            "aspect_ratio": "16:9",
+            "max_file_size_mb": self.max_file_size / (1024 * 1024),
+            "supported_formats": self.supported_formats,
+            "tips": [
+                "Используйте яркие, контрастные цвета",
+                "Добавьте текст с названием видео",
+                "Избегайте мелких деталей",
+                "Проверьте как миниатюра выглядит на мобильных устройствах",
             ],
         }

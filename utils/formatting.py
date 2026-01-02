@@ -10,9 +10,9 @@ def normalize_datetime_string(date_string: str) -> str:
         return date_string
 
     time_str = date_string
-    if time_str.endswith('Z'):
+    if time_str.endswith("Z"):
         time_str = time_str[:-1]
-    if time_str.endswith('+00:00'):
+    if time_str.endswith("+00:00"):
         time_str = time_str[:-6]
 
     return time_str
@@ -67,12 +67,12 @@ def format_date(date_input: str | datetime) -> str:
             date_str = str(date_input).strip()
 
             # Заменяем 'Z' на '+00:00' для правильного парсинга UTC
-            if date_str.endswith('Z'):
-                date_str = date_str[:-1] + '+00:00'
+            if date_str.endswith("Z"):
+                date_str = date_str[:-1] + "+00:00"
             else:
                 # Если нет 'Z', добавляем UTC (для обратной совместимости)
-                if 'T' in date_str and '+' not in date_str and '-' not in date_str[-6:]:
-                    date_str = date_str + '+00:00'
+                if "T" in date_str and "+" not in date_str and "-" not in date_str[-6:]:
+                    date_str = date_str + "+00:00"
 
             dt = datetime.fromisoformat(date_str)
 
@@ -91,5 +91,3 @@ def format_date(date_input: str | datetime) -> str:
         return dt_local.strftime("%d.%m.%Y %H:%M:%S")
     except (ValueError, TypeError):
         return str(date_input) if date_input else ""
-
-

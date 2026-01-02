@@ -21,9 +21,7 @@ class DatabaseSettings(BaseSettings):
     @property
     def sync_url(self) -> str:
         """Синхронный URL для Alembic"""
-        return (
-            f"postgresql://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}"
-        )
+        return f"postgresql://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}"
 
 
 class LoggingSettings(BaseSettings):
@@ -32,12 +30,8 @@ class LoggingSettings(BaseSettings):
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         default="INFO", description="Уровень логирования"
     )
-    format: str = Field(
-        default="%(asctime)s - %(name)s - %(levelname)s - %(message)s", description="Формат логов"
-    )
-    file_path: str | None = Field(
-        default=None, description="Путь к файлу логов (если None - только консоль)"
-    )
+    format: str = Field(default="%(asctime)s - %(name)s - %(levelname)s - %(message)s", description="Формат логов")
+    file_path: str | None = Field(default=None, description="Путь к файлу логов (если None - только консоль)")
 
 
 MEDIA_ROOT = "media"
@@ -46,31 +40,21 @@ MEDIA_ROOT = "media"
 class ProcessingSettings(BaseSettings):
     """Настройки обработки видео"""
 
-    input_dir: str = Field(
-        default=f"{MEDIA_ROOT}/video/unprocessed", description="Директория входящих видео"
-    )
-    output_dir: str = Field(
-        default=f"{MEDIA_ROOT}/video/processed", description="Директория обработанных видео"
-    )
+    input_dir: str = Field(default=f"{MEDIA_ROOT}/video/unprocessed", description="Директория входящих видео")
+    output_dir: str = Field(default=f"{MEDIA_ROOT}/video/processed", description="Директория обработанных видео")
     temp_dir: str = Field(default=f"{MEDIA_ROOT}/video/temp_processing", description="Временная директория")
 
     # Настройки FFmpeg - только обрезка без изменения качества
     video_codec: str = Field(default="copy", description="Видео кодек (copy = без перекодирования)")
     audio_codec: str = Field(default="copy", description="Аудио кодек (copy = без перекодирования)")
-    video_bitrate: str = Field(
-        default="original", description="Битрейт видео (original = не изменять)"
-    )
-    audio_bitrate: str = Field(
-        default="original", description="Битрейт аудио (original = не изменять)"
-    )
+    video_bitrate: str = Field(default="original", description="Битрейт видео (original = не изменять)")
+    audio_bitrate: str = Field(default="original", description="Битрейт аудио (original = не изменять)")
     fps: int = Field(default=0, description="FPS (0 = не изменять)")
     resolution: str = Field(default="original", description="Разрешение (original = не изменять)")
 
     # Настройки детекции звука
     silence_threshold: float = Field(default=-40.0, description="Порог тишины в дБ")
-    min_silence_duration: float = Field(
-        default=2.0, description="Минимальная длительность тишины в секундах"
-    )
+    min_silence_duration: float = Field(default=2.0, description="Минимальная длительность тишины в секундах")
     padding_before: float = Field(default=5.0, description="Отступ до звука в секундах")
     padding_after: float = Field(default=5.0, description="Отступ после звука в секундах")
 
@@ -87,9 +71,7 @@ class ProcessingSettings(BaseSettings):
 class ZoomSettings(BaseSettings):
     """Настройки Zoom API"""
 
-    config_file: str = Field(
-        default="config/zoom_creds.json", description="Путь к файлу конфигурации Zoom"
-    )
+    config_file: str = Field(default="config/zoom_creds.json", description="Путь к файлу конфигурации Zoom")
     download_dir: str = Field(
         default=f"{MEDIA_ROOT}/video/unprocessed", description="Директория для скачивания записей"
     )
@@ -101,9 +83,7 @@ class UploadSettings(BaseSettings):
     youtube_config_file: str = Field(
         default="config/youtube_creds.json", description="Путь к файлу конфигурации YouTube"
     )
-    vk_config_file: str = Field(
-        default="config/vk_creds.json", description="Путь к файлу конфигурации VK"
-    )
+    vk_config_file: str = Field(default="config/vk_creds.json", description="Путь к файлу конфигурации VK")
 
 
 class ZoomConfig:
@@ -125,29 +105,29 @@ def load_config_from_file(config_file: str) -> dict:
     if not os.path.exists(config_file):
         return {}
 
-    with open(config_file, encoding='utf-8') as f:
+    with open(config_file, encoding="utf-8") as f:
         data = json.load(f)
 
     configs = {}
 
     # Обрабатываем структуру с массивом аккаунтов
-    if 'accounts' in data:
-        for account_data in data['accounts']:
-            account = account_data['account']
+    if "accounts" in data:
+        for account_data in data["accounts"]:
+            account = account_data["account"]
             configs[account] = ZoomConfig(
-                account=account_data['account'],
-                account_id=account_data['account_id'],
-                client_id=account_data['client_id'],
-                client_secret=account_data['client_secret'],
+                account=account_data["account"],
+                account_id=account_data["account_id"],
+                client_id=account_data["client_id"],
+                client_secret=account_data["client_secret"],
             )
     else:
         # Обрабатываем старую структуру со словарем
         for account, config_data in data.items():
             configs[account] = ZoomConfig(
-                account=config_data['account'],
-                account_id=config_data['account_id'],
-                client_id=config_data['client_id'],
-                client_secret=config_data['client_secret'],
+                account=config_data["account"],
+                account_id=config_data["account_id"],
+                client_id=config_data["client_id"],
+                client_secret=config_data["client_secret"],
             )
 
     return configs

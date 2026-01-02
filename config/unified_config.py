@@ -45,8 +45,8 @@ class YouTubeConfig(PlatformConfig):
     )
     scopes: list[str] = Field(
         default_factory=lambda: [
-            'https://www.googleapis.com/auth/youtube.upload',
-            'https://www.googleapis.com/auth/youtube.force-ssl',
+            "https://www.googleapis.com/auth/youtube.upload",
+            "https://www.googleapis.com/auth/youtube.force-ssl",
         ],
         description="Scopes для YouTube API",
     )
@@ -75,7 +75,7 @@ class YouTubeConfig(PlatformConfig):
         if not os.path.exists(self.client_secrets_file):
             logger.warning(f"⚠️ Файл с секретами клиента не найден: {self.client_secrets_file}")
 
-        if self.default_privacy not in ['private', 'unlisted', 'public']:
+        if self.default_privacy not in ["private", "unlisted", "public"]:
             logger.error(f"❌ Неверный статус приватности: {self.default_privacy}")
             return False
 
@@ -147,7 +147,7 @@ class UploadSettings(BaseSettings):
         description="Максимальный размер файла в МБ",
     )
     supported_formats: list[str] = Field(
-        default_factory=lambda: ['mp4', 'avi', 'mov', 'mkv', 'webm', 'm4v'],
+        default_factory=lambda: ["mp4", "avi", "mov", "mkv", "webm", "m4v"],
         description="Поддерживаемые форматы файлов",
     )
     retry_attempts: int = Field(
@@ -176,12 +176,9 @@ class UploadSettings(BaseSettings):
 
         file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
         if file_size_mb > self.max_file_size_mb:
-            return (
-                False,
-                f"Файл слишком большой: {file_size_mb:.1f}MB > {self.max_file_size_mb}MB"
-            )
+            return (False, f"Файл слишком большой: {file_size_mb:.1f}MB > {self.max_file_size_mb}MB")
 
-        file_ext = os.path.splitext(file_path)[1].lower().lstrip('.')
+        file_ext = os.path.splitext(file_path)[1].lower().lstrip(".")
         if file_ext not in self.supported_formats:
             return False, f"Неподдерживаемый формат: {file_ext}"
 
@@ -240,9 +237,7 @@ class AppConfig(BaseSettings):
         """Валидация конфигураций платформ."""
         for platform_name, platform_config in self.platforms.items():
             if not isinstance(platform_config, PlatformConfig):
-                raise ValueError(
-                    f"Платформа {platform_name} должна быть экземпляром PlatformConfig"
-                )
+                raise ValueError(f"Платформа {platform_name} должна быть экземпляром PlatformConfig")
             if not platform_config.validate():
                 raise ValueError(f"Ошибка валидации платформы {platform_name}")
         return self
@@ -270,7 +265,7 @@ class UnifiedConfigLoader:
             if not os.path.exists(self.config_file):
                 raise FileNotFoundError(f"Файл конфигурации не найден: {self.config_file}")
 
-            with open(self.config_file, encoding='utf-8') as f:
+            with open(self.config_file, encoding="utf-8") as f:
                 data = json.load(f)
 
             self.logger.info(f"✅ Конфигурация загружена из {self.config_file}")
@@ -295,7 +290,7 @@ class UnifiedConfigLoader:
                 self.logger.warning(f"⚠️ Файл с credentials не найден: {credentials_file}")
                 return {}
 
-            with open(credentials_file, encoding='utf-8') as f:
+            with open(credentials_file, encoding="utf-8") as f:
                 data = json.load(f)
 
             self.logger.info(f"✅ Credentials загружены из {credentials_file}")
@@ -331,7 +326,7 @@ class UnifiedConfigLoader:
 
             # Если bundle содержит сами секреты (client_secrets) и/или token, используем один общий файл
             is_bundle_with_embedded = isinstance(yt_bundle_data, dict) and (
-                'client_secrets' in yt_bundle_data or 'token' in yt_bundle_data
+                "client_secrets" in yt_bundle_data or "token" in yt_bundle_data
             )
 
             if is_bundle_with_embedded:
@@ -356,8 +351,8 @@ class UnifiedConfigLoader:
                 yt_bundle_data.get("scopes")
                 or (yt_bundle_data.get("token", {}) or {}).get("scopes")
                 or [
-                    'https://www.googleapis.com/auth/youtube.upload',
-                    'https://www.googleapis.com/auth/youtube.force-ssl',
+                    "https://www.googleapis.com/auth/youtube.upload",
+                    "https://www.googleapis.com/auth/youtube.force-ssl",
                 ]
             )
 
@@ -434,7 +429,7 @@ class UnifiedConfigLoader:
                         "repeat": platform_config.repeat,
                     }
 
-            with open(self.config_file, 'w', encoding='utf-8') as f:
+            with open(self.config_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
 
             self.logger.info(f"✅ Конфигурация сохранена в {self.config_file}")

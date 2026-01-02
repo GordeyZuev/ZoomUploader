@@ -1,6 +1,9 @@
 from .recording import (
     MeetingRecording,
     OutputTarget,
+    ProcessingStage,
+    ProcessingStageStatus,
+    ProcessingStageType,
     ProcessingStatus,
     SourceType,
     TargetStatus,
@@ -8,10 +11,13 @@ from .recording import (
 )
 
 __all__ = [
-    'MeetingRecording',
-    'ProcessingStatus',
-    'SourceType',
-    'TargetType',
-    'TargetStatus',
-    'OutputTarget',
+    "MeetingRecording",
+    "ProcessingStatus",
+    "ProcessingStage",
+    "ProcessingStageType",
+    "ProcessingStageStatus",
+    "SourceType",
+    "TargetType",
+    "TargetStatus",
+    "OutputTarget",
 ]

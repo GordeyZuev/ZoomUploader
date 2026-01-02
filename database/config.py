@@ -60,10 +60,7 @@ class DatabaseConfig(BaseSettings):
         Returns:
             str: PostgreSQL async URL
         """
-        return (
-            f"postgresql+asyncpg://{self.username}:{self.password}@"
-            f"{self.host}:{self.port}/{self.database}"
-        )
+        return f"postgresql+asyncpg://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}"
 
     @property
     def sync_url(self) -> str:
@@ -73,7 +70,4 @@ class DatabaseConfig(BaseSettings):
         Returns:
             str: PostgreSQL sync URL
         """
-        return (
-            f"postgresql://{self.username}:{self.password}@"
-            f"{self.host}:{self.port}/{self.database}"
-        )
+        return f"postgresql://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}"

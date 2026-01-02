@@ -29,10 +29,7 @@ def test_subtitle_generation():
             print(f"   Последняя запись: {entries[-1]}")
 
         # Генерируем субтитры
-        result = generator.generate_from_transcription(
-            transcription_path=test_transcription,
-            formats=['srt', 'vtt']
-        )
+        result = generator.generate_from_transcription(transcription_path=test_transcription, formats=["srt", "vtt"])
 
         print("\n✅ Субтитры успешно сгенерированы:")
         for fmt, path in result.items():
@@ -45,8 +42,9 @@ def test_subtitle_generation():
     except Exception as e:
         print(f"❌ Ошибка: {e}")
         import traceback
+
         traceback.print_exc()
+
 
 if __name__ == "__main__":
     test_subtitle_generation()
-

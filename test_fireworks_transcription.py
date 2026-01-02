@@ -44,11 +44,11 @@ async def test_fireworks_transcription(audio_path: str):
         logger.info(f"📊 Количество сегментов: {len(result.get('topic_timestamps', []))}")
         logger.info(f"📁 Папка транскрипции: {result.get('transcription_dir', 'N/A')}")
 
-        if result.get('main_topics'):
+        if result.get("main_topics"):
             logger.info(f"🔍 Основные темы: {', '.join(result['main_topics'])}")
 
         # Показываем первые 500 символов текста
-        text = result.get('transcription_text', '')
+        text = result.get("transcription_text", "")
         if text:
             preview = text[:500] + "..." if len(text) > 500 else text
             logger.info(f"\n📖 Превью транскрипции:\n{preview}\n")
@@ -58,6 +58,7 @@ async def test_fireworks_transcription(audio_path: str):
     except Exception as e:
         logger.error(f"❌ Ошибка при транскрибации: {e}")
         import traceback
+
         logger.error(traceback.format_exc())
         return False
 
@@ -90,4 +91,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

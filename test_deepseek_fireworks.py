@@ -82,9 +82,7 @@ async def test_deepseek_fireworks_extraction(
     # Парсим транскрипцию
     try:
         transcription_text, segments = parse_transcription_file(transcription_file)
-        logger.info(
-            f"✅ Загружено: {len(segments)} сегментов, {len(transcription_text)} символов"
-        )
+        logger.info(f"✅ Загружено: {len(segments)} сегментов, {len(transcription_text)} символов")
     except Exception as e:
         logger.error(f"❌ Ошибка при парсинге транскрипции: {e}")
         sys.exit(1)
@@ -97,8 +95,7 @@ async def test_deepseek_fireworks_extraction(
     try:
         deepseek_config = DeepSeekConfig.from_file("config/deepseek_fireworks_creds.json")
         logger.info(
-            f"✅ Конфигурация Fireworks DeepSeek загружена: {deepseek_config.base_url}, "
-            f"model={deepseek_config.model}"
+            f"✅ Конфигурация Fireworks DeepSeek загружена: {deepseek_config.base_url}, model={deepseek_config.model}"
         )
     except Exception as e:
         logger.error(f"❌ Ошибка загрузки конфигурации Fireworks DeepSeek: {e}")
@@ -112,9 +109,7 @@ async def test_deepseek_fireworks_extraction(
         sys.exit(1)
 
     # Запускаем извлечение тем
-    logger.info(
-        f"🚀 Начало извлечения тем через Fireworks DeepSeek (режим: {granularity})..."
-    )
+    logger.info(f"🚀 Начало извлечения тем через Fireworks DeepSeek (режим: {granularity})...")
 
     try:
         result = await topic_extractor.extract_topics(
@@ -158,7 +153,7 @@ async def test_deepseek_fireworks_extraction(
                 end_str = f"{end_h:02d}:{end_m:02d}:{end_s:02d}"
                 duration = end - start
 
-                print(f"   [{start_str} - {end_str}] ({duration/60:.1f} мин) {topic}")
+                print(f"   [{start_str} - {end_str}] ({duration / 60:.1f} мин) {topic}")
         else:
             print("\n⚠️ Детализированные топики не найдены")
 
@@ -190,10 +185,6 @@ if __name__ == "__main__":
     )
     def main(transcription_file, topic, granularity):
         """Тестирование извлечения тем через DeepSeek v3.2 на Fireworks."""
-        asyncio.run(
-            test_deepseek_fireworks_extraction(transcription_file, topic, granularity)
-        )
+        asyncio.run(test_deepseek_fireworks_extraction(transcription_file, topic, granularity))
 
     main()
-
-

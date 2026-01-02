@@ -10,22 +10,20 @@ from .formatting import format_duration, format_file_size, normalize_datetime_st
 logger = get_logger()
 
 
-def process_meetings_data(
-    response_data: dict[str, Any], filter_video_only: bool = True
-) -> list[MeetingRecording]:
+def process_meetings_data(response_data: dict[str, Any], filter_video_only: bool = True) -> list[MeetingRecording]:
     """Обработка данных встреч из API ответа. Каждая MP4-подчасть превращается в отдельную MeetingRecording."""
-    meetings = response_data.get('meetings', [])
+    meetings = response_data.get("meetings", [])
     processed_meetings = []
 
     mp4_priorities = {
-        'shared_screen_with_speaker_view': 3,
-        'shared_screen': 2,
-        'active_speaker': 1,
+        "shared_screen_with_speaker_view": 3,
+        "shared_screen": 2,
+        "active_speaker": 1,
     }
 
     for meeting in meetings:
-        recording_files = meeting.get('recording_files', [])
-        mp4_files = [f for f in recording_files if f.get('file_type') == 'MP4']
+        recording_files = meeting.get("recording_files", [])
+        mp4_files = [f for f in recording_files if f.get("file_type") == "MP4"]
 
         if not mp4_files:
             if not filter_video_only:
@@ -38,7 +36,7 @@ def process_meetings_data(
 
         grouped: dict[str, list[dict[str, Any]]] = {}
         for f in mp4_files:
-            key = f.get('recording_start') or f.get('recordingStart') or f.get('id')
+            key = f.get("recording_start") or f.get("recordingStart") or f.get("id")
             grouped.setdefault(key, []).append(f)
 
         parts: list[dict[str, Any]] = []
@@ -47,8 +45,8 @@ def process_meetings_data(
             best_priority = -1
             best_size = -1
             for f in files:
-                p = mp4_priorities.get(f.get('recording_type'), 0)
-                s = f.get('file_size', 0) or 0
+                p = mp4_priorities.get(f.get("recording_type"), 0)
+                s = f.get("file_size", 0) or 0
                 if p > best_priority or (p == best_priority and s > best_size):
                     best_priority = p
                     best_size = s
@@ -57,15 +55,15 @@ def process_meetings_data(
                 parts.append(best)
 
         def _sort_key(f: dict[str, Any]):
-            return f.get('recording_start') or f.get('recordingStart') or ""
+            return f.get("recording_start") or f.get("recordingStart") or ""
 
         parts.sort(key=_sort_key)
 
         for idx, part in enumerate(parts, start=1):
-            part_start = part.get('recording_start') or part.get('recordingStart') or meeting.get('start_time', "")
-            part_end = part.get('recording_end') or part.get('recordingEnd')
+            part_start = part.get("recording_start") or part.get("recordingStart") or meeting.get("start_time", "")
+            part_end = part.get("recording_end") or part.get("recordingEnd")
 
-            duration_minutes = meeting.get('duration', 0)
+            duration_minutes = meeting.get("duration", 0)
             if part_start and part_end:
                 try:
                     start_dt = datetime.fromisoformat(normalize_datetime_string(part_start))
@@ -79,7 +77,7 @@ def process_meetings_data(
             meeting_data["recording_files"] = [part]
             meeting_data["start_time"] = part_start or meeting.get("start_time", "")
             meeting_data["duration"] = duration_minutes
-            meeting_data["source_key"] = f"{meeting.get('id','')}:{part_start}"
+            meeting_data["source_key"] = f"{meeting.get('id', '')}:{part_start}"
             meeting_data["part_index"] = idx
             meeting_data["video_file_size"] = part.get("file_size")
 
@@ -150,9 +148,7 @@ async def get_recordings_by_date_range(
     """Получение записей по диапазону дат через API."""
     try:
         logger.info(f"Получение записей: {start_date} - {end_date or 'текущая дата'}")
-        response = await api.get_recordings(
-            page_size=page_size, from_date=start_date, to_date=end_date
-        )
+        response = await api.get_recordings(page_size=page_size, from_date=start_date, to_date=end_date)
 
         recordings = process_meetings_data(response, filter_video_only)
 
@@ -160,28 +156,26 @@ async def get_recordings_by_date_range(
         enhanced_recordings = []
         for recording in recordings:
             try:
-                logger.debug(f"Получение детальной информации: meeting_id={recording.meeting_id} | recording={recording.display_name}")
-                detailed_data = await api.get_recording_details(
-                    recording.meeting_id, include_download_token=True
+                logger.debug(
+                    f"Получение детальной информации: meeting_id={recording.meeting_id} | recording={recording.display_name}"
                 )
+                detailed_data = await api.get_recording_details(recording.meeting_id, include_download_token=True)
 
                 # Обновляем запись с детальной информацией
-                recording.password = detailed_data.get('password')
-                recording.recording_play_passcode = detailed_data.get('recording_play_passcode')
-                recording.download_access_token = detailed_data.get('download_access_token')
+                recording.password = detailed_data.get("password")
+                recording.recording_play_passcode = detailed_data.get("recording_play_passcode")
+                recording.download_access_token = detailed_data.get("download_access_token")
 
                 # Сохраняем полный детальный ответ от Zoom API в source_metadata
                 # Это включает download_access_token, password и все остальные поля из get_recording_details
-                if not hasattr(recording, 'source_metadata') or not isinstance(recording.source_metadata, dict):
+                if not hasattr(recording, "source_metadata") or not isinstance(recording.source_metadata, dict):
                     recording.source_metadata = {}
                 recording.source_metadata["zoom_api_details"] = detailed_data
 
                 enhanced_recordings.append(recording)
 
             except Exception as e:
-                logger.warning(
-                    f"Не удалось получить детальную информацию для записи {recording.meeting_id}: {e}"
-                )
+                logger.warning(f"Не удалось получить детальную информацию для записи {recording.meeting_id}: {e}")
                 # Добавляем запись без детальной информации
                 enhanced_recordings.append(recording)
 
@@ -201,9 +195,7 @@ def filter_recordings_by_duration(
     return [recording for recording in recordings if recording.is_long_enough(min_duration_minutes)]
 
 
-def filter_recordings_by_size(
-    recordings: list[MeetingRecording], min_size_mb: int = 30
-) -> list[MeetingRecording]:
+def filter_recordings_by_size(recordings: list[MeetingRecording], min_size_mb: int = 30) -> list[MeetingRecording]:
     """Фильтрация записей по минимальному размеру."""
     min_size_bytes = min_size_mb * 1024 * 1024
     return [recording for recording in recordings if recording.video_file_size >= min_size_bytes]
@@ -254,12 +246,12 @@ def get_recordings_statistics(recordings: list[MeetingRecording]) -> dict[str, A
     """Получение статистики по записям."""
     if not recordings:
         return {
-            'total_recordings': 0,
-            'total_duration_minutes': 0,
-            'total_video_size_bytes': 0,
-            'total_chat_size_bytes': 0,
-            'status_counts': {},
-            'topics_count': 0,
+            "total_recordings": 0,
+            "total_duration_minutes": 0,
+            "total_video_size_bytes": 0,
+            "total_chat_size_bytes": 0,
+            "status_counts": {},
+            "topics_count": 0,
         }
 
     total_duration = sum(rec.duration or 0 for rec in recordings)
@@ -271,17 +263,17 @@ def get_recordings_statistics(recordings: list[MeetingRecording]) -> dict[str, A
         status = recording.status.value
         status_counts[status] = status_counts.get(status, 0) + 1
 
-    topics = set(rec.display_name for rec in recordings if rec.display_name)
+    topics = {rec.display_name for rec in recordings if rec.display_name}
 
     return {
-        'total_recordings': len(recordings),
-        'total_duration_minutes': total_duration,
-        'total_duration_formatted': format_duration(total_duration),
-        'total_video_size_bytes': total_video_size,
-        'total_video_size_formatted': format_file_size(total_video_size),
-        'total_chat_size_bytes': total_chat_size,
-        'total_chat_size_formatted': format_file_size(total_chat_size),
-        'status_counts': status_counts,
-        'topics_count': len(topics),
-        'topics': list(topics),
+        "total_recordings": len(recordings),
+        "total_duration_minutes": total_duration,
+        "total_duration_formatted": format_duration(total_duration),
+        "total_video_size_bytes": total_video_size,
+        "total_video_size_formatted": format_file_size(total_video_size),
+        "total_chat_size_bytes": total_chat_size,
+        "total_chat_size_formatted": format_file_size(total_chat_size),
+        "status_counts": status_counts,
+        "topics_count": len(topics),
+        "topics": list(topics),
     }

@@ -3,7 +3,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, TypeVar
 
-T = TypeVar('T', bound=Enum)
+T = TypeVar("T", bound=Enum)
 
 
 def _normalize_enum(value: T | str, enum_class: type[T]) -> T:
@@ -23,7 +23,6 @@ class ProcessingStatus(Enum):
     TRANSCRIBED = "transcribed"  # Транскрибировано
     UPLOADING = "uploading"  # В процессе выгрузки
     UPLOADED = "uploaded"  # Выгружено в API
-    FAILED = "failed"  # Ошибка обработки
     SKIPPED = "skipped"  # Пропущено
     EXPIRED = "expired"  # Устарело (очищено)
 
@@ -59,6 +58,25 @@ class TargetStatus(Enum):
     FAILED = "failed"
 
 
+class ProcessingStageType(Enum):
+    """Типы этапов обработки записи."""
+
+    TRANSCRIPTION = "transcription"  # Транскрибация аудио
+    TOPIC_EXTRACTION = "topic_extraction"  # Извлечение тем
+    SUBTITLE_GENERATION = "subtitle_generation"  # Генерация субтитров
+    TRANSLATION = "translation"  # Перевод (будущее)
+
+
+class ProcessingStageStatus(Enum):
+    """Статусы отдельного этапа обработки."""
+
+    PENDING = "pending"  # Ожидает выполнения
+    IN_PROGRESS = "in_progress"  # В процессе
+    COMPLETED = "completed"  # Завершено успешно
+    FAILED = "failed"  # Ошибка
+    SKIPPED = "skipped"  # Пропущено
+
+
 class OutputTarget:
     """Отдельный таргет вывода (YouTube, VK, диск и т.д.)."""
 
@@ -86,6 +104,68 @@ class OutputTarget:
         self.uploaded_at = datetime.utcnow()
 
 
+class ProcessingStage:
+    """Отдельный этап обработки записи (FSM модель)."""
+
+    def __init__(
+        self,
+        stage_type: ProcessingStageType,
+        status: ProcessingStageStatus = ProcessingStageStatus.PENDING,
+        failed: bool = False,
+        failed_at: datetime | None = None,
+        failed_reason: str | None = None,
+        retry_count: int = 0,
+        stage_meta: dict[str, Any] | None = None,
+        completed_at: datetime | None = None,
+    ):
+        self.stage_type = stage_type
+        self.status = status
+        self.failed = failed
+        self.failed_at = failed_at
+        self.failed_reason = failed_reason
+        self.retry_count = retry_count
+        self.stage_meta: dict[str, Any] = stage_meta or {}
+        self.completed_at = completed_at
+
+    def mark_completed(self, meta: dict[str, Any] | None = None):
+        """Пометить этап как завершенный (FSM: переход в COMPLETED)."""
+        self.status = ProcessingStageStatus.COMPLETED
+        self.failed = False
+        self.completed_at = datetime.utcnow()
+        if meta:
+            self.stage_meta.update(meta)
+
+    def mark_in_progress(self):
+        """Пометить этап как выполняющийся (FSM: переход в IN_PROGRESS)."""
+        self.status = ProcessingStageStatus.IN_PROGRESS
+        # Сбрасываем failed при новом запуске
+        if self.failed:
+            self.failed = False
+
+    def mark_failed(self, reason: str):
+        """Пометить этап как провалившийся (FSM: переход в FAILED)."""
+        self.status = ProcessingStageStatus.FAILED
+        self.failed = True
+        self.failed_at = datetime.utcnow()
+        self.failed_reason = reason
+        self.retry_count += 1
+
+    def mark_skipped(self):
+        """Пометить этап как пропущенный (FSM: переход в SKIPPED)."""
+        self.status = ProcessingStageStatus.SKIPPED
+
+    def can_retry(self, max_retries: int = 2) -> bool:
+        """Проверить возможность retry этапа (FSM: проверка переходов)."""
+        return self.failed and self.status == ProcessingStageStatus.FAILED and self.retry_count < max_retries
+
+    def prepare_retry(self):
+        """Подготовить этап к retry (FSM: переход из FAILED в IN_PROGRESS)."""
+        if not self.can_retry():
+            raise ValueError(f"Cannot retry stage {self.stage_type.value}: retry limit exceeded")
+        self.status = ProcessingStageStatus.IN_PROGRESS
+        # failed_at и failed_reason оставляем для истории
+
+
 class MeetingRecording:
     """
     Класс для представления записи Zoom встречи
@@ -102,6 +182,12 @@ class MeetingRecording:
         self.status: ProcessingStatus = meeting_data.get("status", ProcessingStatus.INITIALIZED)
         self.is_mapped: bool = bool(meeting_data.get("is_mapped", False))
         self.expire_at: datetime | None = meeting_data.get("expire_at")
+
+        self.failed: bool = bool(meeting_data.get("failed", False))
+        self.failed_at: datetime | None = meeting_data.get("failed_at")
+        self.failed_reason: str | None = meeting_data.get("failed_reason")
+        self.failed_at_stage: str | None = meeting_data.get("failed_at_stage")
+        self.retry_count: int = int(meeting_data.get("retry_count", 0))
 
         # Источник
         source_type_raw = meeting_data.get("source_type") or SourceType.ZOOM.value
@@ -127,6 +213,9 @@ class MeetingRecording:
         self.transcription_info: Any | None = meeting_data.get("transcription_info")
         self.topic_timestamps: list[dict[str, Any]] | None = meeting_data.get("topic_timestamps")
         self.main_topics: list[str] | None = meeting_data.get("main_topics")
+
+        # Настройки обработки
+        self.processing_preferences: dict[str, Any] | None = meeting_data.get("processing_preferences")
 
         # Выходы
         raw_targets = meeting_data.get("output_targets", []) or []
@@ -160,6 +249,31 @@ class MeetingRecording:
         self.part_index: int | None = meeting_data.get("part_index")
         self.total_visible_parts: int | None = meeting_data.get("total_visible_parts")
 
+        raw_stages = meeting_data.get("processing_stages", []) or []
+        self.processing_stages: list[ProcessingStage] = []
+        for raw in raw_stages:
+            if isinstance(raw, ProcessingStage):
+                self.processing_stages.append(raw)
+            elif isinstance(raw, dict) and "stage_type" in raw:
+                try:
+                    stage_type = _normalize_enum(raw["stage_type"], ProcessingStageType)
+                    status_raw = raw.get("status", ProcessingStageStatus.PENDING)
+                    status = _normalize_enum(status_raw, ProcessingStageStatus)
+                    self.processing_stages.append(
+                        ProcessingStage(
+                            stage_type=stage_type,
+                            status=status,
+                            failed=bool(raw.get("failed", False)),
+                            failed_at=raw.get("failed_at"),
+                            failed_reason=raw.get("failed_reason"),
+                            retry_count=int(raw.get("retry_count", 0)),
+                            stage_meta=raw.get("stage_meta"),
+                            completed_at=raw.get("completed_at"),
+                        )
+                    )
+                except Exception:
+                    continue
+
         self._process_recording_files(meeting_data.get("recording_files", []))
 
     def _process_recording_files(self, recording_files: list[dict[str, Any]]) -> None:
@@ -171,9 +285,9 @@ class MeetingRecording:
         """
         # Приоритеты для выбора MP4 файла (чем выше приоритет, тем лучше)
         mp4_priorities = {
-            'shared_screen_with_speaker_view': 3,  # Лучший вариант - экран + спикер
-            'shared_screen': 2,                    # Хороший вариант - только экран
-            'active_speaker': 1,                   # Базовый вариант - только спикер
+            "shared_screen_with_speaker_view": 3,  # Лучший вариант - экран + спикер
+            "shared_screen": 2,  # Хороший вариант - только экран
+            "active_speaker": 1,  # Базовый вариант - только спикер
         }
 
         best_mp4_file = None
@@ -181,34 +295,93 @@ class MeetingRecording:
         best_size = -1
 
         for file_data in recording_files:
-            file_type = file_data.get('file_type', '')
-            file_size = file_data.get('file_size', 0)
-            download_url = file_data.get('download_url', '')
-            recording_type = file_data.get('recording_type', '')
+            file_type = file_data.get("file_type", "")
+            file_size = file_data.get("file_size", 0)
+            download_url = file_data.get("download_url", "")
+            recording_type = file_data.get("recording_type", "")
 
-            if file_type == 'MP4':
+            if file_type == "MP4":
                 priority = mp4_priorities.get(recording_type, 0)
                 if priority > best_priority or (priority == best_priority and file_size > best_size):
                     best_priority = priority
                     best_size = file_size or 0
                     best_mp4_file = {
-                        'file_size': file_size,
-                        'download_url': download_url,
-                        'recording_type': recording_type
+                        "file_size": file_size,
+                        "download_url": download_url,
+                        "recording_type": recording_type,
                     }
 
         if best_mp4_file:
-            self.video_file_size = best_mp4_file['file_size']
-            self.video_file_download_url = best_mp4_file['download_url']
+            self.video_file_size = best_mp4_file["file_size"]
+            self.video_file_download_url = best_mp4_file["download_url"]
 
-    def update_status(self, new_status: ProcessingStatus) -> None:
+    def update_status(
+        self,
+        new_status: ProcessingStatus,
+        failed: bool = False,
+        failed_reason: str | None = None,
+        failed_at_stage: str | None = None,
+    ) -> None:
         """
-        Обновление статуса записи.
+        Обновление статуса записи с поддержкой FSM полей (ADR-015).
 
         Args:
             new_status: Новый статус
+            failed: Флаг ошибки (если True, статус откатывается)
+            failed_reason: Причина ошибки
+            failed_at_stage: Этап, на котором произошла ошибка
         """
         self.status = new_status
+        if failed:
+            self.failed = True
+            self.failed_at = datetime.utcnow()
+            if failed_reason:
+                self.failed_reason = failed_reason
+            if failed_at_stage:
+                self.failed_at_stage = failed_at_stage
+        else:
+            # Сбрасываем failed при успешном переходе
+            self.failed = False
+
+    def mark_failure(
+        self,
+        reason: str,
+        rollback_to_status: ProcessingStatus | None = None,
+        failed_at_stage: str | None = None,
+    ) -> None:
+        """
+        Пометить запись как провалившуюся с откатом статуса (ADR-015).
+
+        Args:
+            reason: Причина ошибки
+            rollback_to_status: Статус для отката (если None, определяется автоматически)
+            failed_at_stage: Этап, на котором произошла ошибка
+        """
+        # Определяем статус для отката
+        if rollback_to_status is None:
+            # Автоматическое определение предыдущего статуса
+            if self.status == ProcessingStatus.DOWNLOADING:
+                rollback_to_status = ProcessingStatus.INITIALIZED
+            elif self.status == ProcessingStatus.PROCESSING:
+                rollback_to_status = ProcessingStatus.DOWNLOADED
+            elif self.status == ProcessingStatus.UPLOADING:
+                # Откат к TRANSCRIBED если есть, иначе PROCESSED
+                transcription_stage = self.get_stage(ProcessingStageType.TRANSCRIPTION)
+                if transcription_stage and transcription_stage.status == ProcessingStageStatus.COMPLETED:
+                    rollback_to_status = ProcessingStatus.TRANSCRIBED
+                else:
+                    rollback_to_status = ProcessingStatus.PROCESSED
+            else:
+                # Если статус не в процессе, оставляем как есть
+                rollback_to_status = self.status
+
+        # Откат статуса и установка FSM полей
+        self.status = rollback_to_status
+        self.failed = True
+        self.failed_at = datetime.utcnow()
+        self.failed_reason = reason
+        if failed_at_stage:
+            self.failed_at_stage = failed_at_stage
 
     def has_video(self) -> bool:
         """Проверка наличия видео файла"""
@@ -223,8 +396,13 @@ class MeetingRecording:
         return self.status in [ProcessingStatus.PROCESSED, ProcessingStatus.UPLOADED]
 
     def is_failed(self) -> bool:
-        """Проверка, завершилась ли обработка с ошибкой"""
-        return self.status == ProcessingStatus.FAILED
+        """
+        Проверка, завершилась ли обработка с ошибкой (FSM: проверка failed флага).
+
+        Согласно ADR-015, ошибки обрабатываются через флаг failed=true,
+        а не через статус FAILED. При ошибке статус откатывается к предыдущему этапу.
+        """
+        return self.failed
 
     def is_long_enough(self, min_duration_minutes: int = 30) -> bool:
         """Проверка, достаточно ли длинная запись"""
@@ -243,8 +421,17 @@ class MeetingRecording:
         return self.status == ProcessingStatus.DOWNLOADED and self.local_video_path is not None
 
     def is_ready_for_upload(self) -> bool:
-        """Проверка, готова ли запись для загрузки"""
-        return self.status == ProcessingStatus.PROCESSED and self.processed_video_path is not None
+        """
+        Проверка, готова ли запись для загрузки.
+
+        Запись готова если:
+        - Статус PROCESSED или TRANSCRIBED
+        - Есть обработанное видео
+        """
+        return (
+            self.status in [ProcessingStatus.PROCESSED, ProcessingStatus.TRANSCRIBED]
+            and self.processed_video_path is not None
+        )
 
     # --- Работа с таргетами ---
     def get_target(self, target_type: TargetType) -> OutputTarget | None:
@@ -260,6 +447,194 @@ class MeetingRecording:
         new_target = OutputTarget(target_type=target_type)
         self.output_targets.append(new_target)
         return new_target
+
+    # --- Работа с этапами обработки (FSM) ---
+    def get_stage(self, stage_type: ProcessingStageType) -> ProcessingStage | None:
+        """Получить этап обработки по типу."""
+        for stage in self.processing_stages:
+            if stage.stage_type == stage_type:
+                return stage
+        return None
+
+    def ensure_stage(self, stage_type: ProcessingStageType) -> ProcessingStage:
+        """Создать или получить этап обработки."""
+        existing = self.get_stage(stage_type)
+        if existing:
+            return existing
+        new_stage = ProcessingStage(stage_type=stage_type)
+        self.processing_stages.append(new_stage)
+        return new_stage
+
+    def mark_stage_completed(self, stage_type: ProcessingStageType, meta: dict[str, Any] | None = None) -> None:
+        """Пометить этап как завершенный (FSM: успешный переход)."""
+        stage = self.ensure_stage(stage_type)
+        stage.mark_completed(meta=meta)
+        # Обновляем агрегированный статус
+        self._update_aggregate_status()
+
+    def mark_stage_in_progress(self, stage_type: ProcessingStageType) -> None:
+        """Пометить этап как выполняющийся (FSM: переход в IN_PROGRESS)."""
+        stage = self.ensure_stage(stage_type)
+        stage.mark_in_progress()
+        self._update_aggregate_status()
+
+    def mark_stage_failed(
+        self,
+        stage_type: ProcessingStageType,
+        reason: str,
+        rollback_to_status: ProcessingStatus | None = None,
+    ) -> None:
+        """
+        Пометить этап как провалившийся (FSM: переход в FAILED с откатом).
+
+        Args:
+            stage_type: Тип этапа
+            reason: Причина ошибки
+            rollback_to_status: Статус для отката (если None, определяется автоматически)
+        """
+        stage = self.ensure_stage(stage_type)
+        stage.mark_failed(reason)
+
+        # Откат агрегированного статуса (ADR-015)
+        if rollback_to_status is None:
+            rollback_to_status = self._get_previous_status_for_stage(stage_type)
+        if rollback_to_status:
+            self.status = rollback_to_status
+
+        # Устанавливаем FSM поля
+        self.failed = True
+        self.failed_at = datetime.utcnow()
+        self.failed_reason = reason
+        self.failed_at_stage = stage_type.value
+
+    def mark_stage_skipped(self, stage_type: ProcessingStageType) -> None:
+        """Пометить этап как пропущенный (FSM: переход в SKIPPED)."""
+        stage = self.ensure_stage(stage_type)
+        stage.mark_skipped()
+        self._update_aggregate_status()
+
+    def can_retry_stage(self, stage_type: ProcessingStageType, max_retries: int = 2) -> bool:
+        """Проверить возможность retry этапа."""
+        stage = self.get_stage(stage_type)
+        if not stage:
+            return False
+        return stage.can_retry(max_retries=max_retries)
+
+    def prepare_stage_retry(self, stage_type: ProcessingStageType) -> None:
+        """Подготовить этап к retry (FSM: переход из FAILED в IN_PROGRESS)."""
+        stage = self.get_stage(stage_type)
+        if not stage:
+            raise ValueError(f"Stage {stage_type.value} not found")
+        stage.prepare_retry()
+        # Сбрасываем общий флаг failed при retry
+        if self.failed_at_stage == stage_type.value:
+            self.failed = False
+        self._update_aggregate_status()
+
+    def _get_previous_status_for_stage(self, stage_type: ProcessingStageType) -> ProcessingStatus | None:
+        """
+        Получить предыдущий статус для отката при ошибке этапа (FSM логика).
+
+        Args:
+            stage_type: Тип этапа, на котором произошла ошибка
+
+        Returns:
+            Предыдущий статус для отката
+        """
+        # Маппинг этапов на предыдущие статусы
+        stage_to_previous_status = {
+            ProcessingStageType.TRANSCRIPTION: ProcessingStatus.PROCESSED,
+            ProcessingStageType.TOPIC_EXTRACTION: ProcessingStatus.PROCESSED,  # Может быть TRANSCRIBED если транскрибация есть
+            ProcessingStageType.SUBTITLE_GENERATION: ProcessingStatus.PROCESSED,  # Аналогично
+        }
+
+        previous = stage_to_previous_status.get(stage_type)
+        if previous:
+            return previous
+
+        # Если транскрибация завершена, то топики/субтитры откатываются к TRANSCRIBED
+        transcription_stage = self.get_stage(ProcessingStageType.TRANSCRIPTION)
+        if (
+            transcription_stage
+            and transcription_stage.status == ProcessingStageStatus.COMPLETED
+            and stage_type in [ProcessingStageType.TOPIC_EXTRACTION, ProcessingStageType.SUBTITLE_GENERATION]
+        ):
+            return ProcessingStatus.TRANSCRIBED
+
+        return ProcessingStatus.PROCESSED
+
+    def _update_aggregate_status(self) -> None:
+        """
+        Обновить агрегированный ProcessingStatus на основе этапов (FSM вычисление).
+
+        Логика:
+        - Если есть этапы в процессе -> соответствующий статус
+        - Если все этапы завершены -> TRANSCRIBED
+        - Учитывает зависимости между этапами
+        """
+        # Основные этапы (не зависят от этапов обработки)
+        if self.status in [
+            ProcessingStatus.INITIALIZED,
+            ProcessingStatus.DOWNLOADING,
+            ProcessingStatus.DOWNLOADED,
+            ProcessingStatus.PROCESSING,
+        ]:
+            # Эти статусы не зависят от этапов, оставляем как есть
+            return
+
+        # Проверяем этапы после PROCESSED
+        transcription_stage = self.get_stage(ProcessingStageType.TRANSCRIPTION)
+        topic_stage = self.get_stage(ProcessingStageType.TOPIC_EXTRACTION)
+        subtitle_stage = self.get_stage(ProcessingStageType.SUBTITLE_GENERATION)
+
+        # Если статус PROCESSED, но есть завершенная транскрибация - обновляем статус
+        if self.status == ProcessingStatus.PROCESSED:
+            if transcription_stage and transcription_stage.status == ProcessingStageStatus.COMPLETED:
+                # Транскрибация завершена, обновляем статус
+                self.status = ProcessingStatus.TRANSCRIBED
+                return
+            # Если транскрибация в процессе, обновляем статус
+            if transcription_stage and transcription_stage.status == ProcessingStageStatus.IN_PROGRESS:
+                self.status = ProcessingStatus.TRANSCRIBING
+                return
+            # Если нет этапов транскрибации, оставляем PROCESSED
+            return
+
+        # Если есть хотя бы один этап
+        if transcription_stage or topic_stage or subtitle_stage:
+            # Если транскрибация в процессе
+            if transcription_stage and transcription_stage.status == ProcessingStageStatus.IN_PROGRESS:
+                self.status = ProcessingStatus.TRANSCRIBING
+                return
+
+            # Если транскрибация завершена
+            if transcription_stage and transcription_stage.status == ProcessingStageStatus.COMPLETED:
+                # Проверяем другие этапы
+                topic_in_progress = topic_stage and topic_stage.status == ProcessingStageStatus.IN_PROGRESS
+                subtitle_in_progress = subtitle_stage and subtitle_stage.status == ProcessingStageStatus.IN_PROGRESS
+
+                if topic_in_progress or subtitle_in_progress:
+                    # Есть этапы в процессе, но транскрибация завершена
+                    self.status = ProcessingStatus.TRANSCRIBED
+                    return
+
+                # Все этапы завершены или пропущены
+                topic_done = not topic_stage or topic_stage.status in [
+                    ProcessingStageStatus.COMPLETED,
+                    ProcessingStageStatus.SKIPPED,
+                ]
+                subtitle_done = not subtitle_stage or subtitle_stage.status in [
+                    ProcessingStageStatus.COMPLETED,
+                    ProcessingStageStatus.SKIPPED,
+                ]
+
+                if topic_done and subtitle_done:
+                    self.status = ProcessingStatus.TRANSCRIBED
+                    return
+
+        # Загрузка (не зависит от этапов)
+        if self.status in [ProcessingStatus.UPLOADING, ProcessingStatus.UPLOADED]:
+            return
 
     def set_primary_audio(self, audio_path: str) -> None:
         """Сохранить основной аудиофайл и зафиксировать директорию."""
@@ -410,30 +785,30 @@ class MeetingRecording:
             Словарь с информацией о прогрессе
         """
         progress = {
-            'status': self.status.value,
-            'downloaded': self.is_downloaded(),
-            'processed': self.is_processed(),
+            "status": self.status.value,
+            "downloaded": self.is_downloaded(),
+            "processed": self.is_processed(),
         }
 
         # Добавляем пути к файлам, если они есть
         if self.local_video_path:
-            progress['local_file'] = self.local_video_path
+            progress["local_file"] = self.local_video_path
         if self.processed_video_path:
-            progress['processed_file'] = self.processed_video_path
+            progress["processed_file"] = self.processed_video_path
         if self.processed_audio_dir:
-            progress['processed_audio_dir'] = self.processed_audio_dir
+            progress["processed_audio_dir"] = self.processed_audio_dir
         if self.transcription_dir:
-            progress['transcription_dir'] = self.transcription_dir
+            progress["transcription_dir"] = self.transcription_dir
 
         # Добавляем информацию о транскрипции
         if self.topic_timestamps:
-            progress['topics_count'] = len(self.topic_timestamps)
+            progress["topics_count"] = len(self.topic_timestamps)
         if self.main_topics:
-            progress['main_topics'] = self.main_topics
+            progress["main_topics"] = self.main_topics
 
         # Добавляем информацию о таргетах
         if self.output_targets:
-            progress['outputs'] = self.targets_summary()
+            progress["outputs"] = self.targets_summary()
 
         return progress
 

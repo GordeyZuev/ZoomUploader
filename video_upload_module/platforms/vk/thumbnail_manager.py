@@ -29,8 +29,8 @@ class VKThumbnailManager:
             return False, f"Файл слишком большой: {file_size / 1024 / 1024:.1f}MB (максимум 5MB)"
 
         # Проверяем расширение
-        file_ext = os.path.splitext(thumbnail_path)[1].lower().lstrip('.')
-        if file_ext not in ['jpg', 'jpeg', 'png']:
+        file_ext = os.path.splitext(thumbnail_path)[1].lower().lstrip(".")
+        if file_ext not in ["jpg", "jpeg", "png"]:
             return False, f"Неподдерживаемый формат: {file_ext} (поддерживаются: jpg, jpeg, png)"
 
         return True, "OK"
@@ -72,18 +72,16 @@ class VKThumbnailManager:
     async def _get_thumbnail_upload_url(self, owner_id: str) -> str | None:
         """Получение URL для загрузки миниатюры видео"""
         try:
-            params = {'access_token': self.config.access_token, 'owner_id': owner_id, 'v': '5.199'}
+            params = {"access_token": self.config.access_token, "owner_id": owner_id, "v": "5.199"}
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.base_url}/video.getThumbUploadUrl", data=params
-                ) as response:
+                async with session.post(f"{self.base_url}/video.getThumbUploadUrl", data=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        if 'error' in data:
+                        if "error" in data:
                             logger.error(f"❌ VK API Error: {data['error']}")
                             return None
-                        return data['response']['upload_url']
+                        return data["response"]["upload_url"]
                     else:
                         logger.error(f"❌ HTTP Error: {response.status}")
                         return None
@@ -94,8 +92,8 @@ class VKThumbnailManager:
     async def _upload_thumbnail_file(self, upload_url: str, thumbnail_path: str) -> str | None:
         """Загрузка файла миниатюры на сервер"""
         try:
-            with open(thumbnail_path, 'rb') as thumbnail_file:
-                files = {'file': thumbnail_file}
+            with open(thumbnail_path, "rb") as thumbnail_file:
+                files = {"file": thumbnail_file}
 
                 async with aiohttp.ClientSession() as session:
                     async with session.post(upload_url, data=files) as response:
@@ -110,30 +108,24 @@ class VKThumbnailManager:
             logger.error(f"❌ Ошибка загрузки миниатюры: {e}")
             return None
 
-    async def _save_uploaded_thumbnail(
-        self, video_id: str, owner_id: str, upload_result: str
-    ) -> bool:
+    async def _save_uploaded_thumbnail(self, video_id: str, owner_id: str, upload_result: str) -> bool:
         """Сохранение загруженной миниатюры для видео"""
         try:
             params = {
-                'access_token': self.config.access_token,
-                'owner_id': owner_id,
-                'thumb_json': upload_result,  # Передаем текст ответа напрямую
-                'v': '5.241',
-                'video_id': video_id,
-                'set_thumb': 1,  # Устанавливаем миниатюру
+                "access_token": self.config.access_token,
+                "owner_id": owner_id,
+                "thumb_json": upload_result,  # Передаем текст ответа напрямую
+                "v": "5.241",
+                "video_id": video_id,
+                "set_thumb": 1,  # Устанавливаем миниатюру
             }
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.base_url}/video.saveUploadedThumb", data=params
-                ) as response:
+                async with session.post(f"{self.base_url}/video.saveUploadedThumb", data=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        if 'error' in data:
-                            logger.error(
-                                f"❌ VK API Error при сохранении миниатюры: {data['error']}"
-                            )
+                        if "error" in data:
+                            logger.error(f"❌ VK API Error при сохранении миниатюры: {data['error']}")
                             return False
 
                         logger.info(f"🖼️ Миниатюра сохранена для видео {video_id}")

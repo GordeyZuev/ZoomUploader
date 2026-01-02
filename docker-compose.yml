@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: zoom_postgres
+    environment:
+      POSTGRES_DB: zoom_publishing
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: zoom_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # API (комментируем для локальной разработки, раскомментируйте для production)
+  # api:
+  #   build: .
+  #   container_name: zoom_api
+  #   command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 4
+  #   environment:
+  #     DATABASE_HOST: postgres
+  #     DATABASE_PORT: 5432
+  #     DATABASE_NAME: zoom_publishing
+  #     DATABASE_USERNAME: postgres
+  #     DATABASE_PASSWORD: ${DB_PASSWORD:-postgres}
+  #     CELERY_BROKER_URL: redis://redis:6379/0
+  #     CELERY_RESULT_BACKEND: redis://redis:6379/0
+  #     JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - ./media:/app/media
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+
+  # Celery Worker (комментируем для локальной разработки)
+  # celery_worker:
+  #   build: .
+  #   container_name: zoom_celery_worker
+  #   command: celery -A api.celery_app worker --loglevel=info --queues=processing,upload --concurrency=4
+  #   environment:
+  #     DATABASE_HOST: postgres
+  #     DATABASE_PORT: 5432
+  #     DATABASE_NAME: zoom_publishing
+  #     DATABASE_USERNAME: postgres
+  #     DATABASE_PASSWORD: ${DB_PASSWORD:-postgres}
+  #     CELERY_BROKER_URL: redis://redis:6379/0
+  #     CELERY_RESULT_BACKEND: redis://redis:6379/0
+  #   volumes:
+  #     - ./media:/app/media
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+
+  # Celery Flower (мониторинг, опционально)
+  # flower:
+  #   build: .
+  #   container_name: zoom_flower
+  #   command: celery -A api.celery_app flower --port=5555
+  #   environment:
+  #     CELERY_BROKER_URL: redis://redis:6379/0
+  #     CELERY_RESULT_BACKEND: redis://redis:6379/0
+  #   ports:
+  #     - "5555:5555"
+  #   depends_on:
+  #     - redis
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  default:
+    name: zoom_network
+

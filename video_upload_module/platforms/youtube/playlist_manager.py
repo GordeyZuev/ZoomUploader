@@ -26,20 +26,18 @@ class YouTubePlaylistManager:
 
             self.logger = logging.getLogger(__name__)
 
-    async def create_playlist(
-        self, title: str, description: str = "", privacy_status: str = "unlisted"
-    ) -> str | None:
+    async def create_playlist(self, title: str, description: str = "", privacy_status: str = "unlisted") -> str | None:
         """Создание плейлиста"""
         try:
             body = {
-                'snippet': {'title': title, 'description': description},
-                'status': {'privacyStatus': privacy_status},
+                "snippet": {"title": title, "description": description},
+                "status": {"privacyStatus": privacy_status},
             }
 
-            request = self.service.playlists().insert(part='snippet,status', body=body)
+            request = self.service.playlists().insert(part="snippet,status", body=body)
             response = request.execute()
 
-            playlist_id = response['id']
+            playlist_id = response["id"]
             playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
 
             logger.info(f"📋 Плейлист создан: {playlist_url}")
@@ -53,13 +51,13 @@ class YouTubePlaylistManager:
         """Добавление видео в плейлист"""
         try:
             body = {
-                'snippet': {
-                    'playlistId': playlist_id,
-                    'resourceId': {'kind': 'youtube#video', 'videoId': video_id},
+                "snippet": {
+                    "playlistId": playlist_id,
+                    "resourceId": {"kind": "youtube#video", "videoId": video_id},
                 }
             }
 
-            request = self.service.playlistItems().insert(part='snippet', body=body)
+            request = self.service.playlistItems().insert(part="snippet", body=body)
             request.execute()
 
             logger.info(f"📋 Видео добавлено в плейлист {playlist_id}")
@@ -83,19 +81,17 @@ class YouTubePlaylistManager:
     async def get_playlist_info(self, playlist_id: str) -> dict[str, Any] | None:
         """Получение информации о плейлисте"""
         try:
-            request = self.service.playlists().list(
-                part='snippet,contentDetails,status', id=playlist_id
-            )
+            request = self.service.playlists().list(part="snippet,contentDetails,status", id=playlist_id)
             response = request.execute()
 
-            if response['items']:
-                playlist = response['items'][0]
+            if response["items"]:
+                playlist = response["items"][0]
                 return {
-                    'title': playlist['snippet']['title'],
-                    'description': playlist['snippet']['description'],
-                    'item_count': playlist['contentDetails']['itemCount'],
-                    'privacy_status': playlist['status']['privacyStatus'],
-                    'published_at': playlist['snippet']['publishedAt'],
+                    "title": playlist["snippet"]["title"],
+                    "description": playlist["snippet"]["description"],
+                    "item_count": playlist["contentDetails"]["itemCount"],
+                    "privacy_status": playlist["status"]["privacyStatus"],
+                    "published_at": playlist["snippet"]["publishedAt"],
                 }
             return None
 
@@ -103,9 +99,7 @@ class YouTubePlaylistManager:
             logger.error(f"❌ Ошибка получения информации о плейлисте: {e}")
             return None
 
-    async def get_playlist_videos(
-        self, playlist_id: str, max_results: int = 50
-    ) -> list[dict[str, Any]]:
+    async def get_playlist_videos(self, playlist_id: str, max_results: int = 50) -> list[dict[str, Any]]:
         """Получение списка видео в плейлисте"""
         try:
             videos = []
@@ -113,27 +107,27 @@ class YouTubePlaylistManager:
 
             while True:
                 request = self.service.playlistItems().list(
-                    part='snippet,contentDetails',
+                    part="snippet,contentDetails",
                     playlistId=playlist_id,
                     maxResults=min(max_results, 50),
                     pageToken=next_page_token,
                 )
                 response = request.execute()
 
-                for item in response['items']:
+                for item in response["items"]:
                     videos.append(
                         {
-                            'video_id': item['contentDetails']['videoId'],
-                            'title': item['snippet']['title'],
-                            'description': item['snippet']['description'],
-                            'position': item['snippet']['position'],
+                            "video_id": item["contentDetails"]["videoId"],
+                            "title": item["snippet"]["title"],
+                            "description": item["snippet"]["description"],
+                            "position": item["snippet"]["position"],
                         }
                     )
 
-                if len(videos) >= max_results or 'nextPageToken' not in response:
+                if len(videos) >= max_results or "nextPageToken" not in response:
                     break
 
-                next_page_token = response['nextPageToken']
+                next_page_token = response["nextPageToken"]
 
             return videos[:max_results]
 
@@ -141,19 +135,17 @@ class YouTubePlaylistManager:
             logger.error(f"❌ Ошибка получения видео плейлиста: {e}")
             return []
 
-    async def update_playlist(
-        self, playlist_id: str, title: str | None = None, description: str | None = None
-    ) -> bool:
+    async def update_playlist(self, playlist_id: str, title: str | None = None, description: str | None = None) -> bool:
         """Обновление плейлиста"""
         try:
-            body = {'id': playlist_id, 'snippet': {}}
+            body = {"id": playlist_id, "snippet": {}}
 
             if title:
-                body['snippet']['title'] = title
+                body["snippet"]["title"] = title
             if description:
-                body['snippet']['description'] = description
+                body["snippet"]["description"] = description
 
-            request = self.service.playlists().update(part='snippet', body=body)
+            request = self.service.playlists().update(part="snippet", body=body)
             request.execute()
 
             logger.info(f"📋 Плейлист обновлен: {playlist_id}")
@@ -184,28 +176,28 @@ class YouTubePlaylistManager:
 
             while True:
                 request = self.service.playlists().list(
-                    part='snippet,contentDetails',
+                    part="snippet,contentDetails",
                     mine=True,
                     maxResults=min(max_results, 50),
                     pageToken=next_page_token,
                 )
                 response = request.execute()
 
-                for playlist in response['items']:
+                for playlist in response["items"]:
                     playlists.append(
                         {
-                            'playlist_id': playlist['id'],
-                            'title': playlist['snippet']['title'],
-                            'description': playlist['snippet']['description'],
-                            'item_count': playlist['contentDetails']['itemCount'],
-                            'published_at': playlist['snippet']['publishedAt'],
+                            "playlist_id": playlist["id"],
+                            "title": playlist["snippet"]["title"],
+                            "description": playlist["snippet"]["description"],
+                            "item_count": playlist["contentDetails"]["itemCount"],
+                            "published_at": playlist["snippet"]["publishedAt"],
                         }
                     )
 
-                if len(playlists) >= max_results or 'nextPageToken' not in response:
+                if len(playlists) >= max_results or "nextPageToken" not in response:
                     break
 
-                next_page_token = response['nextPageToken']
+                next_page_token = response["nextPageToken"]
 
             return playlists[:max_results]
 

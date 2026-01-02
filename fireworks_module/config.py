@@ -165,8 +165,7 @@ class FireworksConfig(BaseSettings):
         if self.diarize:
             if self.response_format != "verbose_json":
                 raise ValueError(
-                    f"diarize=true требует response_format='verbose_json', "
-                    f"но указан '{self.response_format}'"
+                    f"diarize=true требует response_format='verbose_json', но указан '{self.response_format}'"
                 )
             if not self.timestamp_granularities or "word" not in self.timestamp_granularities:
                 raise ValueError(
@@ -177,19 +176,12 @@ class FireworksConfig(BaseSettings):
         # Правило 3: min_speakers/max_speakers требуют diarize=true
         if (self.min_speakers is not None or self.max_speakers is not None) and not self.diarize:
             logger.warning(
-                "⚠️ min_speakers/max_speakers указаны, но diarize=false. "
-                "Эти параметры будут проигнорированы."
+                "⚠️ min_speakers/max_speakers указаны, но diarize=false. Эти параметры будут проигнорированы."
             )
 
         # Правило 4: max_speakers должен быть >= min_speakers
-        if (
-            self.min_speakers is not None
-            and self.max_speakers is not None
-            and self.max_speakers < self.min_speakers
-        ):
-            raise ValueError(
-                f"max_speakers ({self.max_speakers}) должен быть >= min_speakers ({self.min_speakers})"
-            )
+        if self.min_speakers is not None and self.max_speakers is not None and self.max_speakers < self.min_speakers:
+            raise ValueError(f"max_speakers ({self.max_speakers}) должен быть >= min_speakers ({self.min_speakers})")
 
         return self
 

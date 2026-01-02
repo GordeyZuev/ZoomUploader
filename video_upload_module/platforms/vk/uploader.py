@@ -30,8 +30,8 @@ class VKUploader(BaseUploader):
                 from setup_vk import VKTokenSetup
 
                 self.logger.info("VK access_token не найден. Запускаю интерактивную настройку...")
-                setup = VKTokenSetup(app_id=getattr(self.config, 'app_id', '54249533'))
-                token = await setup.get_token_interactive(getattr(self.config, 'scope', 'video,groups,wall'))
+                setup = VKTokenSetup(app_id=getattr(self.config, "app_id", "54249533"))
+                token = await setup.get_token_interactive(getattr(self.config, "scope", "video,groups,wall"))
                 if token:
                     self.config.access_token = token
                 else:
@@ -43,25 +43,27 @@ class VKUploader(BaseUploader):
 
         try:
             async with aiohttp.ClientSession() as session:
-                params = {'access_token': self.config.access_token, 'v': '5.131'}
+                params = {"access_token": self.config.access_token, "v": "5.131"}
                 async with session.post(f"{self.base_url}/users.get", data=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        if 'error' in data:
+                        if "error" in data:
                             self.logger.error(f"VK API Error: {data['error']}")
                             try:
                                 from setup_vk import VKTokenSetup
 
                                 self.logger.info("Пробую переавторизоваться через setup_vk...")
-                                setup = VKTokenSetup(app_id=getattr(self.config, 'app_id', '54249533'))
-                                token = await setup.get_token_interactive(getattr(self.config, 'scope', 'video,groups,wall'))
+                                setup = VKTokenSetup(app_id=getattr(self.config, "app_id", "54249533"))
+                                token = await setup.get_token_interactive(
+                                    getattr(self.config, "scope", "video,groups,wall")
+                                )
                                 if token:
                                     self.config.access_token = token
-                                    params = {'access_token': self.config.access_token, 'v': '5.131'}
+                                    params = {"access_token": self.config.access_token, "v": "5.131"}
                                     async with session.post(f"{self.base_url}/users.get", data=params) as recheck:
                                         if recheck.status == 200:
                                             again = await recheck.json()
-                                            if 'error' not in again:
+                                            if "error" not in again:
                                                 self._authenticated = True
                                                 self.logger.info("Аутентификация VK успешна после переавторизации")
                                                 return True
@@ -110,18 +112,16 @@ class VKUploader(BaseUploader):
                 self.logger.error("Ошибка загрузки файла")
                 return None
 
-            video_id = upload_result.get('video_id')
-            owner_id = upload_result.get('owner_id')
+            video_id = upload_result.get("video_id")
+            owner_id = upload_result.get("owner_id")
 
             if video_id and owner_id:
                 video_url = f"https://vk.com/video{owner_id}_{video_id}"
 
                 self.logger.info(f"Видео загружено: {video_url}")
 
-                result = self._create_result(
-                    video_id=video_id, video_url=video_url, title=title, platform="vk"
-                )
-                result.metadata['owner_id'] = owner_id
+                result = self._create_result(video_id=video_id, video_url=video_url, title=title, platform="vk")
+                result.metadata["owner_id"] = owner_id
 
                 if thumbnail_path and os.path.exists(thumbnail_path):
                     try:
@@ -129,17 +129,15 @@ class VKUploader(BaseUploader):
 
                         thumbnail_manager = VKThumbnailManager(self.config)
                         await asyncio.sleep(3)
-                        success = await thumbnail_manager.set_video_thumbnail(
-                            video_id, owner_id, thumbnail_path
-                        )
+                        success = await thumbnail_manager.set_video_thumbnail(video_id, owner_id, thumbnail_path)
                         if success:
-                            result.metadata['thumbnail_set'] = True
+                            result.metadata["thumbnail_set"] = True
                             self.logger.info(f"🖼️ Миниатюра установлена для видео {video_id}")
                         else:
-                            result.metadata['thumbnail_error'] = "Не удалось установить миниатюру"
+                            result.metadata["thumbnail_error"] = "Не удалось установить миниатюру"
                     except Exception as e:
                         self.logger.warning(f"Не удалось установить миниатюру: {e}")
-                        result.metadata['thumbnail_error'] = str(e)
+                        result.metadata["thumbnail_error"] = str(e)
 
                 return result
             else:
@@ -156,22 +154,22 @@ class VKUploader(BaseUploader):
             return None
 
         params = {
-            'videos': video_id,  # Формат: owner_id_video_id
-            'extended': 1,
+            "videos": video_id,  # Формат: owner_id_video_id
+            "extended": 1,
         }
 
-        response = await self._make_request('video.get', params)
+        response = await self._make_request("video.get", params)
 
-        if response and 'items' in response and response['items']:
-            video = response['items'][0]
+        if response and "items" in response and response["items"]:
+            video = response["items"][0]
             return {
-                'title': video.get('title', ''),
-                'description': video.get('description', ''),
-                'duration': video.get('duration', 0),
-                'views': video.get('views', 0),
-                'date': video.get('date', 0),
-                'privacy_view': video.get('privacy_view', 0),
-                'privacy_comment': video.get('privacy_comment', 0),
+                "title": video.get("title", ""),
+                "description": video.get("description", ""),
+                "duration": video.get("duration", 0),
+                "views": video.get("views", 0),
+                "date": video.get("date", 0),
+                "privacy_view": video.get("privacy_view", 0),
+                "privacy_comment": video.get("privacy_comment", 0),
             }
 
         return None
@@ -182,11 +180,11 @@ class VKUploader(BaseUploader):
             return False
 
         params = {
-            'video_id': video_id,
-            'owner_id': None,
+            "video_id": video_id,
+            "owner_id": None,
         }
 
-        response = await self._make_request('video.delete', params)
+        response = await self._make_request("video.delete", params)
 
         if response:
             self.logger.info(f"Видео удалено: {video_id}")
@@ -195,30 +193,28 @@ class VKUploader(BaseUploader):
             self.logger.error(f"Ошибка удаления видео: {video_id}")
             return False
 
-    async def _get_upload_url(
-        self, name: str, description: str = "", album_id: str | None = None
-    ) -> str:
+    async def _get_upload_url(self, name: str, description: str = "", album_id: str | None = None) -> str:
         """Получение URL для загрузки видео."""
         params = {
-            'name': name,
-            'description': description,
-            'privacy_view': self.config.privacy_view,
-            'privacy_comment': self.config.privacy_comment,
-            'no_comments': int(self.config.no_comments),
-            'repeat': int(self.config.repeat),
+            "name": name,
+            "description": description,
+            "privacy_view": self.config.privacy_view,
+            "privacy_comment": self.config.privacy_comment,
+            "no_comments": int(self.config.no_comments),
+            "repeat": int(self.config.repeat),
         }
 
         if self.config.group_id:
-            params['group_id'] = self.config.group_id
+            params["group_id"] = self.config.group_id
 
         target_album_id = album_id or self.config.album_id
         if target_album_id:
-            params['album_id'] = target_album_id
+            params["album_id"] = target_album_id
 
-        response = await self._make_request('video.save', params)
+        response = await self._make_request("video.save", params)
 
-        if response and 'upload_url' in response:
-            return response['upload_url']
+        if response and "upload_url" in response:
+            return response["upload_url"]
 
         return None
 
@@ -230,15 +226,15 @@ class VKUploader(BaseUploader):
         try:
             # Открываем файл заранее и закрываем только после завершения запроса
             # Это предотвращает ошибку Broken pipe
-            video_file = open(video_path, 'rb')
-            files = {'video_file': video_file}
+            video_file = open(video_path, "rb")
+            files = {"video_file": video_file}
 
             async with aiohttp.ClientSession() as session:
                 try:
                     async with session.post(upload_url, data=files) as response:
                         if response.status == 200:
                             result_data = await response.json()
-                            if 'error' in result_data:
+                            if "error" in result_data:
                                 self.logger.error(f"VK Upload Error: {result_data['error']}")
                                 return None
 
@@ -271,18 +267,18 @@ class VKUploader(BaseUploader):
 
     async def _make_request(self, method: str, params: dict[str, Any]) -> dict[str, Any] | None:
         """Выполнение запроса к VK API. Использует POST для всех запросов, чтобы избежать проблем с длинными URL."""
-        params['access_token'] = self.config.access_token
-        params['v'] = '5.131'
+        params["access_token"] = self.config.access_token
+        params["v"] = "5.131"
 
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(f"{self.base_url}/{method}", data=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        if 'error' in data:
+                        if "error" in data:
                             self.logger.error(f"VK API Error: {data['error']}")
                             return None
-                        return data.get('response')
+                        return data.get("response")
                     else:
                         error_text = await response.text()
                         self.logger.error(f"HTTP Error: {response.status}, Response: {error_text[:500]}")

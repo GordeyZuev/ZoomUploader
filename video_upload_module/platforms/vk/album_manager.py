@@ -20,27 +20,25 @@ class VKAlbumManager:
         """Создание альбома для видео"""
         try:
             params = {
-                'title': title,
-                'description': description,
-                'privacy': privacy,
-                'access_token': self.config.access_token,
-                'v': '5.131',
+                "title": title,
+                "description": description,
+                "privacy": privacy,
+                "access_token": self.config.access_token,
+                "v": "5.131",
             }
 
             if self.config.group_id:
-                params['group_id'] = self.config.group_id
+                params["group_id"] = self.config.group_id
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.base_url}/video.addAlbum", data=params
-                ) as response:
+                async with session.post(f"{self.base_url}/video.addAlbum", data=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        if 'error' in data:
+                        if "error" in data:
                             logger.error(f"❌ VK API Error: {data['error']}")
                             return None
 
-                        album_id = data['response']['album_id']
+                        album_id = data["response"]["album_id"]
                         logger.info(f"📁 Альбом создан: {album_id}")
                         return str(album_id)
                     else:
@@ -54,30 +52,28 @@ class VKAlbumManager:
     async def get_albums(self, count: int = 100) -> list[dict[str, Any]]:
         """Получение списка альбомов"""
         try:
-            params = {'count': count, 'access_token': self.config.access_token, 'v': '5.131'}
+            params = {"count": count, "access_token": self.config.access_token, "v": "5.131"}
 
             if self.config.group_id:
-                params['owner_id'] = -self.config.group_id
+                params["owner_id"] = -self.config.group_id
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.base_url}/video.getAlbums", data=params
-                ) as response:
+                async with session.post(f"{self.base_url}/video.getAlbums", data=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        if 'error' in data:
+                        if "error" in data:
                             logger.error(f"❌ VK API Error: {data['error']}")
                             return []
 
                         albums = []
-                        for album in data['response']['items']:
+                        for album in data["response"]["items"]:
                             albums.append(
                                 {
-                                    'album_id': album['id'],
-                                    'title': album['title'],
-                                    'description': album.get('description', ''),
-                                    'count': album['count'],
-                                    'updated_time': album['updated_time'],
+                                    "album_id": album["id"],
+                                    "title": album["title"],
+                                    "description": album.get("description", ""),
+                                    "count": album["count"],
+                                    "updated_time": album["updated_time"],
                                 }
                             )
 
@@ -95,34 +91,34 @@ class VKAlbumManager:
         """Получение видео из альбома"""
         try:
             params = {
-                'album_id': album_id,
-                'count': count,
-                'access_token': self.config.access_token,
-                'v': '5.131',
+                "album_id": album_id,
+                "count": count,
+                "access_token": self.config.access_token,
+                "v": "5.131",
             }
 
             if self.config.group_id:
-                params['owner_id'] = -self.config.group_id
+                params["owner_id"] = -self.config.group_id
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(f"{self.base_url}/video.get", data=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        if 'error' in data:
+                        if "error" in data:
                             logger.error(f"❌ VK API Error: {data['error']}")
                             return []
 
                         videos = []
-                        for video in data['response']['items']:
+                        for video in data["response"]["items"]:
                             videos.append(
                                 {
-                                    'video_id': video['id'],
-                                    'owner_id': video['owner_id'],
-                                    'title': video['title'],
-                                    'description': video.get('description', ''),
-                                    'duration': video.get('duration', 0),
-                                    'views': video.get('views', 0),
-                                    'date': video['date'],
+                                    "video_id": video["id"],
+                                    "owner_id": video["owner_id"],
+                                    "title": video["title"],
+                                    "description": video.get("description", ""),
+                                    "duration": video.get("duration", 0),
+                                    "views": video.get("views", 0),
+                                    "date": video["date"],
                                 }
                             )
 
@@ -145,22 +141,20 @@ class VKAlbumManager:
     ) -> bool:
         """Редактирование альбома"""
         try:
-            params = {'album_id': album_id, 'access_token': self.config.access_token, 'v': '5.131'}
+            params = {"album_id": album_id, "access_token": self.config.access_token, "v": "5.131"}
 
             if title:
-                params['title'] = title
+                params["title"] = title
             if description:
-                params['description'] = description
+                params["description"] = description
             if privacy is not None:
-                params['privacy'] = privacy
+                params["privacy"] = privacy
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.base_url}/video.editAlbum", data=params
-                ) as response:
+                async with session.post(f"{self.base_url}/video.editAlbum", data=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        if 'error' in data:
+                        if "error" in data:
                             logger.error(f"❌ VK API Error: {data['error']}")
                             return False
 
@@ -177,15 +171,13 @@ class VKAlbumManager:
     async def delete_album(self, album_id: str) -> bool:
         """Удаление альбома"""
         try:
-            params = {'album_id': album_id, 'access_token': self.config.access_token, 'v': '5.131'}
+            params = {"album_id": album_id, "access_token": self.config.access_token, "v": "5.131"}
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.base_url}/video.deleteAlbum", data=params
-                ) as response:
+                async with session.post(f"{self.base_url}/video.deleteAlbum", data=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        if 'error' in data:
+                        if "error" in data:
                             logger.error(f"❌ VK API Error: {data['error']}")
                             return False
 
@@ -203,20 +195,18 @@ class VKAlbumManager:
         """Перемещение видео в альбом"""
         try:
             params = {
-                'video_id': video_id,
-                'owner_id': owner_id,
-                'album_id': album_id,
-                'access_token': self.config.access_token,
-                'v': '5.131',
+                "video_id": video_id,
+                "owner_id": owner_id,
+                "album_id": album_id,
+                "access_token": self.config.access_token,
+                "v": "5.131",
             }
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.base_url}/video.moveToAlbum", data=params
-                ) as response:
+                async with session.post(f"{self.base_url}/video.moveToAlbum", data=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        if 'error' in data:
+                        if "error" in data:
                             logger.error(f"❌ VK API Error: {data['error']}")
                             return False
 

@@ -162,8 +162,6 @@ class ProcessingConfig(BaseSettings):
         # Проверка trim_end > trim_start
         if self.trim_start is not None and self.trim_end is not None:
             if self.trim_end <= self.trim_start:
-                raise ValueError(
-                    f"trim_end ({self.trim_end}) должен быть больше trim_start ({self.trim_start})"
-                )
+                raise ValueError(f"trim_end ({self.trim_end}) должен быть больше trim_start ({self.trim_start})")
 
         return self

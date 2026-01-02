@@ -26,7 +26,7 @@ class TokenManager:
     """
 
     # Классовые переменные для хранения экземпляров и блокировок
-    _instances: dict[str, 'TokenManager'] = {}
+    _instances: dict[str, "TokenManager"] = {}
     _locks: dict[str, asyncio.Lock] = {}
     _class_lock = asyncio.Lock()
 
@@ -43,7 +43,7 @@ class TokenManager:
         self._refresh_buffer = 60  # Обновляем токен за 60 секунд до истечения
 
     @classmethod
-    async def get_instance(cls, account: str) -> 'TokenManager':
+    async def get_instance(cls, account: str) -> "TokenManager":
         """
         Получение или создание экземпляра TokenManager для аккаунта (Singleton).
 
@@ -109,10 +109,7 @@ class TokenManager:
 
         for attempt in range(max_retries):
             try:
-                logger.info(
-                    f"Получение токена для аккаунта: {config.account} "
-                    f"(попытка {attempt + 1}/{max_retries})"
-                )
+                logger.info(f"Получение токена для аккаунта: {config.account} (попытка {attempt + 1}/{max_retries})")
 
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     response = await client.post(
@@ -136,9 +133,7 @@ class TokenManager:
                             )
                             return (access_token, expires_in)
                         else:
-                            logger.error(
-                                f"Токен не найден в ответе API для аккаунта {config.account}"
-                            )
+                            logger.error(f"Токен не найден в ответе API для аккаунта {config.account}")
                             return (None, None)
                     else:
                         error_msg = (
@@ -150,17 +145,15 @@ class TokenManager:
                         # Для ошибок аутентификации (401, 403) не имеет смысла повторять
                         if response.status_code in (401, 403):
                             logger.error(
-                                f"Ошибка аутентификации для аккаунта {config.account}. "
-                                "Повторные попытки не помогут."
+                                f"Ошибка аутентификации для аккаунта {config.account}. Повторные попытки не помогут."
                             )
                             return (None, None)
 
                         # Для других ошибок продолжаем попытки
                         if attempt < max_retries - 1:
-                            delay = min(base_delay * (2 ** attempt), max_delay)
+                            delay = min(base_delay * (2**attempt), max_delay)
                             logger.warning(
-                                f"Повторная попытка получения токена для {config.account} "
-                                f"через {delay:.1f} секунд..."
+                                f"Повторная попытка получения токена для {config.account} через {delay:.1f} секунд..."
                             )
                             await asyncio.sleep(delay)
                         else:
@@ -168,13 +161,10 @@ class TokenManager:
 
             except (httpx.NetworkError, httpx.TimeoutException, httpx.ConnectError) as e:
                 error_type = type(e).__name__
-                logger.warning(
-                    f"Сетевая ошибка при получении токена для {config.account} "
-                    f"({error_type}): {e}"
-                )
+                logger.warning(f"Сетевая ошибка при получении токена для {config.account} ({error_type}): {e}")
 
                 if attempt < max_retries - 1:
-                    delay = min(base_delay * (2 ** attempt), max_delay)
+                    delay = min(base_delay * (2**attempt), max_delay)
                     logger.info(
                         f"Повторная попытка получения токена для {config.account} "
                         f"через {delay:.1f} секунд (попытка {attempt + 2}/{max_retries})..."
@@ -190,8 +180,7 @@ class TokenManager:
             except Exception as e:
                 error_type = type(e).__name__
                 logger.error(
-                    f"Неожиданная ошибка при получении токена для {config.account} "
-                    f"({error_type}): {e}",
+                    f"Неожиданная ошибка при получении токена для {config.account} ({error_type}): {e}",
                     exc_info=True,  # Включаем traceback для диагностики
                 )
                 # Для неожиданных ошибок не повторяем
@@ -223,9 +212,7 @@ class TokenManager:
         """
         # Проверяем валидность кэшированного токена без блокировки
         if self._is_token_valid():
-            logger.debug(
-                f"Используем кэшированный токен для аккаунта: {config.account}"
-            )
+            logger.debug(f"Используем кэшированный токен для аккаунта: {config.account}")
             return self._cached_token
 
         # Получаем блокировку для синхронизации доступа
@@ -234,16 +221,11 @@ class TokenManager:
             # Двойная проверка: возможно, токен был получен другой корутиной
             # пока мы ждали блокировки
             if self._is_token_valid():
-                logger.debug(
-                    f"Используем кэшированный токен для аккаунта: {config.account} "
-                    "(получен другой корутиной)"
-                )
+                logger.debug(f"Используем кэшированный токен для аккаунта: {config.account} (получен другой корутиной)")
                 return self._cached_token
 
             # Получаем новый токен
-            access_token, expires_in = await self._fetch_token(
-                config, max_retries, base_delay, max_delay
-            )
+            access_token, expires_in = await self._fetch_token(config, max_retries, base_delay, max_delay)
 
             if access_token:
                 # Кэшируем токен
@@ -253,9 +235,7 @@ class TokenManager:
                 self._token_expires_at = time.time() + expires_in
                 return access_token
             else:
-                logger.error(
-                    f"Не удалось получить токен для аккаунта: {config.account}"
-                )
+                logger.error(f"Не удалось получить токен для аккаунта: {config.account}")
                 return None
 
     def invalidate_token(self) -> None:

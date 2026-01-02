@@ -23,9 +23,7 @@ class AudioCompressor:
         self.max_file_size_mb = max_file_size_mb
         self.max_file_size_bytes = max_file_size_mb * 1024 * 1024
 
-    async def compress_audio(
-        self, input_path: str, output_path: str | None = None
-    ) -> str:
+    async def compress_audio(self, input_path: str, output_path: str | None = None) -> str:
         """
         Сжатие аудио файла.
 
@@ -53,32 +51,32 @@ class AudioCompressor:
         # Определяем путь для выходного файла
         if output_path is None:
             input_path_obj = Path(input_path)
-            output_path = str(
-                input_path_obj.parent / f"{input_path_obj.stem}_compressed.mp3"
-            )
+            output_path = str(input_path_obj.parent / f"{input_path_obj.stem}_compressed.mp3")
 
         # Создаем директорию, если нужно
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         # Команда FFmpeg для сжатия
         cmd = [
-            'ffmpeg',
-            '-i', input_path,
-            '-vn',  # Без видео
-            '-acodec', 'libmp3lame',  # MP3 кодек
-            '-ab', self.target_bitrate,  # Битрейт
-            '-ar', str(self.target_sample_rate),  # Частота дискретизации
-            '-ac', '1',  # Моно (для речи достаточно)
-            '-y',  # Перезаписать файл, если существует
+            "ffmpeg",
+            "-i",
+            input_path,
+            "-vn",  # Без видео
+            "-acodec",
+            "libmp3lame",  # MP3 кодек
+            "-ab",
+            self.target_bitrate,  # Битрейт
+            "-ar",
+            str(self.target_sample_rate),  # Частота дискретизации
+            "-ac",
+            "1",  # Моно (для речи достаточно)
+            "-y",  # Перезаписать файл, если существует
             output_path,
         ]
 
         try:
             logger.info(f"🔧 Сжатие аудио: {input_path}")
-            logger.info(
-                f"🔧 Параметры: битрейт={self.target_bitrate}, "
-                f"частота={self.target_sample_rate}Hz, моно"
-            )
+            logger.info(f"🔧 Параметры: битрейт={self.target_bitrate}, частота={self.target_sample_rate}Hz, моно")
 
             process = await asyncio.create_subprocess_exec(
                 *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
@@ -101,8 +99,7 @@ class AudioCompressor:
 
             if compressed_size > self.max_file_size_bytes:
                 logger.warning(
-                    f"⚠️ Сжатый файл все еще превышает лимит: "
-                    f"{compressed_size_mb:.2f} МБ > {self.max_file_size_mb} МБ"
+                    f"⚠️ Сжатый файл все еще превышает лимит: {compressed_size_mb:.2f} МБ > {self.max_file_size_mb} МБ"
                 )
                 # Можно попробовать еще больше сжать, но для начала оставим так
 
@@ -117,11 +114,13 @@ class AudioCompressor:
         import json
 
         cmd = [
-            'ffprobe',
-            '-v', 'quiet',
-            '-print_format', 'json',
-            '-show_format',
-            '-show_streams',
+            "ffprobe",
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
             audio_path,
         ]
 
@@ -136,29 +135,25 @@ class AudioCompressor:
                 raise RuntimeError(f"Ошибка получения информации об аудио: {stderr.decode()}")
 
             info = json.loads(stdout.decode())
-            audio_stream = next(
-                (s for s in info['streams'] if s['codec_type'] == 'audio'), None
-            )
+            audio_stream = next((s for s in info["streams"] if s["codec_type"] == "audio"), None)
 
             if not audio_stream:
                 raise RuntimeError("Аудио поток не найден")
 
             return {
-                'duration': float(info['format']['duration']),
-                'size': int(info['format']['size']),
-                'bitrate': int(info['format'].get('bit_rate', 0)),
-                'sample_rate': int(audio_stream.get('sample_rate', 0)),
-                'channels': int(audio_stream.get('channels', 0)),
-                'codec': audio_stream.get('codec_name', 'unknown'),
+                "duration": float(info["format"]["duration"]),
+                "size": int(info["format"]["size"]),
+                "bitrate": int(info["format"].get("bit_rate", 0)),
+                "sample_rate": int(audio_stream.get("sample_rate", 0)),
+                "channels": int(audio_stream.get("channels", 0)),
+                "codec": audio_stream.get("codec_name", "unknown"),
             }
 
         except Exception as e:
             logger.error(f"❌ Ошибка получения информации об аудио: {e}")
             raise
 
-    async def split_audio(
-        self, audio_path: str, max_size_mb: float = 20.0, output_dir: str | None = None
-    ) -> list[str]:
+    async def split_audio(self, audio_path: str, max_size_mb: float = 20.0, output_dir: str | None = None) -> list[str]:
         """
         Разбиение аудио файла на части, если он слишком большой.
 
@@ -175,7 +170,7 @@ class AudioCompressor:
 
         # Получаем информацию об аудио
         audio_info = await self.get_audio_info(audio_path)
-        duration = audio_info['duration']
+        duration = audio_info["duration"]
         file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
 
         logger.info(f"📊 Разбиение аудио: {file_size_mb:.2f} МБ, длительность: {duration:.1f}с")
@@ -223,29 +218,33 @@ class AudioCompressor:
             if i == num_parts - 1:
                 part_duration = duration - start_time
 
-            part_filename = f"{input_path_obj.stem}_part_{i+1:03d}.mp3"
+            part_filename = f"{input_path_obj.stem}_part_{i + 1:03d}.mp3"
             part_path = os.path.join(output_dir, part_filename)
 
             cmd = [
-                'ffmpeg',
-                '-i', audio_path,
-                '-ss', str(start_time),
-                '-t', str(part_duration),
-                '-vn',
-                '-acodec', 'libmp3lame',
-                '-ab', self.target_bitrate,
-                '-ar', str(self.target_sample_rate),
-                '-ac', '1',
-                '-y',
+                "ffmpeg",
+                "-i",
+                audio_path,
+                "-ss",
+                str(start_time),
+                "-t",
+                str(part_duration),
+                "-vn",
+                "-acodec",
+                "libmp3lame",
+                "-ab",
+                self.target_bitrate,
+                "-ar",
+                str(self.target_sample_rate),
+                "-ac",
+                "1",
+                "-y",
                 part_path,
             ]
 
             try:
                 end_time = start_time + part_duration
-                logger.info(
-                    f"🔪 Создание части {i+1}/{num_parts}: "
-                    f"{start_time:.1f}s - {end_time:.1f}s"
-                )
+                logger.info(f"🔪 Создание части {i + 1}/{num_parts}: {start_time:.1f}s - {end_time:.1f}s")
 
                 process = await asyncio.create_subprocess_exec(
                     *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
@@ -255,17 +254,17 @@ class AudioCompressor:
 
                 if process.returncode != 0:
                     error_msg = stderr.decode() if stderr else "Неизвестная ошибка"
-                    raise RuntimeError(f"Ошибка создания части {i+1}: {error_msg}")
+                    raise RuntimeError(f"Ошибка создания части {i + 1}: {error_msg}")
 
                 if not os.path.exists(part_path):
-                    raise RuntimeError(f"Часть {i+1} не была создана: {part_path}")
+                    raise RuntimeError(f"Часть {i + 1} не была создана: {part_path}")
 
                 part_size_mb = os.path.getsize(part_path) / (1024 * 1024)
 
                 # Проверяем, что часть не превышает лимит
                 if part_size_mb > self.max_file_size_mb:
                     error_msg = (
-                        f"Часть {i+1}/{num_parts} превышает лимит: "
+                        f"Часть {i + 1}/{num_parts} превышает лимит: "
                         f"{part_size_mb:.2f} МБ > {self.max_file_size_mb} МБ. "
                         f"Попробуйте уменьшить max_size_mb в конфигурации."
                     )
@@ -273,15 +272,15 @@ class AudioCompressor:
                     raise ValueError(error_msg)
                 elif part_size_mb > self.max_file_size_mb * 0.95:
                     logger.warning(
-                        f"⚠️ Часть {i+1}/{num_parts} близка к лимиту: "
+                        f"⚠️ Часть {i + 1}/{num_parts} близка к лимиту: "
                         f"{part_size_mb:.2f} МБ (лимит: {self.max_file_size_mb} МБ)"
                     )
 
-                logger.info(f"✅ Часть {i+1}/{num_parts} создана: {part_size_mb:.2f} МБ")
+                logger.info(f"✅ Часть {i + 1}/{num_parts} создана: {part_size_mb:.2f} МБ")
                 return part_path
 
             except Exception as e:
-                logger.error(f"❌ Ошибка создания части {i+1}: {e}")
+                logger.error(f"❌ Ошибка создания части {i + 1}: {e}")
                 raise
 
         # Создаем все части параллельно
@@ -316,4 +315,3 @@ class AudioCompressor:
 
         logger.info(f"✅ Аудио разбито на {len(parts)} частей (параллельно)")
         return parts
-

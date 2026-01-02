@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Временный скрипт для просмотра сырых данных от Zoom API"""
+
 import asyncio
 import json
 import sys
@@ -37,10 +38,10 @@ async def main():
         response = await api.get_recordings(
             page_size=300,  # Большой размер страницы
             from_date=from_date,
-            to_date=to_date
+            to_date=to_date,
         )
 
-        meetings = response.get('meetings', [])
+        meetings = response.get("meetings", [])
 
         print(f"Всего найдено записей от 3 декабря: {len(meetings)}\n")
         print("=" * 80)
@@ -64,7 +65,7 @@ async def main():
                 print("\n" + "=" * 80)
 
                 # Также получаем детальную информацию
-                meeting_id = meeting.get('uuid') or meeting.get('id')
+                meeting_id = meeting.get("uuid") or meeting.get("id")
                 if meeting_id:
                     print(f"\nДетальная информация для meeting_id={meeting_id}:\n")
                     try:
@@ -77,9 +78,10 @@ async def main():
     except Exception as e:
         print(f"Ошибка: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
+
 if __name__ == "__main__":
     asyncio.run(main())
-

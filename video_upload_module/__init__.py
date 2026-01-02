@@ -10,16 +10,16 @@ from .platforms import VKUploader, YouTubeUploader
 
 __all__ = [
     # Core
-    'BaseUploader',
-    'UploadResult',
-    'UploadManager',
+    "BaseUploader",
+    "UploadResult",
+    "UploadManager",
     # Config
-    'UploadConfig',
-    'YouTubeConfig',
-    'VKConfig',
-    'PlatformConfig',
-    'UploadConfigFactory',
+    "UploadConfig",
+    "YouTubeConfig",
+    "VKConfig",
+    "PlatformConfig",
+    "UploadConfigFactory",
     # Platforms
-    'YouTubeUploader',
-    'VKUploader',
+    "YouTubeUploader",
+    "VKUploader",
 ]

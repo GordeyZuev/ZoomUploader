@@ -1,17 +1,3 @@
-from .token_manager import TokenManager
-from .zoom_api import (
-    ZoomAPI,
-    ZoomAPIError,
-    ZoomAuthenticationError,
-    ZoomRequestError,
-    ZoomResponseError,
-)
+"""FastAPI application for Zoom Publishing Platform."""
 
-__all__ = [
-    'ZoomAPI',
-    'ZoomAPIError',
-    'ZoomAuthenticationError',
-    'ZoomRequestError',
-    'ZoomResponseError',
-    'TokenManager',
-]
+__version__ = "1.0.0"

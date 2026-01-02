@@ -39,13 +39,11 @@ class YouTubeUploader(BaseUploader):
                         self.config.credentials_file, self.config.scopes
                     )
                 except Exception:
-                    with open(self.config.credentials_file, encoding='utf-8') as f:
+                    with open(self.config.credentials_file, encoding="utf-8") as f:
                         data = json.load(f)
-                    if isinstance(data, dict) and 'token' in data:
+                    if isinstance(data, dict) and "token" in data:
                         try:
-                            self.credentials = Credentials.from_authorized_user_info(
-                                data['token'], self.config.scopes
-                            )
+                            self.credentials = Credentials.from_authorized_user_info(data["token"], self.config.scopes)
                         except Exception:
                             self.credentials = None
 
@@ -64,40 +62,36 @@ class YouTubeUploader(BaseUploader):
                     flow = None
 
                     try:
-                        with open(self.config.client_secrets_file, encoding='utf-8') as f:
+                        with open(self.config.client_secrets_file, encoding="utf-8") as f:
                             secrets_data = json.load(f)
-                        if isinstance(secrets_data, dict) and 'client_secrets' in secrets_data:
+                        if isinstance(secrets_data, dict) and "client_secrets" in secrets_data:
                             flow = InstalledAppFlow.from_client_config(
-                                secrets_data['client_secrets'], self.config.scopes
+                                secrets_data["client_secrets"], self.config.scopes
                             )
                         else:
                             flow = InstalledAppFlow.from_client_secrets_file(
                                 self.config.client_secrets_file, self.config.scopes
                             )
                     except FileNotFoundError:
-                        self.logger.error(
-                            f"Файл с секретами клиента не найден: {self.config.client_secrets_file}"
-                        )
+                        self.logger.error(f"Файл с секретами клиента не найден: {self.config.client_secrets_file}")
                         return False
                     self.credentials = flow.run_local_server(port=0)
 
                 try:
-                    with open(self.config.credentials_file, encoding='utf-8') as f:
+                    with open(self.config.credentials_file, encoding="utf-8") as f:
                         bundle = json.load(f)
-                    if isinstance(bundle, dict) and 'client_secrets' in bundle:
-                        bundle['token'] = json.loads(self.credentials.to_json())
-                        with open(self.config.credentials_file, 'w', encoding='utf-8') as f:
+                    if isinstance(bundle, dict) and "client_secrets" in bundle:
+                        bundle["token"] = json.loads(self.credentials.to_json())
+                        with open(self.config.credentials_file, "w", encoding="utf-8") as f:
                             json.dump(bundle, f, ensure_ascii=False, indent=2)
                     else:
-                        with open(
-                            self.config.credentials_file, 'w', encoding='utf-8'
-                        ) as token_file:
+                        with open(self.config.credentials_file, "w", encoding="utf-8") as token_file:
                             token_file.write(self.credentials.to_json())
                 except Exception:
-                    with open(self.config.credentials_file, 'w', encoding='utf-8') as token_file:
+                    with open(self.config.credentials_file, "w", encoding="utf-8") as token_file:
                         token_file.write(self.credentials.to_json())
 
-            self.service = build('youtube', 'v3', credentials=self.credentials)
+            self.service = build("youtube", "v3", credentials=self.credentials)
             self._authenticated = True
 
             self.logger.info("Аутентификация YouTube успешна")
@@ -130,25 +124,23 @@ class YouTubeUploader(BaseUploader):
             self.logger.debug(f"Длина описания для YouTube: {len(final_description)} символов")
 
             body = {
-                'snippet': {
-                    'title': title,
-                    'description': final_description,
-                    'defaultLanguage': self.config.default_language,
-                    'defaultAudioLanguage': self.config.default_language,
+                "snippet": {
+                    "title": title,
+                    "description": final_description,
+                    "defaultLanguage": self.config.default_language,
+                    "defaultAudioLanguage": self.config.default_language,
                 },
-                'status': {
-                    'privacyStatus': privacy_status or self.config.default_privacy,
-                    'selfDeclaredMadeForKids': False,
+                "status": {
+                    "privacyStatus": privacy_status or self.config.default_privacy,
+                    "selfDeclaredMadeForKids": False,
                 },
             }
 
-            media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype='video/*')
+            media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/*")
 
             self.logger.info(f"Загрузка видео на YouTube: {title}")
 
-            request = self.service.videos().insert(
-                part=','.join(body.keys()), body=body, media_body=media
-            )
+            request = self.service.videos().insert(part=",".join(body.keys()), body=body, media_body=media)
 
             response = None
             while response is None:
@@ -162,15 +154,13 @@ class YouTubeUploader(BaseUploader):
                         except Exception:
                             pass  # Игнорируем ошибки обновления прогресса
 
-            if 'id' in response:
-                video_id = response['id']
+            if "id" in response:
+                video_id = response["id"]
                 video_url = f"https://www.youtube.com/watch?v={video_id}"
 
                 self.logger.info(f"Видео загружено: {video_url}")
 
-                result = self._create_result(
-                    video_id=video_id, video_url=video_url, title=title, platform="youtube"
-                )
+                result = self._create_result(video_id=video_id, video_url=video_url, title=title, platform="youtube")
 
                 if playlist_id:
                     try:
@@ -179,17 +169,15 @@ class YouTubeUploader(BaseUploader):
                         from .playlist_manager import YouTubePlaylistManager
 
                         playlist_manager = YouTubePlaylistManager(self.service, self.config)
-                        success = await playlist_manager.add_video_to_playlist(
-                            playlist_id, video_id
-                        )
+                        success = await playlist_manager.add_video_to_playlist(playlist_id, video_id)
                         if success:
-                            result.metadata['playlist_id'] = playlist_id
+                            result.metadata["playlist_id"] = playlist_id
                             self.logger.info(f"Видео добавлено в плейлист: {playlist_id}")
                         else:
-                            result.metadata['playlist_error'] = "Не удалось добавить в плейлист"
+                            result.metadata["playlist_error"] = "Не удалось добавить в плейлист"
                     except Exception as e:
                         self.logger.error(f"Ошибка добавления в плейлист: {e}")
-                        result.metadata['playlist_error'] = str(e)
+                        result.metadata["playlist_error"] = str(e)
 
                 if thumbnail_path and os.path.exists(thumbnail_path):
                     try:
@@ -199,12 +187,12 @@ class YouTubeUploader(BaseUploader):
                         await asyncio.sleep(5)
                         success = await thumbnail_manager.set_thumbnail(video_id, thumbnail_path)
                         if success:
-                            result.metadata['thumbnail_set'] = True
+                            result.metadata["thumbnail_set"] = True
                         else:
-                            result.metadata['thumbnail_error'] = "Не удалось установить миниатюру"
+                            result.metadata["thumbnail_error"] = "Не удалось установить миниатюру"
                     except Exception as e:
                         self.logger.warning(f"Не удалось установить миниатюру: {e}")
-                        result.metadata['thumbnail_error'] = str(e)
+                        result.metadata["thumbnail_error"] = str(e)
 
                 return result
             else:
@@ -253,13 +241,9 @@ class YouTubeUploader(BaseUploader):
 
             media = MediaFileUpload(caption_path, mimetype=mime_type, resumable=True)
 
-            self.logger.info(
-                f"Загрузка субтитров на YouTube для видео {video_id} ({language})"
-            )
+            self.logger.info(f"Загрузка субтитров на YouTube для видео {video_id} ({language})")
 
-            request = self.service.captions().insert(
-                part="snippet", body=body, media_body=media
-            )
+            request = self.service.captions().insert(part="snippet", body=body, media_body=media)
             response = request.execute()
 
             if response and response.get("id"):
@@ -282,18 +266,18 @@ class YouTubeUploader(BaseUploader):
             return None
 
         try:
-            request = self.service.videos().list(part='snippet,statistics,status', id=video_id)
+            request = self.service.videos().list(part="snippet,statistics,status", id=video_id)
             response = request.execute()
 
-            if response['items']:
-                video = response['items'][0]
+            if response["items"]:
+                video = response["items"][0]
                 return {
-                    'title': video['snippet']['title'],
-                    'description': video['snippet']['description'],
-                    'status': video['status']['privacyStatus'],
-                    'view_count': video['statistics'].get('viewCount', '0'),
-                    'like_count': video['statistics'].get('likeCount', '0'),
-                    'published_at': video['snippet']['publishedAt'],
+                    "title": video["snippet"]["title"],
+                    "description": video["snippet"]["description"],
+                    "status": video["status"]["privacyStatus"],
+                    "view_count": video["statistics"].get("viewCount", "0"),
+                    "like_count": video["statistics"].get("likeCount", "0"),
+                    "published_at": video["snippet"]["publishedAt"],
                 }
             return None
 
@@ -320,4 +304,4 @@ class YouTubeUploader(BaseUploader):
     def _get_timestamp(self) -> str:
         """Получение текущего времени в строковом формате."""
 
-        return datetime.now().strftime('%Y-%m-%d %H:%M')
+        return datetime.now().strftime("%Y-%m-%d %H:%M")

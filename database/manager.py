@@ -14,6 +14,9 @@ from logger import get_logger
 from models.recording import (
     MeetingRecording,
     OutputTarget,
+    ProcessingStage,
+    ProcessingStageStatus,
+    ProcessingStageType,
     ProcessingStatus,
     SourceType,
     TargetStatus,
@@ -22,7 +25,13 @@ from models.recording import (
 )
 
 from .config import DatabaseConfig
-from .models import Base, OutputTargetModel, RecordingModel, SourceMetadataModel
+from .models import (
+    Base,
+    OutputTargetModel,
+    ProcessingStageModel,
+    RecordingModel,
+    SourceMetadataModel,
+)
 
 logger = get_logger()
 
@@ -33,8 +42,8 @@ def _parse_start_time(start_time_str: str) -> datetime:
         raise ValueError("start_time не может быть пустым")
 
     try:
-        if start_time_str.endswith('Z'):
-            time_str = start_time_str[:-1] + '+00:00'
+        if start_time_str.endswith("Z"):
+            time_str = start_time_str[:-1] + "+00:00"
         else:
             time_str = start_time_str
 
@@ -77,9 +86,7 @@ class DatabaseManager:
     def __init__(self, config: DatabaseConfig):
         self.config = config
         self.engine = create_async_engine(config.url, echo=False)
-        self.async_session = async_sessionmaker(
-            self.engine, class_=AsyncSession, expire_on_commit=False
-        )
+        self.async_session = async_sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
 
     async def create_database_if_not_exists(self):
         """Создание базы данных, если она не существует."""
@@ -91,12 +98,10 @@ class DatabaseManager:
                 port=parsed.port or 5432,
                 user=parsed.username,
                 password=parsed.password,
-                database='postgres',
+                database="postgres",
             )
 
-            result = await conn.fetchval(
-                "SELECT 1 FROM pg_database WHERE datname = $1", self.config.database
-            )
+            result = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", self.config.database)
 
             if not result:
                 await conn.execute(f'CREATE DATABASE "{self.config.database}"')
@@ -126,24 +131,25 @@ class DatabaseManager:
                 port=parsed.port or 5432,
                 user=parsed.username,
                 password=parsed.password,
-                database='postgres',
+                database="postgres",
             )
 
             # Проверяем, существует ли база данных
-            db_exists = await conn.fetchval(
-                "SELECT 1 FROM pg_database WHERE datname = $1", self.config.database
-            )
+            db_exists = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", self.config.database)
 
             if db_exists:
                 # Завершаем все активные соединения к целевой БД
                 # Используем параметризованный запрос для безопасности
                 try:
-                    await conn.execute("""
+                    await conn.execute(
+                        """
                         SELECT pg_terminate_backend(pg_stat_activity.pid)
                         FROM pg_stat_activity
                         WHERE pg_stat_activity.datname = $1
                         AND pid <> pg_backend_pid()
-                    """, self.config.database)
+                    """,
+                        self.config.database,
+                    )
                 except Exception as e:
                     logger.warning(f"Не удалось завершить все соединения: database={self.config.database} | error={e}")
 
@@ -158,9 +164,7 @@ class DatabaseManager:
             await conn.close()
 
             self.engine = create_async_engine(self.config.url, echo=False)
-            self.async_session = async_sessionmaker(
-                self.engine, class_=AsyncSession, expire_on_commit=False
-            )
+            self.async_session = async_sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
 
             await self.create_tables()
 
@@ -230,6 +234,7 @@ class DatabaseManager:
                 .options(
                     selectinload(RecordingModel.source),
                     selectinload(RecordingModel.outputs),
+                    selectinload(RecordingModel.processing_stages),
                 )
                 .join(SourceMetadataModel)
                 .where(
@@ -256,7 +261,8 @@ class DatabaseManager:
         existing.is_mapped = recording.is_mapped if recording.is_mapped is not None else existing.is_mapped
 
         new_status = _normalize_enum(recording.status, ProcessingStatus)
-        if existing.status != new_status:
+
+        if existing.status != new_status and existing.status != ProcessingStatus.UPLOADED:
             existing.status = new_status
         existing.expire_at = recording.expire_at
 
@@ -267,7 +273,14 @@ class DatabaseManager:
         existing.transcription_info = recording.transcription_info
         existing.topic_timestamps = recording.topic_timestamps
         existing.main_topics = recording.main_topics
+        existing.processing_preferences = recording.processing_preferences
         existing.downloaded_at = recording.downloaded_at
+
+        existing.failed = recording.failed
+        existing.failed_at = recording.failed_at
+        existing.failed_reason = recording.failed_reason
+        existing.failed_at_stage = recording.failed_at_stage
+        existing.retry_count = recording.retry_count
 
         meta = _build_source_metadata_payload(recording)
         if existing.source is None:
@@ -275,7 +288,7 @@ class DatabaseManager:
                 recording_id=existing.id,
                 source_type=_normalize_enum(recording.source_type, SourceType),
                 source_key=recording.source_key,
-                metadata=meta,
+                meta=meta,
             )
             session.add(source)
         else:
@@ -310,6 +323,38 @@ class DatabaseManager:
                     )
                 )
 
+        existing_stages: dict[ProcessingStageType, ProcessingStageModel] = {}
+        for stage in existing.processing_stages:
+            key = _normalize_enum(stage.stage_type, ProcessingStageType)
+            existing_stages[key] = stage
+
+        for stage in recording.processing_stages:
+            stage_type_value = _normalize_enum(stage.stage_type, ProcessingStageType)
+            stage_status = _normalize_enum(stage.status, ProcessingStageStatus)
+            db_stage = existing_stages.get(stage_type_value)
+            if db_stage:
+                db_stage.status = stage_status
+                db_stage.failed = stage.failed
+                db_stage.failed_at = stage.failed_at
+                db_stage.failed_reason = stage.failed_reason
+                db_stage.retry_count = stage.retry_count
+                db_stage.stage_meta = stage.stage_meta
+                db_stage.completed_at = stage.completed_at
+            else:
+                session.add(
+                    ProcessingStageModel(
+                        recording_id=existing.id,
+                        stage_type=stage_type_value,
+                        status=stage_status,
+                        failed=stage.failed,
+                        failed_at=stage.failed_at,
+                        failed_reason=stage.failed_reason,
+                        retry_count=stage.retry_count,
+                        stage_meta=stage.stage_meta,
+                        completed_at=stage.completed_at,
+                    )
+                )
+
         existing.updated_at = datetime.now()
         session.add(existing)
 
@@ -330,7 +375,13 @@ class DatabaseManager:
             transcription_info=recording.transcription_info,
             topic_timestamps=recording.topic_timestamps,
             main_topics=recording.main_topics,
+            processing_preferences=recording.processing_preferences,
             downloaded_at=recording.downloaded_at,
+            failed=recording.failed,
+            failed_at=recording.failed_at,
+            failed_reason=recording.failed_reason,
+            failed_at_stage=recording.failed_at_stage,
+            retry_count=recording.retry_count,
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
@@ -360,15 +411,31 @@ class DatabaseManager:
                 )
             )
 
-    async def get_recordings(
-        self, status: ProcessingStatus | None = None
-    ) -> list[MeetingRecording]:
+        # Сохранение этапов обработки
+        for stage in recording.processing_stages:
+            session.add(
+                ProcessingStageModel(
+                    recording_id=db_recording.id,
+                    stage_type=_normalize_enum(stage.stage_type, ProcessingStageType),
+                    status=_normalize_enum(stage.status, ProcessingStageStatus),
+                    failed=stage.failed,
+                    failed_at=stage.failed_at,
+                    failed_reason=stage.failed_reason,
+                    retry_count=stage.retry_count,
+                    stage_meta=stage.stage_meta,
+                    completed_at=stage.completed_at,
+                )
+            )
+
+    async def get_recordings(self, status: ProcessingStatus | None = None) -> list[MeetingRecording]:
         """Получение записей из базы данных."""
         async with self.async_session() as session:
             try:
                 query = select(RecordingModel).options(
                     selectinload(RecordingModel.source),
                     selectinload(RecordingModel.outputs),
+                    selectinload(RecordingModel.processing_stages),
+                    selectinload(RecordingModel.processing_stages),
                 )
                 if status:
                     query = query.where(RecordingModel.status == status)
@@ -382,7 +449,9 @@ class DatabaseManager:
                     recording = self._convert_db_to_model(db_recording)
                     recordings.append(recording)
 
-                logger.debug(f"Получено записей из БД: count={len(recordings)} | status={status.value if status else 'all'}")
+                logger.debug(
+                    f"Получено записей из БД: count={len(recordings)} | status={status.value if status else 'all'}"
+                )
                 return recordings
 
             except Exception as e:
@@ -456,6 +525,7 @@ class DatabaseManager:
                     options=[
                         selectinload(RecordingModel.source),
                         selectinload(RecordingModel.outputs),
+                        selectinload(RecordingModel.processing_stages),
                     ],
                 )
                 if not db_recording:
@@ -470,7 +540,9 @@ class DatabaseManager:
 
             except Exception as e:
                 await session.rollback()
-                logger.error(f"Ошибка обновления записи: recording={recording.display_name} | recording_id={recording.db_id} | error={e}")
+                logger.error(
+                    f"Ошибка обновления записи: recording={recording.display_name} | recording_id={recording.db_id} | error={e}"
+                )
                 raise
 
     def _convert_db_to_model(self, db_recording: RecordingModel) -> MeetingRecording:
@@ -509,6 +581,24 @@ class DatabaseManager:
                 )
             )
 
+        # Конвертация этапов обработки
+        processing_stages: list[ProcessingStage] = []
+        for stage in db_recording.processing_stages:
+            stage_type = _normalize_enum(stage.stage_type, ProcessingStageType)
+            stage_status = _normalize_enum(stage.status, ProcessingStageStatus)
+            processing_stages.append(
+                ProcessingStage(
+                    stage_type=stage_type,
+                    status=stage_status,
+                    failed=stage.failed,
+                    failed_at=stage.failed_at,
+                    failed_reason=stage.failed_reason,
+                    retry_count=stage.retry_count,
+                    stage_meta=stage.stage_meta,
+                    completed_at=stage.completed_at,
+                )
+            )
+
         meeting_data = {
             "display_name": db_recording.display_name,
             "start_time": start_time_str,
@@ -527,8 +617,15 @@ class DatabaseManager:
             "transcription_info": db_recording.transcription_info,
             "topic_timestamps": db_recording.topic_timestamps,
             "main_topics": db_recording.main_topics,
+            "processing_preferences": db_recording.processing_preferences,
             "downloaded_at": db_recording.downloaded_at,
             "output_targets": outputs,
+            "processing_stages": processing_stages,
+            "failed": db_recording.failed,
+            "failed_at": db_recording.failed_at,
+            "failed_reason": db_recording.failed_reason,
+            "failed_at_stage": db_recording.failed_at_stage,
+            "retry_count": db_recording.retry_count,
         }
 
         # Zoom-совместимые поля из метаданных
@@ -583,33 +680,51 @@ class DatabaseManager:
                     if db_recording.local_video_path and os.path.exists(db_recording.local_video_path):
                         try:
                             os.remove(db_recording.local_video_path)
-                            logger.debug(f"Удален файл: path={db_recording.local_video_path} | recording_id={db_recording.id}")
+                            logger.debug(
+                                f"Удален файл: path={db_recording.local_video_path} | recording_id={db_recording.id}"
+                            )
                         except Exception as e:
-                            logger.warning(f"Не удалось удалить файл: path={db_recording.local_video_path} | recording_id={db_recording.id} | error={e}")
+                            logger.warning(
+                                f"Не удалось удалить файл: path={db_recording.local_video_path} | recording_id={db_recording.id} | error={e}"
+                            )
 
                     if db_recording.processed_video_path and os.path.exists(db_recording.processed_video_path):
                         try:
                             os.remove(db_recording.processed_video_path)
-                            logger.debug(f"Удален файл: path={db_recording.processed_video_path} | recording_id={db_recording.id}")
+                            logger.debug(
+                                f"Удален файл: path={db_recording.processed_video_path} | recording_id={db_recording.id}"
+                            )
                         except Exception as e:
-                            logger.warning(f"Не удалось удалить файл: path={db_recording.processed_video_path} | recording_id={db_recording.id} | error={e}")
+                            logger.warning(
+                                f"Не удалось удалить файл: path={db_recording.processed_video_path} | recording_id={db_recording.id} | error={e}"
+                            )
 
                     if db_recording.processed_audio_dir and os.path.exists(db_recording.processed_audio_dir):
                         try:
                             shutil.rmtree(db_recording.processed_audio_dir)
-                            logger.debug(f"Удалена папка аудио: path={db_recording.processed_audio_dir} | recording_id={db_recording.id}")
+                            logger.debug(
+                                f"Удалена папка аудио: path={db_recording.processed_audio_dir} | recording_id={db_recording.id}"
+                            )
                         except Exception as e:
-                            logger.warning(f"Не удалось удалить аудио директорию: path={db_recording.processed_audio_dir} | recording_id={db_recording.id} | error={e}")
+                            logger.warning(
+                                f"Не удалось удалить аудио директорию: path={db_recording.processed_audio_dir} | recording_id={db_recording.id} | error={e}"
+                            )
 
                     if db_recording.transcription_dir and os.path.exists(db_recording.transcription_dir):
                         try:
                             shutil.rmtree(db_recording.transcription_dir)
-                            logger.debug(f"Удалена папка транскрипции: path={db_recording.transcription_dir} | recording_id={db_recording.id}")
+                            logger.debug(
+                                f"Удалена папка транскрипции: path={db_recording.transcription_dir} | recording_id={db_recording.id}"
+                            )
                         except Exception as e:
-                            logger.warning(f"Не удалось удалить папку транскрипции: path={db_recording.transcription_dir} | recording_id={db_recording.id} | error={e}")
+                            logger.warning(
+                                f"Не удалось удалить папку транскрипции: path={db_recording.transcription_dir} | recording_id={db_recording.id} | error={e}"
+                            )
 
                     # Подсчитываем по статусам
-                    old_status = db_recording.status.value if hasattr(db_recording.status, 'value') else str(db_recording.status)
+                    old_status = (
+                        db_recording.status.value if hasattr(db_recording.status, "value") else str(db_recording.status)
+                    )
                     by_status[old_status] = by_status.get(old_status, 0) + 1
 
                     # Сбрасываем запись
@@ -640,11 +755,13 @@ class DatabaseManager:
                     reset_count += 1
 
                 await session.commit()
-                logger.info(f"Сброшено записей: count={reset_count} | by_status={by_status} | keep_uploaded={keep_uploaded}")
+                logger.info(
+                    f"Сброшено записей: count={reset_count} | by_status={by_status} | keep_uploaded={keep_uploaded}"
+                )
 
                 return {
-                    'total_reset': reset_count,
-                    'by_status': by_status,
+                    "total_reset": reset_count,
+                    "by_status": by_status,
                 }
 
             except Exception as e:
@@ -652,8 +769,192 @@ class DatabaseManager:
                 logger.error(f"Ошибка сброса записей: keep_uploaded={keep_uploaded} | error={e}")
                 raise
 
+    # ==================== User Management ====================
+
+    async def get_user_by_id(self, user_id: int):
+        """Получить пользователя по ID."""
+        async with self.async_session() as session:
+            from database.auth_models import UserModel
+
+            result = await session.execute(select(UserModel).where(UserModel.id == user_id))
+            return result.scalars().first()
+
+    async def get_user_by_email(self, email: str):
+        """Получить пользователя по email."""
+        async with self.async_session() as session:
+            from database.auth_models import UserModel
+
+            result = await session.execute(select(UserModel).where(UserModel.email == email))
+            return result.scalars().first()
+
+    async def create_user(self, email: str, hashed_password: str, full_name: str | None = None):
+        """Создать нового пользователя."""
+        async with self.async_session() as session:
+            from database.auth_models import UserModel
+
+            user = UserModel(email=email, hashed_password=hashed_password, full_name=full_name)
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+            return user
+
+    async def update_user(self, user_id: int, updates: dict):
+        """Обновить пользователя."""
+        async with self.async_session() as session:
+            from database.auth_models import UserModel
+
+            result = await session.execute(select(UserModel).where(UserModel.id == user_id))
+            user = result.scalars().first()
+            if not user:
+                return None
+
+            for key, value in updates.items():
+                setattr(user, key, value)
+
+            await session.commit()
+            await session.refresh(user)
+            return user
+
+    # ==================== Refresh Tokens ====================
+
+    async def create_refresh_token(self, user_id: int, token: str, expires_at: datetime):
+        """Создать refresh токен."""
+        async with self.async_session() as session:
+            from database.auth_models import RefreshTokenModel
+
+            refresh_token = RefreshTokenModel(user_id=user_id, token=token, expires_at=expires_at)
+            session.add(refresh_token)
+            await session.commit()
+            await session.refresh(refresh_token)
+            return refresh_token
+
+    async def get_refresh_token(self, token: str):
+        """Получить refresh токен."""
+        async with self.async_session() as session:
+            from database.auth_models import RefreshTokenModel
+
+            result = await session.execute(select(RefreshTokenModel).where(RefreshTokenModel.token == token))
+            return result.scalars().first()
+
+    async def revoke_refresh_token(self, token: str):
+        """Отозвать refresh токен."""
+        async with self.async_session() as session:
+            from database.auth_models import RefreshTokenModel
+
+            result = await session.execute(select(RefreshTokenModel).where(RefreshTokenModel.token == token))
+            refresh_token = result.scalars().first()
+            if refresh_token:
+                refresh_token.is_revoked = True
+                await session.commit()
+            return refresh_token
+
+    # ==================== User Quotas ====================
+
+    async def create_user_quota(
+        self,
+        user_id: int,
+        max_recordings_per_month: int,
+        max_storage_gb: int,
+        max_concurrent_tasks: int,
+    ):
+        """Создать квоты для пользователя."""
+        async with self.async_session() as session:
+            from database.auth_models import UserQuotaModel
+
+            quota = UserQuotaModel(
+                user_id=user_id,
+                max_recordings_per_month=max_recordings_per_month,
+                max_storage_gb=max_storage_gb,
+                max_concurrent_tasks=max_concurrent_tasks,
+                quota_reset_at=datetime.utcnow() + __import__("datetime").timedelta(days=30),
+            )
+            session.add(quota)
+            await session.commit()
+            await session.refresh(quota)
+            return quota
+
+    async def get_user_quota(self, user_id: int):
+        """Получить квоты пользователя."""
+        async with self.async_session() as session:
+            from database.auth_models import UserQuotaModel
+
+            result = await session.execute(select(UserQuotaModel).where(UserQuotaModel.user_id == user_id))
+            return result.scalars().first()
+
+    async def update_user_quota(self, user_id: int, updates: dict):
+        """Обновить квоты пользователя."""
+        async with self.async_session() as session:
+            from database.auth_models import UserQuotaModel
+
+            result = await session.execute(select(UserQuotaModel).where(UserQuotaModel.user_id == user_id))
+            quota = result.scalars().first()
+            if not quota:
+                return None
+
+            for key, value in updates.items():
+                setattr(quota, key, value)
+
+            await session.commit()
+            await session.refresh(quota)
+            return quota
+
+    # ==================== User Credentials ====================
+
+    async def create_user_credential(self, user_id: int, platform: str, encrypted_data: str):
+        """Создать учетные данные пользователя."""
+        async with self.async_session() as session:
+            from database.auth_models import UserCredentialModel
+
+            credential = UserCredentialModel(user_id=user_id, platform=platform, encrypted_data=encrypted_data)
+            session.add(credential)
+            await session.commit()
+            await session.refresh(credential)
+            return credential
+
+    async def get_user_credentials(self, user_id: int, platform: str):
+        """Получить учетные данные пользователя для платформы."""
+        async with self.async_session() as session:
+            from database.auth_models import UserCredentialModel
+
+            result = await session.execute(
+                select(UserCredentialModel).where(
+                    UserCredentialModel.user_id == user_id,
+                    UserCredentialModel.platform == platform,
+                    UserCredentialModel.is_active.is_(True),
+                )
+            )
+            return result.scalars().first()
+
+    async def update_user_credential(self, credential_id: int, encrypted_data: str):
+        """Обновить учетные данные пользователя."""
+        async with self.async_session() as session:
+            from database.auth_models import UserCredentialModel
+
+            result = await session.execute(select(UserCredentialModel).where(UserCredentialModel.id == credential_id))
+            credential = result.scalars().first()
+            if not credential:
+                return None
+
+            credential.encrypted_data = encrypted_data
+            credential.last_used_at = datetime.utcnow()
+            await session.commit()
+            await session.refresh(credential)
+            return credential
+
+    async def delete_user_credential(self, credential_id: int):
+        """Удалить учетные данные пользователя."""
+        async with self.async_session() as session:
+            from database.auth_models import UserCredentialModel
+
+            result = await session.execute(select(UserCredentialModel).where(UserCredentialModel.id == credential_id))
+            credential = result.scalars().first()
+            if credential:
+                await session.delete(credential)
+                await session.commit()
+            return credential
+
     async def close(self):
         """Закрытие соединения с базой данных."""
-        if hasattr(self, 'engine') and self.engine is not None:
+        if hasattr(self, "engine") and self.engine is not None:
             await self.engine.dispose()
             logger.info("Соединение с БД закрыто")

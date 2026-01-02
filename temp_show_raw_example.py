@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Показ сырых данных от Zoom API на примере любой записи"""
+
 import asyncio
 import json
 import sys
@@ -28,18 +29,16 @@ async def main():
 
     # Получаем записи за последний год
     from datetime import datetime, timedelta
+
     from_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
 
     print(f"Получаем записи с {from_date}...\n")
 
     try:
         # Получаем все записи
-        response = await api.get_recordings(
-            page_size=300,
-            from_date=from_date
-        )
+        response = await api.get_recordings(page_size=300, from_date=from_date)
 
-        meetings = response.get('meetings', [])
+        meetings = response.get("meetings", [])
 
         if not meetings:
             print("Записи не найдены")
@@ -48,7 +47,7 @@ async def main():
         # Берем первую запись с достаточной длительностью для примера
         example_meeting = None
         for meeting in meetings:
-            if meeting.get('duration', 0) > 10:  # Берем запись длиннее 10 минут
+            if meeting.get("duration", 0) > 10:  # Берем запись длиннее 10 минут
                 example_meeting = meeting
                 break
 
@@ -62,7 +61,7 @@ async def main():
         print(json.dumps(example_meeting, indent=2, ensure_ascii=False))
 
         # Также получаем детальную информацию
-        meeting_id = example_meeting.get('uuid') or example_meeting.get('id')
+        meeting_id = example_meeting.get("uuid") or example_meeting.get("id")
         if meeting_id:
             print("\n\n" + "=" * 80)
             print("ПРИМЕР СЫРЫХ ДАННЫХ ОТ ZOOM API (get_recording_details)")
@@ -97,9 +96,10 @@ async def main():
     except Exception as e:
         print(f"Ошибка: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
+
 if __name__ == "__main__":
     asyncio.run(main())
-

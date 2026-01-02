@@ -34,8 +34,7 @@ def setup_logger(log_level: str | None = None, log_file: str | None = None) -> N
     )
 
     file_format = (
-        "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | "
-        "{extra[module]: <25} | {name}:{function}:{line} - {message}"
+        "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {extra[module]: <25} | {name}:{function}:{line} - {message}"
     )
 
     # Консольный handler - уровень из env

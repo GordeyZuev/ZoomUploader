@@ -46,9 +46,7 @@ class TitleMapper:
 
         if matched_rule:
             result = self._apply_rule(matched_rule, original_title, start_time, duration, main_topic)
-            self.logger.info(
-                f"Найдено правило для '{original_title}': {matched_rule['pattern']} -> '{result.title}'"
-            )
+            self.logger.info(f"Найдено правило для '{original_title}': {matched_rule['pattern']} -> '{result.title}'")
             return result
         else:
             self.logger.info(f"Правило для '{original_title}' не найдено")
@@ -117,7 +115,7 @@ class TitleMapper:
         try:
             normalized_time = normalize_datetime_string(start_time)
             dt = datetime.fromisoformat(normalized_time)
-            date_str = dt.strftime('%d.%m.%Y')
+            date_str = dt.strftime("%d.%m.%Y")
         except Exception as e:
             self.logger.warning(f"Ошибка парсинга даты {start_time}: {e}")
             date_str = "неизвестная дата"
@@ -154,13 +152,13 @@ class TitleMapper:
             # или "(Л) Название | {topic} ({date})"
             # Если {topic} пустой, получается "Прикладной Python -  ({date})"
             # или "(Л) Название |  ({date})" - нужно убрать разделители
-            if not variables.get('topic'):
+            if not variables.get("topic"):
                 # Заменяем " - " (с пробелами) на пустую строку
-                result = result.replace(' - ', '')
+                result = result.replace(" - ", "")
                 # Убираем " | " если топика нет (должен быть топик после |)
-                result = re.sub(r'\s*\|\s*', ' ', result)
+                result = re.sub(r"\s*\|\s*", " ", result)
                 # Также убираем возможные двойные пробелы
-                result = ' '.join(result.split())
+                result = " ".join(result.split())
 
             return result
         except KeyError as e:
@@ -210,9 +208,7 @@ class TitleMapper:
             self.logger.error(f"Ошибка сохранения конфигурации маппинга: {e}")
             return False
 
-    def test_mapping(
-        self, title: str, start_time: str = "2025-10-10T15:00:00Z", duration: int = 120
-    ) -> MappingResult:
+    def test_mapping(self, title: str, start_time: str = "2025-10-10T15:00:00Z", duration: int = 120) -> MappingResult:
         """Тестирование маппинга для заданного названия."""
         return self.map_title(title, start_time, duration)
 
@@ -227,5 +223,3 @@ def get_title_mapper() -> TitleMapper:
     if _title_mapper is None:
         _title_mapper = TitleMapper()
     return _title_mapper
-
-

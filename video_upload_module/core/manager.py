@@ -23,9 +23,9 @@ class UploadManager:
     def _initialize_uploaders(self):
         """Инициализация загрузчиков."""
         if self.config.youtube:
-            self.uploaders['youtube'] = YouTubeUploader(self.config.youtube)
+            self.uploaders["youtube"] = YouTubeUploader(self.config.youtube)
         if self.config.vk:
-            self.uploaders['vk'] = VKUploader(self.config.vk)
+            self.uploaders["vk"] = VKUploader(self.config.vk)
 
     def add_uploader(self, platform: str, uploader: BaseUploader):
         """Добавление загрузчика."""
@@ -63,9 +63,7 @@ class UploadManager:
 
         for attempt in range(self.config.retry_attempts):
             try:
-                logger.info(
-                    f"📤 Попытка {attempt + 1}/{self.config.retry_attempts} загрузки на {platform}"
-                )
+                logger.info(f"📤 Попытка {attempt + 1}/{self.config.retry_attempts} загрузки на {platform}")
 
                 result = await uploader.upload_video(
                     video_path=video_path,
@@ -83,14 +81,10 @@ class UploadManager:
                 logger.error(f"❌ Ошибка загрузки на {platform} (попытка {attempt + 1}): {e}")
 
                 if attempt < self.config.retry_attempts - 1:
-                    logger.info(
-                        f"⏳ Ожидание {self.config.retry_delay} секунд перед повторной попыткой..."
-                    )
+                    logger.info(f"⏳ Ожидание {self.config.retry_delay} секунд перед повторной попыткой...")
                     await asyncio.sleep(self.config.retry_delay)
 
-        logger.error(
-            f"❌ Не удалось загрузить видео на {platform} после {self.config.retry_attempts} попыток"
-        )
+        logger.error(f"❌ Не удалось загрузить видео на {platform} после {self.config.retry_attempts} попыток")
         return None
 
     async def upload_caption(
@@ -154,17 +148,15 @@ class UploadManager:
             for platform, result in zip(platforms, results, strict=True)
         }
 
-    async def batch_upload_to_platform(
-        self, platform: str, video_files: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    async def batch_upload_to_platform(self, platform: str, video_files: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Пакетная загрузка видео на конкретную платформу."""
 
         results = []
 
         for video_info in video_files:
-            video_path = video_info.get('path')
-            title = video_info.get('title', 'Untitled')
-            description = video_info.get('description', '')
+            video_path = video_info.get("path")
+            title = video_info.get("title", "Untitled")
+            description = video_info.get("description", "")
 
             if not video_path:
                 logger.error(f"❌ Не указан путь к видео: {video_info}")
@@ -172,9 +164,7 @@ class UploadManager:
 
             logger.info(f"📤 Загрузка {title} на {platform}...")
 
-            kwargs = {
-                k: v for k, v in video_info.items() if k not in ['path', 'title', 'description']
-            }
+            kwargs = {k: v for k, v in video_info.items() if k not in ["path", "title", "description"]}
 
             result = await self.upload_to_platform(
                 platform=platform,
@@ -186,11 +176,11 @@ class UploadManager:
 
             results.append(
                 {
-                    'video_path': video_path,
-                    'title': title,
-                    'platform': platform,
-                    'result': result,
-                    'upload_time': datetime.now().isoformat(),
+                    "video_path": video_path,
+                    "title": title,
+                    "platform": platform,
+                    "result": result,
+                    "upload_time": datetime.now().isoformat(),
                 }
             )
 
@@ -204,8 +194,8 @@ class UploadManager:
         failed_uploads = 0
 
         for result in results:
-            platform_result = result.get('result')
-            if platform_result and platform_result.status == 'uploaded':
+            platform_result = result.get("result")
+            if platform_result and platform_result.status == "uploaded":
                 successful_uploads += 1
             else:
                 failed_uploads += 1
@@ -213,11 +203,11 @@ class UploadManager:
         success_rate = (successful_uploads / total_videos * 100) if total_videos > 0 else 0
 
         return {
-            'platform': platform,
-            'total_videos': total_videos,
-            'successful_uploads': successful_uploads,
-            'failed_uploads': failed_uploads,
-            'success_rate': success_rate,
+            "platform": platform,
+            "total_videos": total_videos,
+            "successful_uploads": successful_uploads,
+            "failed_uploads": failed_uploads,
+            "success_rate": success_rate,
         }
 
     async def authenticate_all(self) -> dict[str, bool]:

@@ -24,14 +24,14 @@ class AudioDetector:
                 return None, None
 
             cmd = [
-                'ffmpeg',
-                '-i',
+                "ffmpeg",
+                "-i",
                 video_path,
-                '-af',
-                f'silencedetect=noise={self.silence_threshold}dB:d={self.min_silence_duration}',
-                '-f',
-                'null',
-                '-',
+                "-af",
+                f"silencedetect=noise={self.silence_threshold}dB:d={self.min_silence_duration}",
+                "-f",
+                "null",
+                "-",
             ]
 
             process = await asyncio.create_subprocess_exec(
@@ -73,17 +73,17 @@ class AudioDetector:
     def _parse_silence_detection(self, ffmpeg_output: str) -> list[tuple[float, float]]:
         """Парсинг вывода ffmpeg для извлечения периодов тишины."""
         silence_periods = []
-        lines = ffmpeg_output.split('\n')
+        lines = ffmpeg_output.split("\n")
 
         for line in lines:
-            if 'silence_start' in line:
+            if "silence_start" in line:
                 try:
-                    start_time = float(line.split('silence_start: ')[1].split()[0])
+                    start_time = float(line.split("silence_start: ")[1].split()[0])
                 except (IndexError, ValueError):
                     continue
-            elif 'silence_end' in line:
+            elif "silence_end" in line:
                 try:
-                    end_time = float(line.split('silence_end: ')[1].split()[0])
+                    end_time = float(line.split("silence_end: ")[1].split()[0])
                     silence_periods.append((start_time, end_time))
                 except (IndexError, ValueError, NameError):
                     continue
@@ -100,9 +100,7 @@ class AudioDetector:
             return 0.0
         return silence_periods[0][1]
 
-    async def _find_last_sound(
-        self, silence_periods: list[tuple[float, float]], video_path: str
-    ) -> float | None:
+    async def _find_last_sound(self, silence_periods: list[tuple[float, float]], video_path: str) -> float | None:
         """Нахождение времени последнего звука."""
         if not silence_periods:
             return None  # Весь файл содержит звук
@@ -119,7 +117,7 @@ class AudioDetector:
     async def _get_video_duration(self, video_path: str) -> float | None:
         """Получение длительности видео."""
         try:
-            cmd = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', video_path]
+            cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", video_path]
 
             process = await asyncio.create_subprocess_exec(
                 *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
@@ -129,7 +127,7 @@ class AudioDetector:
 
             if process.returncode == 0:
                 data = json.loads(stdout.decode())
-                return float(data['format']['duration'])
+                return float(data["format"]["duration"])
 
         except Exception as e:
             logger.error(f"Ошибка получения длительности видео: {e}")
@@ -162,18 +160,16 @@ class AudioDetector:
                 return False
 
             # Проверяем, не является ли файл HTML
-            with open(video_path, 'rb') as f:
+            with open(video_path, "rb") as f:
                 first_chunk = f.read(1024)
-                if b'<html' in first_chunk.lower() or b'<!doctype html' in first_chunk.lower():
+                if b"<html" in first_chunk.lower() or b"<!doctype html" in first_chunk.lower():
                     logger.error("Файл является HTML страницей, а не видео")
                     return False
 
                 # Для MP4 проверяем заголовок
-                if Path(video_path).suffix.lower() == '.mp4':
+                if Path(video_path).suffix.lower() == ".mp4":
                     if not (
-                        first_chunk.startswith(b'\x00\x00\x00')
-                        or b'ftyp' in first_chunk
-                        or b'moov' in first_chunk
+                        first_chunk.startswith(b"\x00\x00\x00") or b"ftyp" in first_chunk or b"moov" in first_chunk
                     ):
                         logger.error("Файл не является корректным MP4 видео")
                         return False

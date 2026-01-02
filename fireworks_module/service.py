@@ -1,4 +1,4 @@
-"\"\"\"Сервис транскрибации аудио через Fireworks Audio Inference API\"\"\""
+'"""Сервис транскрибации аудио через Fireworks Audio Inference API"""'
 
 import asyncio
 import os
@@ -57,7 +57,6 @@ class FireworksTranscriptionService:
             params["language"] = language
         if prompt:
             params["prompt"] = prompt
-
 
         # Логируем используемую модель и параметры запроса (без api_key)
         debug_payload = self._build_request_log(params, audio_path)
@@ -135,7 +134,7 @@ class FireworksTranscriptionService:
                 # attempt_index = 0 для первой повторной попытки, 1 для второй и т.д.
                 if attempt < retry_attempts and base_delay > 0:
                     attempt_index = attempt - 1  # Индекс для экспоненциальной задержки
-                    delay = min(base_delay * (2 ** attempt_index), max_delay)
+                    delay = min(base_delay * (2**attempt_index), max_delay)
                     logger.info(
                         "Fireworks | Retry in {delay:.1f}s | next attempt {next_attempt}/{total}",
                         delay=delay,
@@ -144,9 +143,7 @@ class FireworksTranscriptionService:
                     )
                     await asyncio.sleep(delay)
 
-        raise RuntimeError(
-            f"Ошибка транскрибации через Fireworks после {retry_attempts} попыток"
-        ) from last_error
+        raise RuntimeError(f"Ошибка транскрибации через Fireworks после {retry_attempts} попыток") from last_error
 
     def _build_request_log(self, params: dict[str, Any], audio_path: str) -> dict[str, Any]:
         """Единообразное тело для логирования параметров запроса."""
@@ -220,7 +217,7 @@ class FireworksTranscriptionService:
                     duration = float(word_end) - float(word_start) if word_start and word_end else 0.0
 
                     logger.debug(
-                        f"Word [{i+1}]: text='{word_text}' | start={word_start} | end={word_end} | duration={duration:.3f}s"
+                        f"Word [{i + 1}]: text='{word_text}' | start={word_start} | end={word_end} | duration={duration:.3f}s"
                     )
 
             segments = payload.get("segments", [])
@@ -242,8 +239,7 @@ class FireworksTranscriptionService:
                     duration = float(seg_end) - float(seg_start) if seg_start and seg_end else 0.0
 
                     logger.info(
-                        f"   [{i+1}] '{seg_text[:50]}...': "
-                        f"start={seg_start}, end={seg_end}, duration={duration:.3f}с"
+                        f"   [{i + 1}] '{seg_text[:50]}...': start={seg_start}, end={seg_end}, duration={duration:.3f}с"
                     )
 
         except Exception as e:
@@ -276,8 +272,8 @@ class FireworksTranscriptionService:
             return []
 
         # Знаки препинания
-        sentence_endings = ('.', '!', '?', '…')  # Конец предложения - высший приоритет
-        comma_punctuation = (',',)  # Запятая - средний приоритет (с паузой)
+        sentence_endings = (".", "!", "?", "…")  # Конец предложения - высший приоритет
+        comma_punctuation = (",",)  # Запятая - средний приоритет (с паузой)
         pause_for_comma = 0.25  # Минимальная пауза для разбиения по запятой
 
         # Хард-стопы/минимумы
@@ -298,13 +294,13 @@ class FireworksTranscriptionService:
             if not group or start is None:
                 return None
 
-            group_text = ' '.join(w.get('word', '').strip() for w in group)
+            group_text = " ".join(w.get("word", "").strip() for w in group)
             if not group_text.strip():
                 return None
 
             # Используем точные временные метки: начало первого слова, конец последнего слова
             group_start = start
-            last_word_end_raw = group[-1].get('end', 0.0)
+            last_word_end_raw = group[-1].get("end", 0.0)
             group_end = float(last_word_end_raw) if isinstance(last_word_end_raw, (int, float)) else 0.0
 
             # Защита от некорректных временных меток
@@ -312,16 +308,16 @@ class FireworksTranscriptionService:
                 group_end = group_start + 0.1
 
             return {
-                'id': segment_id,
-                'start': group_start,
-                'end': group_end,
-                'text': group_text.strip(),
+                "id": segment_id,
+                "start": group_start,
+                "end": group_end,
+                "text": group_text.strip(),
             }
 
         for _, word_item in enumerate(words):
-            word_start = word_item.get('start', 0.0)
-            word_end = word_item.get('end', 0.0)
-            word_text = word_item.get('word', '').strip()
+            word_start = word_item.get("start", 0.0)
+            word_end = word_item.get("end", 0.0)
+            word_text = word_item.get("word", "").strip()
 
             if not word_text:
                 continue
@@ -335,7 +331,7 @@ class FireworksTranscriptionService:
                 word_end_float = word_start_float + 0.1
 
             # Обновляем word_item с нормализованными значениями
-            word_item = {**word_item, 'start': word_start_float, 'end': word_end_float}
+            word_item = {**word_item, "start": word_start_float, "end": word_end_float}
 
             # Определяем начало группы
             if current_start is None:
@@ -344,7 +340,7 @@ class FireworksTranscriptionService:
             # Вычисляем паузу перед текущим словом
             pause_duration = 0.0
             if current_group:
-                last_word_end = current_group[-1].get('end', 0.0)
+                last_word_end = current_group[-1].get("end", 0.0)
                 last_word_end_float = float(last_word_end) if isinstance(last_word_end, (int, float)) else 0.0
                 pause_duration = word_start_float - last_word_end_float
 
@@ -359,7 +355,11 @@ class FireworksTranscriptionService:
             # ПРИОРИТЕТ 2: Пауза больше порога - обязательная граница
             # НО: не разбиваем по паузам, если текущая группа слишком короткая (< 0.5 сек)
             # Это предотвращает разбиение на отдельные слова из-за больших пауз
-            current_group_duration = (current_group[-1].get('end', 0.0) - current_start) if current_group and current_start is not None else 0.0
+            current_group_duration = (
+                (current_group[-1].get("end", 0.0) - current_start)
+                if current_group and current_start is not None
+                else 0.0
+            )
             enough_group = (
                 current_group_duration >= min_group_duration_for_pause_break
                 or len(current_group) >= min_words_for_break
@@ -379,7 +379,9 @@ class FireworksTranscriptionService:
             # Определяем, нужно ли разбивать сегмент
             # Для конца предложения - разбиваем ПОСЛЕ добавления слова (высший приоритет)
             # Для остальных случаев - разбиваем ДО добавления слова
-            should_break_before = (should_break_pause or should_break_comma or should_break_duration) and not should_break_sentence
+            should_break_before = (
+                should_break_pause or should_break_comma or should_break_duration
+            ) and not should_break_sentence
 
             # Если нужно разбить ДО добавления слова (пауза, запятая, длительность)
             # Но НЕ если это конец предложения (для него приоритет - разбивать ПОСЛЕ)
@@ -534,20 +536,19 @@ class FireworksTranscriptionService:
                     continue
 
                 # Логируем ВСЕ поля слова для диагностики
-                logger.debug(f"Word [{i+1}] полная структура: {word_dict}")
+                logger.debug(f"Word [{i + 1}] полная структура: {word_dict}")
 
                 word_start = word_dict.get("start") or word_dict.get("start_time") or word_dict.get("offset")
                 word_end = word_dict.get("end") or word_dict.get("end_time") or word_dict.get("offset_end")
                 word_text = word_dict.get("word") or word_dict.get("text") or ""
 
                 logger.debug(
-                    f"Word [{i+1}]: text='{word_text}' | start={word_start} | end={word_end} | "
+                    f"Word [{i + 1}]: text='{word_text}' | start={word_start} | end={word_end} | "
                     f"duration={float(word_end) - float(word_start) if word_start and word_end else 0.0:.3f}s"
                 )
         else:
             logger.warning(
-                "⚠️ Words не найдены в ответе Fireworks. "
-                "Убедитесь, что timestamp_granularities содержит 'word'."
+                "⚠️ Words не найдены в ответе Fireworks. Убедитесь, что timestamp_granularities содержит 'word'."
             )
 
         # Обрабатываем words
@@ -588,12 +589,14 @@ class FireworksTranscriptionService:
                 # или используем время следующего слова, если оно есть
                 # Пока оставляем как есть, но логируем для анализа
 
-            all_words.append({
-                "id": word_id,
-                "start": word_start_float,
-                "end": word_end_float,
-                "word": word_text.strip(),
-            })
+            all_words.append(
+                {
+                    "id": word_id,
+                    "start": word_start_float,
+                    "end": word_end_float,
+                    "word": word_text.strip(),
+                }
+            )
             word_id += 1
 
         # Сортируем words по времени начала
@@ -680,15 +683,15 @@ class FireworksTranscriptionService:
             Время в секундах (float)
         """
         # Поддерживаем оба формата: запятая (SRT) и точка (VTT)
-        time_str = time_str.replace(',', '.')
+        time_str = time_str.replace(",", ".")
 
-        parts = time_str.split(':')
+        parts = time_str.split(":")
         if len(parts) != 3:
             return 0.0
 
         hours = int(parts[0])
         minutes = int(parts[1])
-        seconds_parts = parts[2].split('.')
+        seconds_parts = parts[2].split(".")
         seconds = int(seconds_parts[0])
         milliseconds = int(seconds_parts[1]) if len(seconds_parts) > 1 else 0
 
@@ -739,11 +742,9 @@ class FireworksTranscriptionService:
         full_text_parts: list[str] = []
 
         # Регулярное выражение для временной метки SRT: HH:MM:SS,mmm --> HH:MM:SS,mmm
-        timestamp_pattern = re.compile(
-            r'(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})'
-        )
+        timestamp_pattern = re.compile(r"(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})")
 
-        lines = srt_content.split('\n')
+        lines = srt_content.split("\n")
         i = 0
         segment_id = 0
 
@@ -772,28 +773,27 @@ class FireworksTranscriptionService:
                     subtitle_lines.append(lines[i].strip())
                     i += 1
 
-                subtitle_text = ' '.join(subtitle_lines).strip()
+                subtitle_text = " ".join(subtitle_lines).strip()
 
                 if subtitle_text:
-                    segments.append({
-                        "id": segment_id,
-                        "start": start_seconds,
-                        "end": end_seconds,
-                        "text": subtitle_text,
-                    })
+                    segments.append(
+                        {
+                            "id": segment_id,
+                            "start": start_seconds,
+                            "end": end_seconds,
+                            "text": subtitle_text,
+                        }
+                    )
                     full_text_parts.append(subtitle_text)
                     segment_id += 1
             else:
                 i += 1
 
         # Формируем полный текст
-        full_text = ' '.join(full_text_parts)
+        full_text = " ".join(full_text_parts)
         language = self.config.language
 
-        logger.info(
-            f"✅ SRT парсинг завершен: {len(full_text)} символов, "
-            f"{len(segments)} сегментов из SRT"
-        )
+        logger.info(f"✅ SRT парсинг завершен: {len(full_text)} символов, {len(segments)} сегментов из SRT")
 
         return {
             "text": full_text,

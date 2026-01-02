@@ -2,5 +2,4 @@
 
 from .service import TranscriptionService
 
-__all__ = ['TranscriptionService']
-
+__all__ = ["TranscriptionService"]

@@ -2,8 +2,6 @@
 
 **Проект:** Zoom Publishing Platform  
 **Версия:** 1.0  
-**Дата:** 2025-01-XX  
-**Статус:** ✅ Утверждено
 
 ---
 
@@ -23,7 +21,12 @@
 12. [Сравнение с альтернативными подходами](#сравнение-с-альтернативными-подходами)
 13. [Архитектурный стиль](#архитектурный-стиль)
 14. [Миграционная стратегия](#миграционная-стратегия)
-15. [Следующие шаги](#следующие-шаги)
+15. [ADR-011: Очереди задач (будущее)](#adr-011-очереди-задач-будущее)
+16. [ADR-012: Квоты и лимиты (MVP)](#adr-012-квоты-и-лимиты-mvp)
+17. [ADR-013: Аудит (позже)](#adr-013-аудит-позже)
+18. [ADR-014: Уведомления (позже)](#adr-014-уведомления-позже)
+19. [ADR-015: FSM для надежной обработки](#adr-015-fsm-для-надежной-обработки)
+20. [Следующие шаги](#следующие-шаги)
 
 ---
 
@@ -35,7 +38,7 @@
 
 ### Ключевые решения
 
-**Архитектурные решения (новые для multi-tenancy):**
+**Архитектурные решения (планируемые для multi-tenancy):**
 - **Multi-tenancy**: Shared Database с изоляцией через `user_id`
 - **Аутентификация**: `JWT` Tokens
 - **Авторизация**: Роли (`admin`, `user`) + флаги разрешений
@@ -91,8 +94,6 @@
 
 ### ADR-001: Модель Multi-Tenancy
 
-**Статус:** ✅ Принято
-
 **Решение:** Shared Database с изоляцией через `user_id` (`tenant ID`)
 
 **Схема изоляции:**
@@ -132,16 +133,16 @@
         └────────────────────────────────────┘
 
 Принцип изоляции:
-• Все запросы автоматически фильтруются по user_id
-• Middleware добавляет `user_id` из `JWT` token
-• Repository Layer обеспечивает изоляцию
-• Невозможно получить доступ к чужим данным
+- Все запросы к базе данных автоматически фильтруются по `user_id`
+- Middleware извлекает `user_id` из `JWT` токена и добавляет его в контекст запроса
+- Repository Layer гарантирует изоляцию данных на уровне доступа к БД
+- Доступ к данным других пользователей невозможен благодаря фильтрации на всех уровнях архитектуры
 ```
 
 **Обоснование:**
 
 **Варианты:**
-1. **Shared Database + Tenant ID** ✅ (выбрано)
+1. **Shared Database + Tenant ID** (выбрано)
 2. Separate Databases
 3. Separate Schemas (`PostgreSQL`)
 
@@ -163,14 +164,12 @@
 
 ### ADR-002: Аутентификация и авторизация
 
-**Статус:** ✅ Принято
-
 **Решение:** `JWT` Tokens для пользователей
 
 **Обоснование:**
 
 **Варианты:**
-1. **`JWT` Tokens** ✅ (выбрано)
+1. **`JWT` Tokens** (выбрано)
 2. `API Keys`
 3. `OAuth 2.0` / `OIDC`
 
@@ -207,14 +206,12 @@
 
 ### ADR-003: Хранение конфигураций
 
-**Статус:** ✅ Принято
-
 **Решение:** Иерархическая система конфигураций в БД (`JSONB`)
 
 **Обоснование:**
 
 **Варианты:**
-1. **В БД (`JSONB`)** ✅ (выбрано)
+1. **В БД (`JSONB`)** (выбрано)
 2. В файлах (как сейчас)
 3. Hybrid (БД + файлы)
 
@@ -245,20 +242,18 @@
 ```
 
 **Принцип слияния:**
-При применении конфигурации к записи происходит глубокое слияние (deep merge) с приоритетом: шаблон > пользовательский базовый > глобальный базовый.
+При применении конфигурации к записи выполняется глубокое слияние (deep merge) с приоритетом: шаблон > пользовательский базовый > глобальный базовый. Слияние происходит на уровне вложенных словарей, что позволяет переопределять только отдельные параметры без полной замены конфигурации.
 
 ---
 
 ### ADR-004: Хранение credentials
-
-**Статус:** ✅ Принято
 
 **Решение:** Шифрование в БД через `pgcrypto`
 
 **Обоснование:**
 
 **Варианты:**
-1. **`pgcrypto` (`PostgreSQL`)** ✅ (выбрано)
+1. **`pgcrypto` (`PostgreSQL`)** (выбрано)
 2. Application-level encryption (`Python`)
 3. Внешний секрет-менеджер (`Vault`, `AWS Secrets Manager`)
 
@@ -287,8 +282,6 @@
 
 ### ADR-005: Output Presets
 
-**Статус:** ✅ Принято
-
 **Решение:** Предустановленные аккаунты для вывода (только credentials, без настроек платформы)
 
 **Обоснование:**
@@ -310,8 +303,6 @@
 
 ### ADR-006: Input Sources
 
-**Статус:** ✅ Принято
-
 **Решение:** Настроенные источники данных с ручной синхронизацией
 
 **Обоснование:**
@@ -330,8 +321,6 @@
 ---
 
 ### ADR-007: Шаблоны записей
-
-**Статус:** ✅ Принято
 
 **Решение:** Шаблоны с правилами сопоставления и настройками обработки
 
@@ -359,8 +348,6 @@
 ---
 
 ### ADR-008: Изоляция файлов
-
-**Статус:** ✅ Принято
 
 **Решение:** Структура `media/user_{user_id}/`
 
@@ -510,6 +497,8 @@ media/
 
 ### Общая архитектура
 
+Схемы, представленные ниже, описывают целевую архитектуру системы для multi-tenant SaaS платформы. Реализация будет выполняться поэтапно с сохранением обратной совместимости.
+
 Система использует `PostgreSQL` с 11 основными таблицами:
 
 **Multi-tenancy таблицы (новые):**
@@ -522,10 +511,10 @@ media/
 7. **recording_templates** — Шаблоны записей
 8. **template_matching_rules** — Правила сопоставления шаблонов
 
-**Таблицы записей (существующие, обновлены для multi-tenancy):**
-9. **recordings** — Записи (обновлено: добавлены user_id, template_id, input_source_id)
+**Таблицы записей (существующие, будут обновлены для multi-tenancy):**
+9. **recordings** — Записи (планируется добавление: user_id, template_id, input_source_id)
 10. **source_metadata** — Метаданные источника записи (1:1 с recordings)
-11. **output_targets** — Целевые платформы (обновлено: добавлены preset_id, last_updated_at)
+11. **output_targets** — Целевые платформы (планируется добавление: preset_id, last_updated_at)
 
 ### Диаграмма связей (Entity Relationship Diagram)
 
@@ -1069,7 +1058,7 @@ CREATE INDEX idx_matching_rules_pattern ON template_matching_rules(pattern);
 CREATE INDEX idx_matching_rules_source ON template_matching_rules(match_source_id);
 ```
 
-#### 9. `recordings` — Записи (существующая таблица, обновлена)
+#### 9. `recordings` — Записи (существующая таблица, будет обновлена)
 
 ```sql
 CREATE TABLE recordings (
@@ -1081,11 +1070,12 @@ CREATE TABLE recordings (
     duration INTEGER NOT NULL,  -- в минутах
     status VARCHAR(50) NOT NULL DEFAULT 'initialized',
     -- INITIALIZED, DOWNLOADING, DOWNLOADED, PROCESSING, PROCESSED,
-    -- TRANSCRIBING, TRANSCRIBED, UPLOADING, UPLOADED, FAILED, SKIPPED, EXPIRED
+    -- TRANSCRIBING, TRANSCRIBED, UPLOADING, UPLOADED, SKIPPED, EXPIRED
+    -- При ошибке статус остается на текущем этапе, устанавливается failed=true
     is_mapped BOOLEAN DEFAULT FALSE,
     expire_at TIMESTAMP WITH TIME ZONE,
     
-    -- Multi-tenancy (новые поля)
+    -- Multi-tenancy (планируемые поля)
     user_id INT REFERENCES users(id) ON DELETE CASCADE,
     template_id INT REFERENCES recording_templates(id) ON DELETE SET NULL,
     input_source_id INT REFERENCES input_sources(id) ON DELETE SET NULL,
@@ -1159,7 +1149,7 @@ CREATE INDEX idx_source_metadata_recording ON source_metadata(recording_id);
 CREATE INDEX idx_source_metadata_type_key ON source_metadata(source_type, source_key);
 ```
 
-#### 11. `output_targets` — Целевые платформы (существующая таблица, обновлена)
+#### 11. `output_targets` — Целевые платформы (существующая таблица, будет обновлена)
 
 ```sql
 CREATE TABLE output_targets (
@@ -1171,8 +1161,10 @@ CREATE TABLE output_targets (
     
     status VARCHAR(50) NOT NULL DEFAULT 'not_uploaded',
     -- NOT_UPLOADED, UPLOADING, UPLOADED, FAILED
+    -- При ошибке во время загрузки: статус остается UPLOADING, failed=true
+    -- После исчерпания всех retry: статус FAILED, failed=true
     
-    -- Multi-tenancy (новые поля)
+    -- Multi-tenancy (планируемые поля)
     preset_id INT REFERENCES output_presets(id) ON DELETE SET NULL,
     last_updated_at TIMESTAMP WITH TIME ZONE,  -- Время последнего обновления через API
     
@@ -1269,9 +1261,13 @@ CREATE INDEX idx_output_targets_updated ON output_targets(last_updated_at);
 **Ключевые поля:**
 - `display_name` — название записи
 - `status` — статус обработки (INITIALIZED → DOWNLOADED → PROCESSED → TRANSCRIBED → UPLOADED)
-- `user_id` — владелец записи (multi-tenancy)
-- `template_id` — примененный шаблон (если найден)
-- `input_source_id` — источник данных
+- `failed` — флаг ошибки (true если текущий этап завершился с ошибкой, см. ADR-015)
+- `failed_at` — время последнего сбоя
+- `failed_reason` — сообщение об ошибке
+- `retry_count` — количество попыток retry (0-2)
+- `user_id` — владелец записи (multi-tenancy, планируется)
+- `template_id` — примененный шаблон (если найден, планируется)
+- `input_source_id` — источник данных (планируется)
 - `local_video_path` — путь к исходному видео
 - `processed_video_path` — путь к обработанному видео
 - `transcription_dir` — директория с транскрипцией
@@ -1292,9 +1288,13 @@ CREATE INDEX idx_output_targets_updated ON output_targets(last_updated_at);
 **Ключевые поля:**
 - `target_type` — тип платформы (YOUTUBE, VK, YANDEX_DISK, LOCAL, WEBHOOK, GDRIVE)
 - `status` — статус загрузки (NOT_UPLOADED, UPLOADING, UPLOADED, FAILED)
-- `preset_id` — использованный preset для загрузки
+- `failed` — флаг ошибки (true если загрузка завершилась с ошибкой, см. ADR-015)
+- `failed_at` — время последнего сбоя
+- `failed_reason` — сообщение об ошибке
+- `retry_count` — количество попыток retry (0-2)
+- `preset_id` — использованный preset для загрузки (планируется)
 - `target_meta` — метаданные платформы (ссылки, ID, настройки)
-- `last_updated_at` — время последнего обновления через API
+- `last_updated_at` — время последнего обновления через API (планируется)
 
 ---
 
@@ -1608,8 +1608,6 @@ CREATE INDEX idx_output_targets_updated ON output_targets(last_updated_at);
 ## Существующая функциональность обработки
 
 ### ADR-009: Архитектура обработки видео
-
-**Статус:** ✅ Реализовано
 
 **Решение:** Модульная архитектура с четким разделением ответственности
 
@@ -2002,15 +2000,33 @@ CREATE INDEX idx_output_targets_updated ON output_targets(last_updated_at);
 - `TRANSCRIBED` — Транскрибировано
 - `UPLOADING` — В процессе загрузки на платформу
 - `UPLOADED` — Загружено на платформу
-- `FAILED` — Ошибка обработки
 - `SKIPPED` — Пропущено
 - `EXPIRED` — Устарело (очищено)
+
+**Примечание:** При ошибке на любом этапе статус откатывается к предыдущему завершенному этапу, устанавливается флаг `failed=true` и сохраняется `failed_at_stage` (этап, на котором произошла ошибка). Это позволяет удобно делать retry, начиная с правильного этапа. См. [ADR-015: FSM для надежной обработки](#adr-015-fsm-для-надежной-обработки) для подробностей.
 
 **TargetStatus:**
 - `NOT_UPLOADED` — Не загружено
 - `UPLOADING` — В процессе загрузки
-- `UPLOADED` — Загружено
-- `FAILED` — Ошибка загрузки
+- `UPLOADED` — Загружено успешно
+- `FAILED` — Загрузка провалилась (после всех попыток retry)
+
+**Примечание:** 
+- Во время загрузки: статус `UPLOADING`, при ошибке `failed=true` (статус остается `UPLOADING`)
+- После исчерпания всех попыток retry: статус переходит в `FAILED`, `failed=true`
+- Каждая платформа (YouTube, VK) имеет независимый статус. См. [ADR-015: FSM для надежной обработки](#adr-015-fsm-для-надежной-обработки) для подробностей.
+
+### FSM (Finite State Machine) для надежной обработки
+
+Система использует явную FSM-модель для гарантии надежности и возможности восстановления после сбоев. Каждый этап обработки является отдельным состоянием с четко определенными переходами.
+
+**Принципы FSM:**
+1. **Детерминированные переходы** — каждое состояние может переходить только в определенные следующие состояния
+2. **Изоляция состояний** — сбой на одном этапе не влияет на уже завершенные этапы
+3. **Возможность перезапуска** — любое состояние можно перезапустить независимо от других
+4. **Отслеживание сбоев** — при ошибке сохраняется информация о сломанном этапе для последующего перезапуска
+
+Подробнее см. [ADR-015: FSM для надежной обработки](#adr-015-fsm-для-надежной-обработки)
 
 ### Структура файловой системы
 
@@ -2180,36 +2196,1473 @@ media/
 
 ---
 
-## Следующие шаги
+## ADR-010: Автоматизация обработки записей
 
-### Фаза 1: Базовая инфраструктура (2-3 недели)
+**Решение:** Фоновая автоматизация через APScheduler с группировкой задач по времени и retry механизмом
 
-- [ ] Создание миграций Alembic для новых таблиц
-- [ ] Реализация аутентификации (`JWT`)
-- [ ] Реализация базовых моделей `SQLAlchemy`
-- [ ] Миграция существующих данных
-- [ ] Базовые CRUD операции для всех таблиц
+### Контекст
 
-### Фаза 2: API Endpoints (2-3 недели)
+Требуется автоматизировать процесс синхронизации и загрузки записей:
+- Синхронизация новых записей из Zoom API
+- Автоматическая обработка записей, попадающих под активные шаблоны
+- Настройка расписания для каждого шаблона индивидуально
+- Обработка ошибок с retry механизмом
 
-- [ ] Реализация всех `API` endpoints
-- [ ] Валидация через `Pydantic`
-- [ ] Документация `OpenAPI`/`Swagger`
-- [ ] Тестирование `API`
+### Архитектурное решение
 
-### Фаза 3: Интеграция с существующей логикой (2-3 недели)
+#### 1. Хранение настроек автоматизации
 
-- [ ] Адаптация PipelineManager под новую архитектуру
-- [ ] Интеграция шаблонов в процесс обработки
-- [ ] Обновление модулей обработки под новую структуру
-- [ ] Тестирование полного пайплайна
+**Глобальные настройки (base_configs.automation_config):**
+```json
+{
+  "enabled": true,
+  "default_schedule": {
+    "type": "daily",
+    "time": "06:00",
+    "timezone": "Europe/Moscow"
+  },
+  "default_sync_days": 1,
+  "retry": {
+    "max_attempts": 3,
+    "delay_seconds": 300
+  }
+}
+```
 
-### Фаза 4: UI/UX (опционально)
+**Настройки в шаблоне (recording_templates.automation_config):**
+```json
+{
+  "enabled": true,
+  "schedule": {
+    "type": "daily",
+    "time": "08:00",
+    "timezone": "Europe/Moscow"
+  },
+  "sync_days": 2,
+  "auto_upload": true
+}
+```
 
-- [ ] Регистрация/Вход
-- [ ] Управление шаблонами
-- [ ] Управление записями
-- [ ] Дашборд
+**Принцип слияния:**
+- Шаблон переопределяет глобальные настройки
+- Если `automation.enabled = false` в шаблоне → шаблон пропускается
+- Если глобально `enabled = false` → автоматизация отключена для всех шаблонов пользователя
+
+#### 2. Оптимизация APScheduler
+
+**Проблема:** При большом количестве шаблонов создается много задач в scheduler'е.
+
+**Решение: Группировка задач по времени выполнения**
+
+**Алгоритм:**
+1. При инициализации APScheduler:
+   - Загружаем все активные шаблоны всех пользователей с `automation.enabled = true`
+   - Группируем шаблоны по уникальному времени выполнения (time + timezone)
+   - Создаем одну задачу на каждое уникальное время
+   - Внутри задачи обрабатываем все шаблоны с этим временем параллельно
+
+2. При изменении шаблона:
+   - Перезагружаем расписание для этого пользователя
+   - Обновляем соответствующие задачи в scheduler'е
+
+3. При добавлении нового шаблона:
+   - Проверяем, существует ли задача на это время
+   - Если да → добавляем шаблон в список обработки
+   - Если нет → создаем новую задачу
+
+**Пример группировки:**
+```
+Шаблоны:
+- Template 1: 06:00 (user_1)
+- Template 2: 06:00 (user_1)
+- Template 3: 08:00 (user_1)
+- Template 4: 06:00 (user_2)
+
+Группировка:
+- Задача 1: 06:00 → обрабатывает [Template 1, Template 2, Template 4]
+- Задача 2: 08:00 → обрабатывает [Template 3]
+```
+
+**Преимущества:**
+- Минимальное количество задач в scheduler'е
+- Эффективное использование ресурсов
+- Параллельная обработка шаблонов с одинаковым временем
+
+#### 3. Логика обработки шаблона
+
+**Алгоритм `process_template_automation`:**
+```
+1. Загрузить шаблон и проверить:
+   - automation.enabled = true
+   - is_draft = false
+   - is_active = true
+
+2. Получить настройки автоматизации:
+   - Слить глобальные + шаблонные настройки
+   - Определить sync_days (из шаблона или глобально)
+   - Определить schedule (из шаблона или глобально)
+
+3. Выполнить синхронизацию:
+   - sync_zoom_recordings(configs, from_date, to_date)
+   - from_date = today - sync_days
+   - to_date = today
+
+4. Найти записи для обработки:
+   - status = INITIALIZED
+   - template_id = текущий шаблон
+   - created_at >= from_date (чтобы не обрабатывать старые записи)
+
+5. Получить платформы из output_configs:
+   - Фильтровать по enabled = true
+   - Извлечь список платформ (youtube, vk)
+
+6. Запустить full-process:
+   - Для каждой записи: download → process → transcribe → upload
+   - Параллельная обработка записей
+
+7. Обработка ошибок:
+   - При ошибке → retry с задержкой
+   - После max_attempts → пометить запись как failed=true (см. ADR-015)
+   - Статус записи остается на текущем этапе, устанавливается failed=true
+```
+
+#### 4. Retry механизм
+
+**Стратегия:**
+- Максимальное количество попыток: `retry.max_attempts` (по умолчанию 3)
+- Задержка между попытками: `retry.delay_seconds` (по умолчанию 300 сек = 5 мин)
+- Экспоненциальная задержка: `delay * (2 ^ attempt_number)`
+
+**Обработка ошибок:**
+```python
+async def process_with_retry(template_id: int, user_id: int):
+    max_attempts = get_retry_max_attempts(user_id)
+    delay = get_retry_delay(user_id)
+    
+    for attempt in range(1, max_attempts + 1):
+        try:
+            result = await process_template_automation(template_id, user_id)
+            if result.success:
+                await mark_template_success(template_id)
+                return result
+        except Exception as e:
+            logger.error(f"Template {template_id}, attempt {attempt}/{max_attempts}: {e}")
+            
+            if attempt < max_attempts:
+                # Экспоненциальная задержка
+                wait_time = delay * (2 ** (attempt - 1))
+                await asyncio.sleep(wait_time)
+            else:
+                # Последняя попытка неудачна
+                await mark_template_failed(template_id, error=str(e))
+                raise
+```
+
+#### 5. Отслеживание выполнения
+
+**Таблица `automation_runs`:**
+```sql
+CREATE TABLE automation_runs (
+    id SERIAL PRIMARY KEY,
+    template_id INT NOT NULL REFERENCES recording_templates(id) ON DELETE CASCADE,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    
+    status VARCHAR(20) NOT NULL CHECK (status IN ('running', 'success', 'failed', 'skipped')),
+    -- running - выполняется
+    -- success - успешно завершено
+    -- failed - ошибка после всех retry
+    -- skipped - пропущено (нет записей для обработки)
+    
+    started_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    
+    sync_count INT DEFAULT 0,  -- количество синхронизированных записей
+    processed_count INT DEFAULT 0,  -- количество обработанных записей
+    uploaded_count INT DEFAULT 0,  -- количество загруженных записей
+    
+    error_message TEXT,
+    retry_count INT DEFAULT 0,
+    
+    metadata JSONB DEFAULT '{}'  -- дополнительная информация
+    
+    CONSTRAINT unique_template_run UNIQUE (template_id, started_at)
+);
+
+CREATE INDEX idx_automation_runs_template ON automation_runs(template_id, started_at DESC);
+CREATE INDEX idx_automation_runs_user ON automation_runs(user_id, started_at DESC);
+CREATE INDEX idx_automation_runs_status ON automation_runs(status, started_at DESC);
+```
+
+**Использование:**
+- История выполнения автоматизации
+- Отладка проблем
+- Метрики и аналитика
+- Предотвращение дублирования (если задача уже выполняется)
+
+#### 6. Предотвращение конфликтов
+
+**Проблема:** Одна запись может подходить под несколько шаблонов.
+
+**Решение:**
+- При синхронизации запись сопоставляется с шаблоном по приоритету (`priority DESC`)
+- Первый подходящий шаблон назначается записи (`template_id`)
+- Автоматизация обрабатывает только записи с `template_id = X`
+- Конфликтов не возникает, т.к. каждая запись привязана к одному шаблону
+
+#### 7. Оптимизация производительности
+
+**Запросы к БД:**
+- Использовать индексы: `(user_id, is_active, is_draft)`, `(template_id, status)`
+- Batch-загрузка шаблонов при инициализации
+- Кэширование настроек автоматизации (TTL = 5 минут)
+
+**Параллельная обработка:**
+- Шаблоны с одинаковым временем обрабатываются параллельно (`asyncio.gather`)
+- Записи внутри шаблона обрабатываются параллельно (уже реализовано в `run_full_pipeline`)
+
+**Ограничения:**
+- Максимум параллельных задач: `max_concurrent_processes` из настроек пользователя
+- Timeout для каждой задачи: 2 часа (защита от зависших задач)
+
+#### 8. Структура сервиса
+
+**AutomationService:**
+```python
+class AutomationService:
+    """
+    Сервис автоматизации обработки записей.
+    
+    Ответственность:
+    - Управление APScheduler
+    - Группировка задач по времени
+    - Обработка шаблонов с retry
+    - Логирование выполнения
+    """
+    
+    async def start(self):
+        """Запуск scheduler'а и загрузка всех активных шаблонов"""
+        
+    async def stop(self):
+        """Остановка scheduler'а"""
+        
+    async def reload_user_templates(self, user_id: int):
+        """Перезагрузка шаблонов пользователя"""
+        
+    async def process_template_automation(self, template_id: int, user_id: int):
+        """Обработка одного шаблона"""
+        
+    async def process_templates_at_time(self, time_key: str):
+        """Обработка всех шаблонов с определенным временем"""
+```
+
+**CLI команды:**
+```bash
+# Запуск автоматизации
+python main.py automation start
+
+# Остановка автоматизации
+python main.py automation stop
+
+# Тест одного шаблона
+python main.py automation test --template-id 1
+
+# Перезагрузка шаблонов пользователя
+python main.py automation reload --user-id 1
+
+# Статус автоматизации
+python main.py automation status
+```
+
+### Обоснование
+
+**Почему APScheduler, а не cron:**
+- Гибкость: можно динамически изменять расписание
+- Интеграция: работает в том же процессе
+- Мониторинг: проще отслеживать статус задач
+- Retry: встроенная поддержка повторных попыток
+
+**Почему группировка по времени:**
+- Масштабируемость: 100 шаблонов → 5-10 задач вместо 100
+- Эффективность: меньше накладных расходов scheduler'а
+- Простота: проще управлять и отлаживать
+
+**Почему настройки в БД (JSONB):**
+- Консистентность: все настройки в одном месте
+- Multi-tenancy: изоляция по user_id
+- Версионирование: можно добавить history
+- Производительность: быстрые запросы с индексами
+
+### Риски и митигация
+
+**Риск 1: Долгие задачи блокируют scheduler**
+- Митигация: Задачи выполняются асинхронно, не блокируют event loop
+
+**Риск 2: Много одновременных задач**
+- Митигация: Ограничение через `max_concurrent_processes`, семафоры
+
+**Риск 3: Изменение шаблона во время выполнения**
+- Митигация: Делаем snapshot настроек в начале обработки
+
+**Риск 4: Перезапуск процесса теряет задачи**
+- Митигация: При старте перезагружаем все активные шаблоны из БД
+
+**Риск 5: Ошибки внешних API**
+- Митигация: Retry механизм, timeout'ы, circuit breaker (в будущем)
+
+### Миграционная стратегия
+
+1. **Фаза 1:** Добавить поля `automation_config` в `base_configs` и `recording_templates`
+2. **Фаза 2:** Создать таблицу `automation_runs`
+3. **Фаза 3:** Реализовать `AutomationService`
+4. **Фаза 4:** Добавить CLI команды
+5. **Фаза 5:** Тестирование и мониторинг
+
+### Будущие улучшения
+
+- Уведомления об ошибках (email, Telegram)
+- Веб-интерфейс для управления автоматизацией
+- Метрики и дашборд (Prometheus, Grafana)
+- Circuit breaker для внешних API
+- Очередь задач (Celery/RQ) для очень больших нагрузок
+
+---
+
+## ADR-011: Очереди задач (будущее)
+
+**Статус:** Запланировано на будущее  
+**Приоритет:** Низкий (для MVP не требуется)
+
+### Решение
+
+**Текущий подход (MVP):** Использование `asyncio` для параллельной обработки без очередей.
+
+**Будущий подход:** Миграция на очереди задач (Celery/RQ) при росте нагрузки.
+
+### Текущая ситуация
+
+Система использует **asyncio** для параллельной обработки:
+- Операции выполняются через `asyncio.gather()`
+- API возвращает `202 Accepted` для длительных операций
+- Статус отслеживается через поле `status` в БД
+- Все выполняется в процессе API сервера
+
+**Преимущества текущего подхода:**
+- Проще в разработке и отладке
+- Меньше зависимостей (не нужен Redis/RabbitMQ)
+- Проще деплой (один процесс)
+- Логи и ошибки видны сразу
+
+### Когда очереди НЕ нужны (текущий подход достаточен)
+
+✅ **Подходит для:**
+- Небольшое количество пользователей (< 50)
+- Небольшое количество одновременных задач (< 10)
+- Обработка запускается вручную через CLI или API
+- Нет критических требований к отказоустойчивости
+- Простота архитектуры важнее масштабируемости
+
+### Когда очереди НУЖНЫ
+
+❌ **Требуется если:**
+- Много пользователей (> 100) и много одновременных задач
+- Нужна гарантия выполнения задач (даже при падении API)
+- Нужна приоритизация задач (high/medium/low)
+- Нужна возможность отложенного выполнения (scheduled tasks)
+- Нужна возможность retry с задержкой
+- Нужна возможность отмены задач
+- Нужна возможность мониторинга очереди (сколько задач в очереди)
+
+### Критерии для миграции на очереди
+
+Миграция на очереди потребуется когда:
+- **> 50 активных пользователей**
+- **> 20 одновременных задач**
+- Появятся требования к **гарантии выполнения** (даже при падении API)
+- Потребуется **приоритизация задач**
+- Потребуется **отложенное выполнение** задач
+
+### Архитектура для будущего
+
+**Принцип:** Спроектировать код так, чтобы легко добавить очереди позже.
+
+**Текущая реализация:**
+```python
+async def process_recording(recording_id: int):
+    # Прямой вызов
+    await pipeline.process(recording)
+```
+
+**Будущая реализация (легко мигрировать):**
+```python
+async def process_recording(recording_id: int):
+    # Добавляем в очередь
+    task = celery_app.send_task('process_recording', args=[recording_id])
+    return {"task_id": task.id}
+```
+
+**Рекомендуемый подход:**
+- Использовать абстракцию для выполнения задач
+- Создать интерфейс `TaskExecutor` с двумя реализациями:
+  - `AsyncTaskExecutor` (текущий, для MVP)
+  - `QueueTaskExecutor` (будущий, для масштабирования)
+
+### Выбранная технология (для будущего)
+
+**Варианты:**
+1. **Celery** (выбрано для будущего)
+2. **RQ** (Redis Queue)
+3. **Dramatiq**
+
+**Обоснование выбора Celery:**
+- Широкая поддержка брокеров (Redis, RabbitMQ, SQS)
+- Мощные возможности (retry, scheduling, monitoring)
+- Хорошая документация
+- Активное сообщество
+
+**Брокер:** Redis (уже используется для кэширования)
+
+### Миграционная стратегия
+
+1. **Фаза 1 (MVP):** Использовать `asyncio` + `FastAPI BackgroundTasks`
+2. **Фаза 2 (Рост):** Добавить абстракцию `TaskExecutor`
+3. **Фаза 3 (Масштабирование):** Реализовать `QueueTaskExecutor` на Celery
+4. **Фаза 4 (Оптимизация):** Настроить приоритизацию и мониторинг
+
+---
+
+## ADR-012: Квоты и лимиты (MVP)
+
+**Статус:** Реализовать в MVP  
+**Приоритет:** Высокий
+
+### Решение
+
+Реализовать систему квот и лимитов для контроля использования ресурсов пользователями.
+
+### Цели
+
+Квоты нужны для:
+- **Ограничения использования ресурсов** — защита инфраструктуры
+- **Защиты от злоупотреблений** — предотвращение DDoS и злоупотреблений
+- **Планирования инфраструктуры** — понимание нагрузки
+- **Монетизации** — разные тарифы = разные квоты
+
+### Типы квот
+
+#### 1. Квоты на обработку
+
+Уже определены в таблице `users`:
+- `max_concurrent_processes` — максимум одновременных обработок (default: 2)
+- `max_recordings_per_month` — максимум записей в месяц (default: NULL = безлимит)
+- `quota_disk_space_gb` — квота дискового пространства в GB (default: NULL = безлимит)
+- `max_file_size_mb` — максимальный размер файла в MB (default: 5000)
+
+#### 2. Квоты на API запросы
+
+- `rate_limit_per_minute` — лимит запросов в минуту (default: 100)
+
+### Схема базы данных
+
+#### Таблица quota_usage
+
+```sql
+CREATE TABLE quota_usage (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    
+    -- Счетчики
+    active_processes_count INT DEFAULT 0,
+    recordings_this_month INT DEFAULT 0,
+    recordings_month_year INT NOT NULL,  -- YYYYMM для месяца (202501)
+    disk_usage_bytes BIGINT DEFAULT 0,
+    
+    -- Timestamps
+    last_reset_at TIMESTAMP WITH TIME ZONE,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    UNIQUE(user_id, recordings_month_year)
+);
+
+CREATE INDEX idx_quota_usage_user ON quota_usage(user_id);
+CREATE INDEX idx_quota_usage_month ON quota_usage(recordings_month_year);
+```
+
+**Преимущества отдельной таблицы:**
+- Можно хранить историю использования
+- Легче делать reset по месяцам
+- Можно делать аналитику использования
+- Не засоряет таблицу `users`
+
+### Механизм проверки квот
+
+#### Шаг 1: Проверка перед операцией
+
+```python
+class QuotaService:
+    async def check_quota(
+        self, 
+        user_id: int, 
+        operation: str,  # 'process', 'transcribe', 'upload'
+        resource_amount: int = 1
+    ) -> tuple[bool, str | None]:
+        """
+        Проверяет квоту пользователя.
+        
+        Returns:
+            (is_allowed, error_message)
+        """
+        user = await self.get_user(user_id)
+        quota = await self.get_user_quota(user_id)
+        
+        if operation == 'process':
+            # Проверка concurrent processes
+            if quota.active_processes_count >= user.max_concurrent_processes:
+                return False, f"Превышен лимит одновременных обработок: {user.max_concurrent_processes}"
+            
+            # Проверка monthly quota
+            if user.max_recordings_per_month:
+                if quota.recordings_this_month >= user.max_recordings_per_month:
+                    return False, f"Превышена месячная квота: {user.max_recordings_per_month}"
+        
+        elif operation == 'upload':
+            # Проверка дискового пространства
+            if user.quota_disk_space_gb:
+                quota_bytes = user.quota_disk_space_gb * 1024 * 1024 * 1024
+                if quota.disk_usage_bytes + resource_amount > quota_bytes:
+                    return False, f"Превышена квота дискового пространства: {user.quota_disk_space_gb} GB"
+        
+        return True, None
+```
+
+#### Шаг 2: Atomic обновление счетчиков
+
+```python
+async def start_processing(user_id: int, recording_id: int):
+    """Начинает обработку с проверкой и обновлением квот"""
+    
+    # Проверяем квоту
+    allowed, error = await quota_service.check_quota(user_id, 'process')
+    if not allowed:
+        raise HTTPException(status_code=429, detail=error)
+    
+    # Atomic обновление счетчика
+    async with db.transaction():
+        # Увеличиваем счетчик активных процессов
+        await db.execute("""
+            UPDATE quota_usage
+            SET active_processes_count = active_processes_count + 1,
+                updated_at = NOW()
+            WHERE user_id = :user_id
+        """, {"user_id": user_id})
+        
+        # Начинаем обработку
+        await start_recording_processing(recording_id)
+```
+
+#### Шаг 3: Освобождение квоты при завершении
+
+```python
+async def finish_processing(user_id: int, recording_id: int):
+    """Завершает обработку и освобождает квоту"""
+    
+    async with db.transaction():
+        # Уменьшаем счетчик активных процессов
+        await db.execute("""
+            UPDATE quota_usage
+            SET active_processes_count = GREATEST(0, active_processes_count - 1),
+                recordings_this_month = recordings_this_month + 1,
+                updated_at = NOW()
+            WHERE user_id = :user_id
+        """, {"user_id": user_id})
+        
+        # Обновляем статус записи
+        await update_recording_status(recording_id, 'PROCESSED')
+```
+
+### Reset квот (ежемесячный)
+
+```python
+async def reset_monthly_quotas():
+    """Сбрасывает месячные квоты (вызывается cron job 1-го числа каждого месяца)"""
+    
+    current_month = datetime.now().strftime('%Y%m')
+    
+    async with db.transaction():
+        # Сбрасываем счетчики для всех пользователей
+        await db.execute("""
+            UPDATE quota_usage
+            SET recordings_this_month = 0,
+                last_reset_at = NOW(),
+                updated_at = NOW()
+            WHERE recordings_month_year < :current_month
+        """, {"current_month": int(current_month)})
+        
+        # Создаем записи для нового месяца
+        await db.execute("""
+            INSERT INTO quota_usage (user_id, recordings_month_year, recordings_this_month)
+            SELECT id, :current_month, 0
+            FROM users
+            WHERE id NOT IN (
+                SELECT user_id FROM quota_usage 
+                WHERE recordings_month_year = :current_month
+            )
+        """, {"current_month": int(current_month)})
+```
+
+### API для проверки квот
+
+```python
+@router.get("/api/v1/quota/status")
+async def get_quota_status(user: User = Depends(get_current_user)):
+    """Получить текущее использование квот"""
+    
+    quota = await quota_service.get_user_quota(user.id)
+    
+    return {
+        "concurrent_processes": {
+            "used": quota.active_processes_count,
+            "limit": user.max_concurrent_processes,
+            "available": user.max_concurrent_processes - quota.active_processes_count
+        },
+        "recordings_this_month": {
+            "used": quota.recordings_this_month,
+            "limit": user.max_recordings_per_month,
+            "available": user.max_recordings_per_month - quota.recordings_this_month if user.max_recordings_per_month else None
+        },
+        "disk_space": {
+            "used_gb": quota.disk_usage_bytes / (1024**3),
+            "limit_gb": user.quota_disk_space_gb,
+            "available_gb": (user.quota_disk_space_gb * 1024**3 - quota.disk_usage_bytes) / (1024**3) if user.quota_disk_space_gb else None
+        }
+    }
+```
+
+### Обработка ошибок превышения квоты
+
+```python
+class QuotaExceededError(Exception):
+    pass
+
+@router.post("/api/v1/recordings/{id}/process")
+async def process_recording(
+    recording_id: int,
+    user: User = Depends(get_current_user)
+):
+    try:
+        # Проверяем квоту
+        allowed, error = await quota_service.check_quota(user.id, 'process')
+        if not allowed:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "QUOTA_EXCEEDED",
+                    "message": error
+                }
+            )
+        
+        # Запускаем обработку
+        await start_processing(recording_id, user.id)
+        
+        return {"status": "processing", "recording_id": recording_id}
+        
+    except QuotaExceededError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+```
+
+### Миграционная стратегия
+
+1. **Фаза 1:** Создать таблицу `quota_usage`
+2. **Фаза 2:** Реализовать `QuotaService`
+3. **Фаза 3:** Добавить проверки квот во все операции
+4. **Фаза 4:** Настроить cron job для reset квот
+5. **Фаза 5:** Добавить API для просмотра квот
+
+---
+
+## ADR-013: Аудит (позже)
+
+**Статус:** Реализовать позже (после MVP)  
+**Приоритет:** Средний
+
+### Решение
+
+Реализовать систему аудита для логирования всех критичных операций пользователей.
+
+### Цели
+
+Аудит нужен для:
+- **Безопасности** — кто что делал, когда, с какими данными
+- **Отладки** — история изменений для диагностики проблем
+- **Compliance** — соответствие требованиям (GDPR, SOC2)
+- **Аналитики** — понимание использования системы
+
+### Принципы аудита
+
+1. **Неизменяемость** — логи нельзя изменять или удалять
+2. **Полнота** — логируем все критичные операции
+3. **Производительность** — не должно замедлять основную работу
+4. **Структурированность** — легко искать и анализировать
+5. **Конфиденциальность** — не логируем чувствительные данные (пароли, tokens)
+
+### Схема базы данных
+
+```sql
+CREATE TABLE audit_logs (
+    id BIGSERIAL PRIMARY KEY,
+    
+    -- Кто
+    user_id INT REFERENCES users(id) ON DELETE SET NULL,
+    user_email VARCHAR(255),  -- Сохраняем email на случай удаления пользователя
+    user_role VARCHAR(20),  -- Сохраняем роль на момент действия
+    
+    -- Что
+    action VARCHAR(100) NOT NULL,  -- 'recording.created', 'template.updated', 'credential.deleted'
+    resource_type VARCHAR(50) NOT NULL,  -- 'recording', 'template', 'credential'
+    resource_id INT,  -- ID ресурса
+    
+    -- Когда
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    -- Где
+    ip_address INET,
+    user_agent TEXT,
+    request_id VARCHAR(100),  -- Для связи с логами запросов
+    
+    -- Что изменилось
+    changes JSONB,  -- Что изменилось (для update операций)
+    -- Пример: {"status": {"old": "INITIALIZED", "new": "PROCESSING"}}
+    
+    -- Результат
+    status VARCHAR(20) NOT NULL,  -- 'success', 'failure', 'partial'
+    error_message TEXT,  -- Если была ошибка
+    
+    -- Контекст
+    metadata JSONB DEFAULT '{}',  -- Дополнительная информация
+    -- Пример: {"platform": "youtube", "file_size": 1234567}
+    
+    CONSTRAINT valid_status CHECK (status IN ('success', 'failure', 'partial'))
+);
+
+-- Индексы для производительности
+CREATE INDEX idx_audit_logs_user ON audit_logs(user_id, timestamp DESC);
+CREATE INDEX idx_audit_logs_action ON audit_logs(action, timestamp DESC);
+CREATE INDEX idx_audit_logs_resource ON audit_logs(resource_type, resource_id, timestamp DESC);
+CREATE INDEX idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
+```
+
+### Типы действий для логирования
+
+#### Критичные (логируем всегда):
+
+```python
+# Recordings
+'recording.created'      # Создание записи
+'recording.deleted'      # Удаление записи
+'recording.status_changed'  # Изменение статуса
+'recording.processed'    # Запуск обработки
+'recording.uploaded'     # Загрузка на платформу
+
+# Templates
+'template.created'       # Создание шаблона
+'template.updated'      # Обновление шаблона
+'template.deleted'      # Удаление шаблона
+'template.activated'    # Активация шаблона
+
+# Credentials
+'credential.created'     # Создание credential
+'credential.updated'     # Обновление credential
+'credential.deleted'     # Удаление credential
+'credential.used'        # Использование credential (для API вызовов)
+
+# Users (admin only)
+'user.created'          # Создание пользователя
+'user.updated'          # Обновление пользователя
+'user.deleted'          # Удаление пользователя
+'user.role_changed'     # Изменение роли
+
+# Authentication
+'auth.login'           # Успешный вход
+'auth.login_failed'    # Неудачная попытка входа
+'auth.logout'          # Выход
+'auth.token_refreshed' # Обновление токена
+
+# Data access (важно для безопасности)
+'data.exported'        # Экспорт данных
+'data.accessed'        # Доступ к данным другого пользователя (admin)
+```
+
+### Реализация Audit Service
+
+```python
+class AuditService:
+    """Сервис для логирования действий пользователей"""
+    
+    async def log(
+        self,
+        user_id: Optional[int],
+        action: str,
+        resource_type: str,
+        resource_id: Optional[int] = None,
+        status: str = 'success',
+        changes: Optional[Dict[str, Any]] = None,
+        error_message: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        request_id: Optional[str] = None,
+    ):
+        """
+        Логирует действие пользователя.
+        
+        Важно: Выполняется асинхронно, не блокирует основную операцию.
+        """
+        # Получаем информацию о пользователе (если есть)
+        user_email = None
+        user_role = None
+        if user_id:
+            user = await self.db.get_user(user_id)
+            if user:
+                user_email = user.email
+                user_role = user.role
+        
+        # Сохраняем в БД (асинхронно, не блокируем основную операцию)
+        try:
+            await self.db.execute("""
+                INSERT INTO audit_logs (
+                    user_id, user_email, user_role,
+                    action, resource_type, resource_id,
+                    timestamp, ip_address, user_agent, request_id,
+                    changes, status, error_message, metadata
+                ) VALUES (
+                    :user_id, :user_email, :user_role,
+                    :action, :resource_type, :resource_id,
+                    NOW(), :ip_address, :user_agent, :request_id,
+                    :changes, :status, :error_message, :metadata
+                )
+            """, {
+                'user_id': user_id,
+                'user_email': user_email,
+                'user_role': user_role,
+                'action': action,
+                'resource_type': resource_type,
+                'resource_id': resource_id,
+                'ip_address': ip_address,
+                'user_agent': user_agent,
+                'request_id': request_id,
+                'changes': json.dumps(changes) if changes else None,
+                'status': status,
+                'error_message': error_message,
+                'metadata': json.dumps(metadata) if metadata else None,
+            })
+        except Exception as e:
+            # Логируем ошибку, но не прерываем основную операцию
+            logger.error(f"Failed to write audit log: {e}")
+```
+
+### API для просмотра логов
+
+```python
+@router.get("/api/v1/audit-logs")
+async def get_audit_logs(
+    user: User = Depends(get_current_user),
+    action: Optional[str] = None,
+    resource_type: Optional[str] = None,
+    resource_id: Optional[int] = None,
+    from_date: Optional[datetime] = None,
+    to_date: Optional[datetime] = None,
+    page: int = 1,
+    per_page: int = 50,
+):
+    """Получить логи аудита (только свои действия, админы видят все)"""
+    
+    # Обычные пользователи видят только свои логи
+    # Админы видят все логи
+    user_id_filter = None if user.role == 'admin' else user.id
+    
+    logs = await audit_service.get_logs(
+        user_id=user_id_filter,
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        from_date=from_date,
+        to_date=to_date,
+        page=page,
+        per_page=per_page,
+    )
+    
+    return logs
+```
+
+### Retention policy
+
+```sql
+-- Автоматическое удаление старых логов (через cron job)
+-- Удаляем логи старше 1 года
+DELETE FROM audit_logs 
+WHERE timestamp < NOW() - INTERVAL '1 year';
+
+-- Или архивируем в отдельную таблицу
+INSERT INTO audit_logs_archive 
+SELECT * FROM audit_logs 
+WHERE timestamp < NOW() - INTERVAL '1 year';
+
+DELETE FROM audit_logs 
+WHERE timestamp < NOW() - INTERVAL '1 year';
+```
+
+### Миграционная стратегия
+
+1. **Фаза 1:** Создать таблицу `audit_logs`
+2. **Фаза 2:** Реализовать `AuditService`
+3. **Фаза 3:** Добавить логирование в критичные операции
+4. **Фаза 4:** Добавить API для просмотра логов
+5. **Фаза 5:** Настроить retention policy
+
+---
+
+## ADR-014: Уведомления (позже)
+
+**Статус:** Реализовать позже (после MVP)  
+**Приоритет:** Средний
+
+### Решение
+
+Реализовать систему уведомлений по email для критических ошибок и ежедневных сводок.
+
+### Требования
+
+1. **Email при ошибках:** Отправлять на почту при критических ошибках
+2. **Ежедневная сводка:** Отправлять каждый день сводку (можно отключить)
+3. **Настройки:** Позже добавим настройки уведомлений (webhooks, Telegram, etc.)
+
+### Типы уведомлений
+
+#### Критические ошибки (отправляем сразу):
+
+```python
+# Ошибки обработки
+'processing.failed'       # Ошибка при обработке записи
+'transcription.failed'    # Ошибка при транскрибации
+'upload.failed'          # Ошибка при загрузке на платформу
+
+# Ошибки системы
+'system.error'           # Критическая ошибка системы
+'quota.exceeded'         # Превышение квоты (критично)
+'database.error'         # Ошибка БД
+'external_api.error'     # Ошибка внешнего API (Zoom, YouTube, etc.)
+```
+
+#### Ежедневная сводка:
+
+```python
+# Статистика за день
+- Обработано записей: X
+- Транскрибировано: Y
+- Загружено на платформы: Z
+- Ошибок: N
+- Использование квот: X/Y
+```
+
+### Схема базы данных
+
+```sql
+CREATE TABLE notifications (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    
+    -- Тип уведомления
+    notification_type VARCHAR(50) NOT NULL,
+    -- 'error', 'daily_summary', 'quota_warning', 'processing_complete'
+    
+    -- Статус
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    -- 'pending', 'sent', 'failed'
+    
+    -- Содержимое
+    subject VARCHAR(255) NOT NULL,
+    body_text TEXT NOT NULL,
+    body_html TEXT,  -- HTML версия (опционально)
+    
+    -- Метаданные
+    metadata JSONB DEFAULT '{}',
+    -- Для ошибок: {"recording_id": 123, "error": "..."}
+    -- Для сводки: {"processed": 5, "errors": 1, ...}
+    
+    -- Время
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    sent_at TIMESTAMP WITH TIME ZONE,
+    attempts INT DEFAULT 0,
+    last_error TEXT,
+    
+    CONSTRAINT valid_status CHECK (status IN ('pending', 'sent', 'failed'))
+);
+
+CREATE INDEX idx_notifications_user_status ON notifications(user_id, status, created_at DESC);
+CREATE INDEX idx_notifications_pending ON notifications(status, created_at) WHERE status = 'pending';
+```
+
+### Настройки уведомлений
+
+```sql
+-- Добавляем в таблицу users
+ALTER TABLE users ADD COLUMN email_notifications_enabled BOOLEAN DEFAULT TRUE;
+ALTER TABLE users ADD COLUMN daily_summary_enabled BOOLEAN DEFAULT TRUE;
+ALTER TABLE users ADD COLUMN error_notifications_enabled BOOLEAN DEFAULT TRUE;
+```
+
+### Реализация Notification Service
+
+```python
+class NotificationService:
+    """Сервис для отправки уведомлений по email"""
+    
+    async def send_error_notification(
+        self,
+        user_id: int,
+        error_type: str,
+        error_message: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ):
+        """Отправляет уведомление об ошибке"""
+        
+        user = await self.db.get_user(user_id)
+        if not user or not user.error_notifications_enabled:
+            return
+        
+        subject = f"❌ Ошибка: {error_type}"
+        body = f"""
+Произошла ошибка при обработке:
+
+Тип ошибки: {error_type}
+Сообщение: {error_message}
+
+Дополнительная информация:
+{json.dumps(metadata, indent=2, ensure_ascii=False) if metadata else 'Нет'}
+
+---
+Zoom Publishing Platform
+        """.strip()
+        
+        await self._send_email(user.email, subject, body, 'error', metadata)
+    
+    async def send_daily_summary(
+        self,
+        user_id: int,
+        summary_data: Dict[str, Any]
+    ):
+        """Отправляет ежедневную сводку"""
+        
+        user = await self.db.get_user(user_id)
+        if not user or not user.daily_summary_enabled:
+            return
+        
+        subject = "📊 Ежедневная сводка"
+        body = f"""
+Ежедневная сводка за {summary_data.get('date', 'сегодня')}:
+
+📹 Обработано записей: {summary_data.get('processed', 0)}
+🎤 Транскрибировано: {summary_data.get('transcribed', 0)}
+📤 Загружено на платформы: {summary_data.get('uploaded', 0)}
+❌ Ошибок: {summary_data.get('errors', 0)}
+
+Использование квот:
+- Одновременных обработок: {summary_data.get('active_processes', 0)}/{summary_data.get('max_processes', 'N/A')}
+- Записей в этом месяце: {summary_data.get('recordings_this_month', 0)}/{summary_data.get('max_recordings_per_month', 'N/A')}
+- Дисковое пространство: {summary_data.get('disk_usage_gb', 0):.2f} GB / {summary_data.get('disk_quota_gb', 'N/A')} GB
+
+---
+Zoom Publishing Platform
+        """.strip()
+        
+        await self._send_email(user.email, subject, body, 'daily_summary', summary_data)
+```
+
+### Cron job для ежедневной сводки
+
+```python
+async def send_daily_summaries():
+    """Отправляет ежедневные сводки всем пользователям (вызывается cron в 00:00)"""
+    
+    users = await db.get_all_active_users()
+    
+    for user in users:
+        if not user.daily_summary_enabled:
+            continue
+        
+        # Собираем статистику за вчера
+        yesterday = datetime.now() - timedelta(days=1)
+        
+        summary = {
+            'date': yesterday.strftime('%Y-%m-%d'),
+            'processed': await count_processed_recordings(user.id, yesterday),
+            'transcribed': await count_transcribed_recordings(user.id, yesterday),
+            'uploaded': await count_uploaded_recordings(user.id, yesterday),
+            'errors': await count_errors(user.id, yesterday),
+            'active_processes': await get_active_processes_count(user.id),
+            'max_processes': user.max_concurrent_processes,
+            'recordings_this_month': await get_recordings_this_month(user.id),
+            'max_recordings_per_month': user.max_recordings_per_month,
+            'disk_usage_gb': await get_disk_usage_gb(user.id),
+            'disk_quota_gb': user.quota_disk_space_gb,
+        }
+        
+        await notification_service.send_daily_summary(user.id, summary)
+```
+
+### Настройка SMTP
+
+```python
+# В config/settings.py
+class NotificationConfig(BaseSettings):
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str
+    smtp_password: str
+    from_email: str = "noreply@yourdomain.com"
+    from_name: str = "Zoom Publishing Platform"
+```
+
+### Миграционная стратегия
+
+1. **Фаза 1:** Создать таблицу `notifications`
+2. **Фаза 2:** Добавить настройки в `users`
+3. **Фаза 3:** Реализовать `NotificationService`
+4. **Фаза 4:** Добавить отправку уведомлений при ошибках
+5. **Фаза 5:** Настроить cron job для ежедневной сводки
+6. **Фаза 6 (будущее):** Добавить webhooks, Telegram, и другие каналы
+
+---
+
+## ADR-015: FSM для надежной обработки
+
+**Статус:** Планируется  
+**Приоритет:** Высокий
+
+### Контекст
+
+В текущей реализации система использует линейные статусы (`ProcessingStatus`, `TargetStatus`) для отслеживания прогресса обработки. При сбое на любом этапе запись переходит в состояние `FAILED`, но нет возможности точно определить, на каком этапе произошла ошибка, и перезапустить только сломанный этап, не затрагивая уже успешно выполненные.
+
+**Проблемы текущей реализации:**
+1. При сбое на этапе `UPLOADING` вся запись помечается как `FAILED`, хотя предыдущие этапы (download, processing, transcription) уже выполнены
+2. Нет возможности перезапустить только сломанный этап — приходится начинать с начала
+3. Не ясно, какой именно этап сломался при общем статусе `FAILED`
+4. Нет механизма для автоматического retry сломанных этапов
+
+### Решение
+
+Реализовать явную FSM (Finite State Machine) модель для каждого этапа обработки с отдельным отслеживанием состояния и возможностью независимого перезапуска.
+
+**Ключевые принципы:**
+1. **Откат к предыдущему статусу при ошибке** — при ошибке статус откатывается к предыдущему завершенному этапу (например, ошибка на `DOWNLOADING` → откат к `INITIALIZED`)
+2. **Сохранение контекста ошибки** — при сбое сохраняется `failed_at_stage`, указывающий этап, на котором произошла ошибка (для аналитики и мониторинга)
+3. **Булев атрибут для ошибок** — при сбое устанавливается флаг `failed = true`, указывающий что переход на следующий этап не удался
+4. **Детерминированные переходы** — каждое состояние может переходить только в определенные следующие состояния
+5. **Возможность перезапуска** — любой сломанный этап можно перезапустить через API (максимум 2 попытки), статус уже готов к retry благодаря откату
+6. **Идемпотентность** — повторный запуск успешно выполненного этапа не должен вызывать ошибки
+7. **Комбинированный подход для частичного успеха** — при загрузке на несколько платформ, если хотя бы одна успешна, используется `UPLOADED` с `failed=true` для индикации частичного успеха
+
+### Архитектура FSM
+
+#### Граф состояний основного пайплайна
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  FSM Pipeline States                            │
+└─────────────────────────────────────────────────────────────────┘
+
+    INITIALIZED
+         │
+         ▼
+    DOWNLOADING ────(success)───► DOWNLOADED
+         │
+         │ (error: откат к INITIALIZED, failed=true, failed_at_stage=DOWNLOADING)
+         │
+         ▼ (retry через API, максимум 2 попытки)
+    [INITIALIZED, failed=true, failed_at_stage=DOWNLOADING] ──► DOWNLOADING ────► DOWNLOADED
+         │
+         │
+         ▼
+    PROCESSING ────(success)───► PROCESSED
+         │
+         │ (error: откат к DOWNLOADED, failed=true, failed_at_stage=PROCESSING)
+         │
+         ▼ (retry через API)
+    [DOWNLOADED, failed=true, failed_at_stage=PROCESSING] ──► PROCESSING ────► PROCESSED
+         │
+         │
+         ▼
+    TRANSCRIBING ────(success)───► TRANSCRIBED
+         │
+         │ (error: откат к PROCESSED, failed=true, failed_at_stage=TRANSCRIBING)
+         │
+         ▼ (retry через API)
+    [PROCESSED, failed=true, failed_at_stage=TRANSCRIBING] ──► TRANSCRIBING ────► TRANSCRIBED
+         │
+         │
+         ▼
+    UPLOADING ────(success)───► UPLOADED
+         │
+         │ (error: откат к TRANSCRIBED, failed=true, failed_at_stage=UPLOADING)
+         │
+         ▼ (retry через API)
+    [TRANSCRIBED, failed=true, failed_at_stage=UPLOADING] ──► UPLOADING ────► UPLOADED
+
+Принцип:
+- При успехе: статус переходит на следующий этап, failed=false, failed_at_stage=NULL
+- При ошибке: статус откатывается к предыдущему завершенному этапу, failed=true, failed_at_stage=этап_с_ошибкой
+- Retry: через API можно перезапустить этап (максимум 2 попытки), статус уже готов к retry
+```
+
+#### Граф состояний для платформ (TargetStatus)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  FSM Target States                              │
+└─────────────────────────────────────────────────────────────────┘
+
+    NOT_UPLOADED
+         │
+         ▼
+    UPLOADING ────(success)───► UPLOADED
+         │
+         │ (error: failed=true, status остаётся UPLOADING)
+         │
+         ▼ (retry через API, максимум 2 попытки)
+    [UPLOADING, failed=true] ──► UPLOADING ────► UPLOADED
+         │                                          │
+         │ (все retry исчерпаны)                    │
+         ▼                                          │
+    FAILED (failed=true)                            │
+                                                    │
+                                                    ▼
+                                             (все платформы в финальном состоянии)
+
+Принцип:
+- Во время загрузки: UPLOADING (при ошибке failed=true)
+- После исчерпания всех retry: FAILED (failed=true)
+- При успехе: UPLOADED (failed=false)
+
+Каждая платформа (YouTube, VK) имеет независимый граф состояний.
+```
+
+#### Логика ProcessingStatus при загрузке на несколько платформ
+
+При загрузке на несколько платформ (`output_targets`):
+
+**Сценарий 1: Все платформы успешны**
+- Все targets: `UPLOADED`, `failed=false`
+- `ProcessingStatus`: `UPLOADED`, `failed=false`
+
+**Сценарий 2: Частичный успех (одна успешна, другая нет)**
+- YouTube target: `UPLOADED`, `failed=false`
+- VK target: `UPLOADING`, `failed=true` (или `FAILED`, `failed=true` после всех retry)
+- `ProcessingStatus`: `UPLOADING`, `failed=true` (пока есть незавершенные платформы)
+- После завершения всех платформ: `ProcessingStatus`: `UPLOADED`, `failed=true` (комбинированный подход)
+
+**Сценарий 3: Все платформы провалились**
+- Все targets: `FAILED`, `failed=true`
+- `ProcessingStatus`: `UPLOADING`, `failed=true`
+
+**Сценарий 4: Все платформы в финальном состоянии (успех или провал)**
+- Когда все targets в финальном состоянии (`UPLOADED` или `FAILED`)
+- Если все платформы успешны: `ProcessingStatus` = `UPLOADED`, `failed=false`
+- Если частичный успех (одна успешна, другая провалилась): `ProcessingStatus` = `UPLOADED`, `failed=true`
+- Если все провалились: `ProcessingStatus` = `TRANSCRIBED`, `failed=true`, `failed_at_stage=UPLOADING` (можно retry)
+
+**Сценарий 5: Дозагрузка на дополнительные платформы**
+- Запись уже загружена на одну или несколько платформ (статус `UPLOADED`, `failed=false`)
+- Пользователь добавляет новую платформу через API или изменение шаблона
+- Создается новый target со статусом `NOT_UPLOADED`
+- `ProcessingStatus` переходит обратно к `UPLOADING` (для запуска загрузки на новую платформу)
+- Существующие платформы остаются в статусе `UPLOADED`
+- После завершения загрузки на новую платформу статус снова определяется функцией `_determine_final_upload_status()`
+
+Пример:
+- Изначально: VK target = `UPLOADED`, ProcessingStatus = `UPLOADED`
+- Добавлен YouTube target = `NOT_UPLOADED`
+- ProcessingStatus → `UPLOADING` (есть незавершенные платформы)
+- После загрузки на YouTube: YouTube = `UPLOADED`, VK = `UPLOADED`
+- ProcessingStatus → `UPLOADED`, `failed=false` (все платформы успешны)
+
+**Сценарий 5: Дозагрузка на дополнительные платформы**
+- Запись уже загружена на одну или несколько платформ (статус `UPLOADED`, `failed=false`)
+- Пользователь добавляет новую платформу через API или изменение шаблона
+- Создается новый target со статусом `NOT_UPLOADED`
+- `ProcessingStatus` переходит обратно к `UPLOADING` (для запуска загрузки на новую платформу)
+- Существующие платформы остаются в статусе `UPLOADED`
+- После завершения загрузки на новую платформу статус снова определяется функцией `_determine_final_upload_status()`
+
+Пример:
+- Изначально: VK target = `UPLOADED`, ProcessingStatus = `UPLOADED`
+- Добавлен YouTube target = `NOT_UPLOADED`
+- ProcessingStatus → `UPLOADING` (есть незавершенные платформы)
+- После загрузки на YouTube: YouTube = `UPLOADED`, VK = `UPLOADED`
+- ProcessingStatus → `UPLOADED`, `failed=false` (все платформы успешны)
+
+**Логика определения ProcessingStatus:**
+
+Функция `_determine_final_upload_status()` возвращает tuple `(ProcessingStatus, bool)`:
+- Если не все платформы в финальном состоянии → `(UPLOADING, False)`
+- Если все успешны → `(UPLOADED, False)`
+- Если частичный успех → `(UPLOADED, True)` (комбинированный подход)
+- Если все провалились → `(TRANSCRIBED, False)` (mark_failure сделает откат)
+
+### Модель данных
+
+#### Обновление таблицы `recordings`
+
+```sql
+ALTER TABLE recordings ADD COLUMN failed BOOLEAN DEFAULT FALSE;
+ALTER TABLE recordings ADD COLUMN failed_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE recordings ADD COLUMN failed_reason TEXT;
+ALTER TABLE recordings ADD COLUMN failed_at_stage VARCHAR(20);
+ALTER TABLE recordings ADD COLUMN retry_count INT DEFAULT 0;
+
+CREATE INDEX idx_recordings_failed ON recordings(status, failed) 
+    WHERE failed = TRUE;
+CREATE INDEX idx_recordings_failed_at ON recordings(failed_at DESC) 
+    WHERE failed = TRUE;
+CREATE INDEX idx_recordings_failed_at_stage ON recordings(failed_at_stage) 
+    WHERE failed = TRUE AND failed_at_stage IS NOT NULL;
+```
+
+Поля: `failed` (флаг ошибки), `failed_at` (время ошибки), `failed_reason` (сообщение), `failed_at_stage` (этап ошибки: 'downloading', 'processing', 'transcribing', 'uploading'), `retry_count` (количество попыток, максимум 2).
+
+#### Обновление `ProcessingStatus` enum
+
+`ProcessingStatus` содержит методы:
+- `can_have_failed_flag` — проверяет, может ли статус иметь `failed=true` (только для DOWNLOADING, PROCESSING, TRANSCRIBING, UPLOADING)
+- `can_transition_to()` — проверяет допустимость перехода к следующему статусу согласно графу состояний
+
+#### Обновление `TargetStatus` enum
+
+`TargetStatus` имеет аналогичную структуру: `can_have_failed_flag` (только для UPLOADING) и `can_transition_to()` для проверки допустимых переходов согласно графу состояний платформ.
+
+#### Обновление таблицы `output_targets`
+
+```sql
+ALTER TABLE output_targets ADD COLUMN failed BOOLEAN DEFAULT FALSE;
+ALTER TABLE output_targets ADD COLUMN failed_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE output_targets ADD COLUMN failed_reason TEXT;
+ALTER TABLE output_targets ADD COLUMN retry_count INT DEFAULT 0;
+
+CREATE INDEX idx_output_targets_failed ON output_targets(status, failed) 
+    WHERE failed = TRUE OR status = 'failed';
+```
+
+Аналогичные поля для платформ с той же логикой.
+
+### Логика обработки с FSM
+
+#### Обработка перехода состояний
+
+`StateTransitionManager` управляет переходами состояний:
+
+- `mark_success()` — переводит на следующий этап, сбрасывает флаги ошибки и `failed_at_stage`
+- `mark_failure()` — откатывает к предыдущему статусу, сохраняет этап ошибки в `failed_at_stage`
+- `get_previous_status()` — возвращает предыдущий статус для отката (DOWNLOADING → INITIALIZED, PROCESSING → DOWNLOADED и т.д.)
+- `can_retry()` — проверяет возможность retry (есть ошибка, не превышен лимит попыток, `failed_at_stage` валиден)
+- `prepare_retry()` — восстанавливает статус из `failed_at_stage`, увеличивает `retry_count`, сбрасывает `failed`
+
+#### Обработка сбоев с сохранением контекста
+
+Обработка проходит через этапы: download → process → transcribe → upload. Для каждого этапа:
+
+1. Определяется начальный этап через `_determine_start_stage()` (использует `failed_at_stage` при retry)
+2. Если это retry, вызывается `prepare_retry()` для восстановления статуса этапа
+3. При успехе — `mark_success()` переводит на следующий этап
+4. При ошибке — `mark_failure()` откатывает к предыдущему статусу, сохраняет контекст в `failed_at_stage`
+
+Для этапа загрузки на платформы используется комбинированный подход:
+- Все успешны → `UPLOADED`, `failed=false`
+- Частичный успех → `UPLOADED`, `failed=true`, `failed_at_stage=UPLOADING`
+- Все провалились → откат к `TRANSCRIBED`, `failed=true`, `failed_at_stage=UPLOADING`
+
+Вспомогательные функции:
+- `_determine_start_stage()` — определяет начальный этап (использует `failed_at_stage` при retry, иначе по текущему статусу)
+- `_determine_final_upload_status()` — возвращает tuple `(ProcessingStatus, bool)` для определения финального статуса загрузки
+
+#### Дозагрузка на дополнительные платформы
+
+После успешной загрузки на платформы (статус `UPLOADED`) можно добавить дополнительные платформы для дозагрузки:
+
+1. **Добавление новой платформы:**
+   - Создается новый `OutputTarget` со статусом `NOT_UPLOADED` через `ensure_target()` или API
+   - `ProcessingStatus` автоматически переходит к `UPLOADING` (есть незавершенные платформы)
+   - Существующие платформы остаются в статусе `UPLOADED`
+
+2. **Запуск загрузки:**
+   - При следующем запуске обработки определяется, что есть платформы со статусом `NOT_UPLOADED`
+   - Загрузка выполняется только для новых платформ (уже загруженные пропускаются)
+   - Используется тот же процесс загрузки, но только для незавершенных платформ
+
+3. **Определение финального статуса:**
+   - После загрузки на новую платформу вызывается `_determine_final_upload_status()`
+   - Если все платформы успешны → `UPLOADED`, `failed=false`
+   - Если частичный успех → `UPLOADED`, `failed=true` (комбинированный подход)
+   - Если все провалились → откат к `TRANSCRIBED`, `failed=true`, `failed_at_stage=UPLOADING`
+
+**Пример:**
+- Изначально: VK target = `UPLOADED`, ProcessingStatus = `UPLOADED`, `failed=false`
+- Добавлен YouTube target = `NOT_UPLOADED` через API или изменение шаблона
+- ProcessingStatus → `UPLOADING` (есть незавершенные платформы)
+- После загрузки на YouTube: YouTube = `UPLOADED`, VK = `UPLOADED`
+- ProcessingStatus → `UPLOADED`, `failed=false` (все платформы успешны)
+
+**API для добавления платформы:**
+- `POST /api/v1/recordings/{recording_id}/targets` — добавить новую платформу для загрузки
+- Или изменение шаблона записи с добавлением новых платформ в `output_configs`
+
+### API для управления FSM
+
+#### Перезапуск сломанных этапов
+
+API endpoints:
+- `POST /api/v1/recordings/{recording_id}/retry` — перезапускает этап из `failed_at_stage`, проверяет `can_retry()`, вызывает `prepare_retry()` и запускает обработку
+- `GET /api/v1/recordings/failed` — возвращает записи с `failed=true`, опциональный фильтр по `failed_at_stage` (этап ошибки)
+
+#### Автоматический retry механизм
+
+Функция `auto_retry_failed_stages()` (вызывается cron):
+- Получает записи с `failed=true` и `retry_count < MAX_RETRY_COUNT`
+- Проверяет `can_retry()` для каждой
+- Вызывает `prepare_retry()` и запускает обработку с `force_retry=False`
+
+### Преимущества
+
+1. **Надежность** — каждый этап изолирован, сбой на одном не влияет на другие
+2. **Восстановимость** — можно перезапустить только сломанный этап
+3. **Прозрачность** — ясно видно, какой именно этап сломался
+4. **Гибкость** — можно перезапускать конкретные этапы независимо
+5. **Мониторинг** — легко отслеживать сбои по этапам
+6. **Автоматизация** — можно настроить автоматический retry для определенных типов ошибок
+
+### Недостатки и ограничения
+
+1. **Ограничение retry** — максимум 2 попытки, после этого требуется ручное вмешательство
+2. **Миграция** — нужно удалить статус `FAILED` из enum и обновить существующие записи (если есть в БД)
+3. **Частичные результаты** — нужно аккуратно обрабатывать случаи, когда часть этапов выполнена успешно
+
+### Миграционная стратегия
+
+1. **Фаза 1:** Добавить новые поля в таблицы (`failed`, `failed_at`, `failed_reason`, `retry_count`)
+2. **Фаза 2:** Удалить статус `FAILED` из enum `ProcessingStatus` (но оставить в `TargetStatus`)
+3. **Фаза 3:** Реализовать `StateTransitionManager` с методами `mark_success`, `mark_failure`, `prepare_retry`
+4. **Фаза 4:** Обновить логику обработки для использования булевого флага `failed`
+5. **Фаза 5:** Мигрировать существующие записи (если есть):
+   - Записи со статусом `FAILED` преобразовать по контексту
+   - Определить этап по наличию файлов, метаданных
+   - Установить соответствующий статус этапа и `failed=true`
+6. **Фаза 6:** Добавить API endpoints для retry (`POST /api/v1/recordings/{id}/retry`)
+7. **Фаза 7:** Реализовать автоматический retry механизм (опционально, через cron)
+
+### Миграция существующих данных
+
+Если в базе данных есть записи со статусом `FAILED`, их нужно мигрировать:
+- Определить этап по контексту (наличие файлов, метаданных)
+- Установить соответствующий статус этапа (DOWNLOADING, PROCESSING, TRANSCRIBING, UPLOADING)
+- Установить `failed=true`
+- Установить `failed_reason` из доступных данных (если есть)
 
 ---
 
@@ -2395,7 +3848,8 @@ Authorization: Bearer {JWT_TOKEN}
 Получение списка записей с фильтрацией и пагинацией.
 
 **Query параметры:**
-- `status` — фильтр по статусу (initialized, downloaded, processed, transcribed, uploaded, failed)
+- `status` — фильтр по статусу (initialized, downloading, downloaded, processing, processed, transcribing, transcribed, uploading, uploaded, skipped, expired)
+- `failed` — фильтр по наличию ошибки (true/false)
 - `source_type` — фильтр по типу источника (zoom, local_file, youtube, vk)
 - `from_date` — фильтр по дате начала (ISO 8601)
 - `to_date` — фильтр по дате окончания (ISO 8601)
@@ -3263,8 +4717,9 @@ class RecordingRepository:
 - `TRANSCRIBED` — транскрибировано
 - `UPLOADING` — загрузка на платформы
 - `UPLOADED` — загружено
-- `FAILED` — ошибка
 - `SKIPPED` — пропущено
+
+**Примечание:** При ошибке статус остается на текущем этапе, устанавливается `failed=true`. См. ADR-015.
 
 ### Надежность системы
 
@@ -3291,9 +4746,11 @@ class RecordingRepository:
 - Fallback стратегии где возможно
 
 **Обработка временных сбоев:**
-- Маркировка задачи как `FAILED` с возможностью retry
-- Сохранение контекста ошибки
-- Уведомление пользователя
+- При ошибке: статус остается на текущем этапе, устанавливается `failed=true`
+- Возможность retry через API (максимум 2 попытки)
+- Сохранение контекста ошибки (`failed_reason`, `failed_at`)
+- Уведомление пользователя (см. ADR-014)
+- Подробнее см. [ADR-015: FSM для надежной обработки](#adr-015-fsm-для-надежной-обработки)
 
 ---
 
@@ -3823,6 +5280,49 @@ media/
          │                                                │
          │  Update stored token                           │
 ```
+
+---
+
+## Следующие шаги
+
+Подробный чеклист по этапам (в указанной очередности), отражающий решения `ADR` и снижающий риски миграции.
+
+### Фаза 0: Stabilization & groundwork (1–2 недели)
+- [ ] Зафиксировать зависимости (`requirements.txt` / `poetry.lock`) и единый стиль/линтинг (`ruff`, `black`, `mypy` при возможности).
+- [ ] Создать baseline миграций `Alembic` и единый `.env` контракт (секреты для `pgcrypto`, секрет `JWT`, путь `media/user_{id}`).
+- [ ] Включить базовое наблюдение: структурированное логирование, health-check `/api/v1/health`, метрики диска/CPU.
+
+### Фаза 1: Данные и идентификация (2–3 недели)
+- [ ] Применить миграции `Alembic` для `users`, `base_configs`, `user_credentials`, `output_presets`, `input_sources`, `recording_templates`, `template_matching_rules`, расширений `recordings` / `output_targets` / `source_metadata` (поля `user_id`, `preset_id`, `failed`, `failed_at_stage` и др. по `ADR-015`).
+- [ ] Настроить `pgcrypto`, шифрование `user_credentials.encrypted_data`, валидацию `metadata`.
+- [ ] Реализовать `JWT` аутентификацию + middleware, добавляющее `user_id` в контекст и фильтрацию запросов.
+- [ ] Ввести `QuotaService` и таблицу `quota_usage` (ADR-012): проверки `max_concurrent_processes`, `max_recordings_per_month`, `max_file_size_mb`.
+- [ ] Сконвертировать существующие данные: создать `default@system.local`, перенести медиа в `media/user_1/`, загрузить глобальный базовый конфиг.
+
+### Фаза 2: API и многоарендность (2–3 недели)
+- [ ] Реализовать CRUD `API` для `credentials`, `output_presets`, `input_sources`, `recordings`, `recording_templates`, `template_matching_rules` (валидация `Pydantic`, единый формат ошибок).
+- [ ] Гарантировать изоляцию: репозитории принимают `user_id`, индексы по `user_id`, нормализация путей `media/user_{id}/...`.
+- [ ] Добавить rate limiting per-user (`rate_limit_per_minute`) и флаги/роли (`admin`, `user`, `can_*`) в middleware.
+- [ ] Реализовать deep-merge конфигов (`global` → `user` → `template`) и snapshot применённого конфига в `recordings`.
+
+### Фаза 3: Пайплайн и FSM (3–4 недели)
+- [ ] Внедрить `StateTransitionManager` (ADR-015) для `ProcessingStatus` и `TargetStatus`, заменить статус `FAILED` на флаг `failed` + `failed_at_stage`.
+- [ ] Обновить pipeline (download → process → transcribe → upload) под FSM: откаты, `retry_count`, идемпотентность, частичный успех для нескольких платформ.
+- [ ] Обновить `OutputTarget`: дозагрузки, частичные успехи, `POST /api/v1/recordings/{id}/retry`.
+- [ ] Согласовать генерацию путей/метаданных с новой иерархией; включить схемы транскрипции/топиков в `recordings.transcription_info`.
+- [ ] Покрыть тестами: unit для FSM переходов, интеграционные для полного пайплайна с моками внешних `API`.
+
+### Фаза 4: Автоматизация и наблюдаемость (2–3 недели)
+- [ ] Реализовать `AutomationService` на `APScheduler`: группировка по времени, TTL-кэш шаблонов, ограничения `max_concurrent_processes`.
+- [ ] Добавить аудит (ADR-013, MVP): запись ключевых действий в `audit_logs`, API выборка с учётом `user_id` / `role`.
+- [ ] Включить уведомления ядра (ADR-014, MVP): email об ошибках `processing/transcription/upload`, дневные сводки (опционально).
+- [ ] Расширить метрики/алерты: этапы, `failed_at_stage`, использование квот, деградация внешних `API`.
+
+### Фаза 5: Масштабирование и отказоустойчивость (будущее)
+- [ ] Ввести `QueueTaskExecutor` на `Celery`/`Redis`, приоритизацию, отложенные задачи, circuit breaker для внешних `API`.
+- [ ] Перенести медиа в `S3`-совместимое хранилище, добавить CDN/префетч для миниатюр.
+- [ ] Расширить UI/UX: управление шаблонами/квотами/аудитом, real-time через `WebSocket`.
+- [ ] Настроить retention: архивация `audit_logs` и `notifications`, очистка медиа по `expire_at`.
 
 ---
 

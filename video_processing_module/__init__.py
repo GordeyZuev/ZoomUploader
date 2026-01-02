@@ -4,9 +4,9 @@ from .segments import SegmentProcessor, VideoSegment
 from .video_processor import VideoProcessor
 
 __all__ = [
-    'VideoProcessor',
-    'ProcessingConfig',
-    'VideoSegment',
-    'SegmentProcessor',
-    'AudioDetector',
+    "VideoProcessor",
+    "ProcessingConfig",
+    "VideoSegment",
+    "SegmentProcessor",
+    "AudioDetector",
 ]

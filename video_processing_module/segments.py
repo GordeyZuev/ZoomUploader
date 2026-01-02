@@ -40,14 +40,14 @@ class VideoSegment:
     def to_dict(self) -> dict:
         """Преобразование в словарь."""
         return {
-            'start_time': self.start_time,
-            'end_time': self.end_time,
-            'duration': self.duration,
-            'title': self.title,
-            'description': self.description,
-            'output_path': self.output_path,
-            'processed': self.processed,
-            'processing_time': self.processing_time.isoformat() if self.processing_time else None,
+            "start_time": self.start_time,
+            "end_time": self.end_time,
+            "duration": self.duration,
+            "title": self.title,
+            "description": self.description,
+            "output_path": self.output_path,
+            "processed": self.processed,
+            "processing_time": self.processing_time.isoformat() if self.processing_time else None,
         }
 
 
@@ -57,9 +57,7 @@ class SegmentProcessor:
     def __init__(self, config):
         self.config = config
 
-    def create_segments_from_duration(
-        self, video_duration: float, title: str
-    ) -> list[VideoSegment]:
+    def create_segments_from_duration(self, video_duration: float, title: str) -> list[VideoSegment]:
         """Создание сегментов на основе длительности видео."""
         segments = []
         segment_duration_sec = self.config.segment_duration * 60
@@ -94,9 +92,7 @@ class SegmentProcessor:
 
         return segments
 
-    def create_segments_from_timestamps(
-        self, timestamps: list[tuple], title: str
-    ) -> list[VideoSegment]:
+    def create_segments_from_timestamps(self, timestamps: list[tuple], title: str) -> list[VideoSegment]:
         """Создание сегментов на основе временных меток."""
         segments = []
 

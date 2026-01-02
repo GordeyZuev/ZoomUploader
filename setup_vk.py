@@ -16,12 +16,12 @@ class VKTokenSetup:
     def get_auth_url(self, scope: str = "video,groups,wall") -> str:
         """Получение URL для авторизации"""
         params = {
-            'client_id': self.app_id,
-            'display': 'page',
-            'redirect_uri': 'https://oauth.vk.com/blank.html',
-            'scope': scope,
-            'response_type': 'token',
-            'v': '5.131',
+            "client_id": self.app_id,
+            "display": "page",
+            "redirect_uri": "https://oauth.vk.com/blank.html",
+            "scope": scope,
+            "response_type": "token",
+            "v": "5.131",
         }
 
         return f"https://oauth.vk.com/authorize?{urlencode(params)}"
@@ -42,7 +42,7 @@ class VKTokenSetup:
         print("3. После авторизации вы будете перенаправлены на страницу VK")
         print("4. Скопируйте access_token из URL в адресной строке")
         print("\n⚠️  ВАЖНО: Убедитесь, что разрешили права:")
-        for permission in scope.split(','):
+        for permission in scope.split(","):
             print(f"   ✅ {permission.strip()}")
 
         print("\n💡 Токен будет в URL в формате:")
@@ -54,12 +54,10 @@ class VKTokenSetup:
 
         while attempts < max_attempts:
             try:
-                token = input(
-                    f"\nВставьте access_token (попытка {attempts + 1}/{max_attempts}): "
-                ).strip()
+                token = input(f"\nВставьте access_token (попытка {attempts + 1}/{max_attempts}): ").strip()
                 if token:
-                    if token.startswith('access_token='):
-                        token = token.split('=')[1].split('&')[0]
+                    if token.startswith("access_token="):
+                        token = token.split("=")[1].split("&")[0]
 
                     print("🔍 Проверяем токен...")
                     is_valid, error_type = await self.test_token_with_error_type(token)
@@ -76,9 +74,7 @@ class VKTokenSetup:
                             print("\n💡 РЕШЕНИЯ:")
                             print("   1. Получите новый токен с текущего IP-адреса")
                             print("   2. Или используйте VPN для смены IP")
-                            print(
-                                "   3. Или получите токен с того IP, где планируете использовать систему"
-                            )
+                            print("   3. Или получите токен с того IP, где планируете использовать систему")
                             print("\n⚠️  ВАЖНО: Не используйте тот же токен повторно!")
 
                             if attempts < max_attempts:
@@ -108,24 +104,20 @@ class VKTokenSetup:
         """Проверка токена с возвратом типа ошибки"""
         try:
             async with aiohttp.ClientSession() as session:
-                params = {'access_token': token, 'v': '5.131'}
-                async with session.get(
-                    "https://api.vk.com/method/users.get", params=params
-                ) as response:
+                params = {"access_token": token, "v": "5.131"}
+                async with session.get("https://api.vk.com/method/users.get", params=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        if 'error' in data:
-                            error = data['error']
-                            if error['error_code'] == 5 and error.get('error_subcode') == 1130:
+                        if "error" in data:
+                            error = data["error"]
+                            if error["error_code"] == 5 and error.get("error_subcode") == 1130:
                                 return False, "ip_mismatch"
                             else:
                                 print(f"❌ Ошибка VK API: {error['error_msg']}")
                                 return False, "api_error"
                         else:
-                            user = data['response'][0]
-                            print(
-                                f"✅ Токен действителен! Пользователь: {user['first_name']} {user['last_name']}"
-                            )
+                            user = data["response"][0]
+                            print(f"✅ Токен действителен! Пользователь: {user['first_name']} {user['last_name']}")
                             return True, "success"
                     else:
                         print(f"❌ HTTP ошибка: {response.status}")
@@ -145,7 +137,7 @@ class VKTokenSetup:
         os.makedirs(os.path.dirname(config_path), exist_ok=True)
 
         config = {"access_token": token}
-        with open(config_path, 'w', encoding='utf-8') as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
 
         print(f"✅ Токен сохранен в {config_path}")
@@ -158,9 +150,9 @@ class VKTokenSetup:
             return False
 
         try:
-            with open(config_path, encoding='utf-8') as f:
+            with open(config_path, encoding="utf-8") as f:
                 config = json.load(f)
-                token = config.get('access_token')
+                token = config.get("access_token")
 
             if not token:
                 return False
@@ -174,9 +166,7 @@ class VKTokenSetup:
             else:
                 if error_type == "ip_mismatch":
                     print("❌ Ошибка: Токен привязан к другому IP-адресу")
-                    print(
-                        "💡 Решение: Получите токен с того же IP, где планируете использовать систему"
-                    )
+                    print("💡 Решение: Получите токен с того же IP, где планируете использовать систему")
                 else:
                     print("❌ Существующий токен недействителен")
                 return False
@@ -198,7 +188,7 @@ async def main():
         print("\n✅ Токен уже настроен и работает!")
         print("\n📚 Примеры использования:")
         print("1. Загрузка одной записи:")
-        print("   uv run python main.py --upload --vk --recordings \"название_записи\"")
+        print('   uv run python main.py --upload --vk --recordings "название_записи"')
         print("\n2. Загрузка всех готовых записей:")
         print("   uv run python main.py --upload --vk --all")
         return
@@ -209,7 +199,7 @@ async def main():
         print("\n🎉 Настройка завершена успешно!")
         print("\n📚 Примеры использования:")
         print("1. Загрузка одной записи:")
-        print("   uv run python main.py --upload --vk --recordings \"название_записи\"")
+        print('   uv run python main.py --upload --vk --recordings "название_записи"')
         print("\n2. Загрузка всех готовых записей:")
         print("   uv run python main.py --upload --vk --all")
     else:

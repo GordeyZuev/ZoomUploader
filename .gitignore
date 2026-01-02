@@ -43,6 +43,8 @@ config/*_creds.json
 .env
 .env.local
 .env.*.local
+config_copy/*
+.ruff_cache/*
 
 # Media files (too large for git)
 media/*

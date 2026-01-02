@@ -25,7 +25,7 @@ class InteractiveMapper:
         try:
             normalized_time = normalize_datetime_string(start_time)
             dt = datetime.fromisoformat(normalized_time)
-            date_str = dt.strftime('%d.%m.%Y')
+            date_str = dt.strftime("%d.%m.%Y")
         except Exception:
             date_str = "неизвестная дата"
 
@@ -54,7 +54,7 @@ class InteractiveMapper:
         description = ""
 
         console.print(
-            f"\n[bold green]✅ Загружаем:[/bold green] [bold white]\"{title}\"[/bold white] [bold green]как[/bold green] [bold cyan]{privacy_status}[/bold cyan]"
+            f'\n[bold green]✅ Загружаем:[/bold green] [bold white]"{title}"[/bold white] [bold green]как[/bold green] [bold cyan]{privacy_status}[/bold cyan]'
         )
         console.print("[bold green]" + "=" * 60 + "[/bold green]")
 
@@ -138,9 +138,9 @@ class InteractiveMapper:
             try:
                 choice = input("Продолжить загрузку? [y/N]: ").strip().lower()
 
-                if choice in ['', 'n', 'no']:
+                if choice in ["", "n", "no"]:
                     return False
-                elif choice in ['y', 'yes']:
+                elif choice in ["y", "yes"]:
                     return True
                 else:
                     print("   ❌ Введите 'y' для продолжения или 'n' для отмены")
@@ -199,13 +199,9 @@ class InteractiveMapper:
                 vk_link = _link(TargetType.VK)
 
                 if youtube_link:
-                    console.print(
-                        f"    [bold red]📺 YouTube:[/bold red] [link={youtube_link}]{youtube_link}[/link]"
-                    )
+                    console.print(f"    [bold red]📺 YouTube:[/bold red] [link={youtube_link}]{youtube_link}[/link]")
                 if vk_link:
-                    console.print(
-                        f"    [bold blue]📘 VK:[/bold blue] [link={vk_link}]{vk_link}[/link]"
-                    )
+                    console.print(f"    [bold blue]📘 VK:[/bold blue] [link={vk_link}]{vk_link}[/link]")
                 if not youtube_link and not vk_link:
                     console.print("    [dim]Ссылки недоступны[/dim]")
 
@@ -236,5 +232,3 @@ def get_interactive_mapper() -> InteractiveMapper:
     if _interactive_mapper is None:
         _interactive_mapper = InteractiveMapper()
     return _interactive_mapper
-
-

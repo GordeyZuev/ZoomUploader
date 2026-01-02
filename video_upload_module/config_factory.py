@@ -24,8 +24,8 @@ class YouTubeUploadConfig(PlatformConfig):
     )
     scopes: list[str] = Field(
         default_factory=lambda: [
-            'https://www.googleapis.com/auth/youtube.upload',
-            'https://www.googleapis.com/auth/youtube.force-ssl',
+            "https://www.googleapis.com/auth/youtube.upload",
+            "https://www.googleapis.com/auth/youtube.force-ssl",
         ],
         description="Scopes для YouTube API",
     )
@@ -53,7 +53,7 @@ class YouTubeUploadConfig(PlatformConfig):
         if not os.path.exists(self.client_secrets_file):
             logger.warning(f"⚠️ Файл с секретами клиента не найден: {self.client_secrets_file}")
 
-        if self.default_privacy not in ['private', 'unlisted', 'public']:
+        if self.default_privacy not in ["private", "unlisted", "public"]:
             logger.error(f"❌ Неверный статус приватности: {self.default_privacy}")
             return False
 
@@ -144,7 +144,7 @@ class UploadConfig(BaseSettings):
         description="Максимальный размер файла в МБ",
     )
     supported_formats: list[str] = Field(
-        default_factory=lambda: ['mp4', 'avi', 'mov', 'mkv', 'webm', 'm4v'],
+        default_factory=lambda: ["mp4", "avi", "mov", "mkv", "webm", "m4v"],
         description="Поддерживаемые форматы файлов",
     )
     retry_attempts: int = Field(
@@ -205,8 +205,8 @@ class UploadConfigFactory:
                 vk = VKUploadConfig(
                     enabled=vk_platform.enabled,
                     access_token=vk_platform.access_token,
-                    app_id=getattr(vk_platform, 'app_id', '54249533'),
-                    scope=getattr(vk_platform, 'scope', 'video,groups,wall'),
+                    app_id=getattr(vk_platform, "app_id", "54249533"),
+                    scope=getattr(vk_platform, "scope", "video,groups,wall"),
                     group_id=vk_platform.group_id,
                     album_id=vk_platform.album_id,
                     name=vk_platform.name,

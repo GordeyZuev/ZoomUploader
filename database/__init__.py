@@ -1,5 +1,38 @@
+from .auth_models import RefreshTokenModel, UserCredentialModel, UserModel, UserQuotaModel
 from .config import DatabaseConfig
 from .manager import DatabaseManager
-from .models import OutputTargetModel, RecordingModel, SourceMetadataModel
+from .models import (
+    Base,
+    OutputTargetModel,
+    ProcessingStageModel,
+    RecordingModel,
+    SourceMetadataModel,
+)
+from .template_models import (
+    BaseConfigModel,
+    InputSourceModel,
+    OutputPresetModel,
+    RecordingTemplateModel,
+)
 
-__all__ = ['RecordingModel', 'SourceMetadataModel', 'OutputTargetModel', 'DatabaseManager', 'DatabaseConfig']
+__all__ = [
+    # Core models
+    "Base",
+    "RecordingModel",
+    "SourceMetadataModel",
+    "OutputTargetModel",
+    "ProcessingStageModel",
+    # Auth models
+    "UserModel",
+    "UserCredentialModel",
+    "UserQuotaModel",
+    "RefreshTokenModel",
+    # Template models
+    "BaseConfigModel",
+    "InputSourceModel",
+    "OutputPresetModel",
+    "RecordingTemplateModel",
+    # Manager and config
+    "DatabaseManager",
+    "DatabaseConfig",
+]
