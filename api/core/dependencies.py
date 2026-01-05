@@ -15,13 +15,13 @@ def get_service_context(
 ) -> ServiceContext:
     """
     Получение ServiceContext для текущего пользователя.
-    
+
     Централизует доступ к session, user_id и config_helper.
-    
+
     Args:
         session: Database session
         current_user: Текущий аутентифицированный пользователь
-        
+
     Returns:
         ServiceContext для использования в сервисах
     """

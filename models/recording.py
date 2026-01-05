@@ -299,6 +299,7 @@ class MeetingRecording:
             file_size = file_data.get("file_size", 0)
             download_url = file_data.get("download_url", "")
             recording_type = file_data.get("recording_type", "")
+            download_access_token = file_data.get("download_access_token")
 
             if file_type == "MP4":
                 priority = mp4_priorities.get(recording_type, 0)
@@ -309,11 +310,14 @@ class MeetingRecording:
                         "file_size": file_size,
                         "download_url": download_url,
                         "recording_type": recording_type,
+                        "download_access_token": download_access_token,
                     }
 
         if best_mp4_file:
             self.video_file_size = best_mp4_file["file_size"]
             self.video_file_download_url = best_mp4_file["download_url"]
+            if best_mp4_file.get("download_access_token"):
+                self.download_access_token = best_mp4_file["download_access_token"]
 
     def update_status(
         self,

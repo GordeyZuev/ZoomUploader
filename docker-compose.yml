@@ -53,39 +53,39 @@ services:
   #     redis:
   #       condition: service_healthy
 
-  # Celery Worker (комментируем для локальной разработки)
-  # celery_worker:
-  #   build: .
-  #   container_name: zoom_celery_worker
-  #   command: celery -A api.celery_app worker --loglevel=info --queues=processing,upload --concurrency=4
-  #   environment:
-  #     DATABASE_HOST: postgres
-  #     DATABASE_PORT: 5432
-  #     DATABASE_NAME: zoom_publishing
-  #     DATABASE_USERNAME: postgres
-  #     DATABASE_PASSWORD: ${DB_PASSWORD:-postgres}
-  #     CELERY_BROKER_URL: redis://redis:6379/0
-  #     CELERY_RESULT_BACKEND: redis://redis:6379/0
-  #   volumes:
-  #     - ./media:/app/media
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_healthy
+  # Celery Worker
+  celery_worker:
+    build: .
+    container_name: zoom_celery_worker
+    command: celery -A api.celery_app worker --loglevel=info --queues=processing,upload --concurrency=4
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: zoom_publishing
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: ${DB_PASSWORD:-postgres}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./media:/app/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
-  # Celery Flower (мониторинг, опционально)
-  # flower:
-  #   build: .
-  #   container_name: zoom_flower
-  #   command: celery -A api.celery_app flower --port=5555
-  #   environment:
-  #     CELERY_BROKER_URL: redis://redis:6379/0
-  #     CELERY_RESULT_BACKEND: redis://redis:6379/0
-  #   ports:
-  #     - "5555:5555"
-  #   depends_on:
-  #     - redis
+  # Celery Flower (мониторинг)
+  flower:
+    build: .
+    container_name: zoom_flower
+    command: celery -A api.celery_app flower --port=5555
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
 
 volumes:
   postgres_data:

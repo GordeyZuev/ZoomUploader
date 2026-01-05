@@ -1,7 +1,6 @@
 """API endpoints для recordings с multi-tenancy support."""
 
 from pathlib import Path
-from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
@@ -11,12 +10,8 @@ from api.core.dependencies import get_service_context
 from api.repositories.recording_repos import RecordingAsyncRepository
 from logger import get_logger
 from models import ProcessingStatus
-from transcription_module.factory import TranscriptionServiceFactory
-from video_download_module.downloader import ZoomDownloader
-from video_processing_module.video_processor import VideoProcessor
-from video_upload_module.factory import UploaderFactory
 
-router = APIRouter(prefix="/api/v1/recordings", tags=["recordings"])
+router = APIRouter(prefix="/api/v1/recordings", tags=["Recordings"])
 logger = get_logger()
 
 
@@ -279,7 +274,7 @@ async def download_recording(
     ctx: ServiceContext = Depends(get_service_context),
 ):
     """
-    Скачать запись из Zoom.
+    Скачать запись из Zoom (асинхронная задача).
 
     Args:
         recording_id: ID записи
@@ -287,8 +282,14 @@ async def download_recording(
         ctx: Service context
 
     Returns:
-        Результат скачивания
+        Task ID для проверки статуса
+
+    Note:
+        Это асинхронная операция. Используйте GET /api/v1/tasks/{task_id}
+        для проверки статуса выполнения.
     """
+    from api.tasks.processing import download_recording_task
+
     recording_repo = RecordingAsyncRepository(ctx.session)
     recording = await recording_repo.get_by_id(recording_id, ctx.user_id)
 
@@ -317,69 +318,26 @@ async def download_recording(
                 "message": "Recording already downloaded",
                 "recording_id": recording_id,
                 "local_video_path": recording.local_video_path,
+                "task_id": None,
             }
 
-    try:
-        # Создаем downloader
-        user_download_dir = f"media/user_{ctx.user_id}/video/unprocessed"
-        downloader = ZoomDownloader(download_dir=user_download_dir)
+    # Запускаем асинхронную задачу
+    task = download_recording_task.delay(
+        recording_id=recording_id,
+        user_id=ctx.user_id,
+        force=force,
+    )
 
-        # Преобразуем RecordingModel в MeetingRecording для downloader
-        from models import MeetingRecording
+    logger.info(f"Download task {task.id} created for recording {recording_id}, user {ctx.user_id}")
 
-        meeting_id = recording.source.source_key if recording.source else str(recording.id)
-        file_size = recording.source.meta.get("file_size", 0) if recording.source and recording.source.meta else recording.video_file_size or 0
-
-        meeting_recording = MeetingRecording(
-            {
-                "id": meeting_id,
-                "topic": recording.display_name,
-                "start_time": recording.start_time.isoformat(),
-                "duration": recording.duration or 0,
-                "recording_files": [
-                    {
-                        "file_type": "MP4",
-                        "file_size": file_size,
-                        "download_url": download_url,
-                        "recording_type": "shared_screen_with_speaker_view",
-                    }
-                ],
-            }
-        )
-        meeting_recording.db_id = recording.id
-
-        # Скачиваем
-        success = await downloader.download_recording(
-            meeting_recording, force_download=force
-        )
-
-        if success:
-            # Обновляем запись в БД
-            recording.local_video_path = meeting_recording.local_video_path
-            recording.status = ProcessingStatus.DOWNLOADED
-            await recording_repo.update(recording)
-            await ctx.session.commit()
-
-            logger.info(f"Downloaded recording {recording_id} for user {ctx.user_id}")
-
-            return {
-                "success": True,
-                "recording_id": recording_id,
-                "local_video_path": recording.local_video_path,
-            }
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Download failed",
-            )
-
-    except Exception as e:
-        logger.error(f"Download failed for recording {recording_id}: {e}", exc_info=True)
-        await ctx.session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Download failed: {str(e)}",
-        )
+    return {
+        "success": True,
+        "task_id": task.id,
+        "recording_id": recording_id,
+        "status": "queued",
+        "message": "Download task has been queued",
+        "check_status_url": f"/api/v1/tasks/{task.id}",
+    }
 
 
 @router.post("/{recording_id}/process")
@@ -389,7 +347,7 @@ async def process_recording(
     ctx: ServiceContext = Depends(get_service_context),
 ):
     """
-    Обработать видео (FFmpeg - удаление тишины).
+    Обработать видео (FFmpeg - удаление тишины) - асинхронная задача.
 
     Args:
         recording_id: ID записи
@@ -397,8 +355,14 @@ async def process_recording(
         ctx: Service context
 
     Returns:
-        Результат обработки
+        Task ID для проверки статуса
+
+    Note:
+        Это асинхронная операция. Используйте GET /api/v1/tasks/{task_id}
+        для проверки статуса выполнения.
     """
+    from api.tasks.processing import process_video_task
+
     recording_repo = RecordingAsyncRepository(ctx.session)
     recording = await recording_repo.get_by_id(recording_id, ctx.user_id)
 
@@ -421,64 +385,26 @@ async def process_recording(
             detail=f"Video file not found at path: {recording.local_video_path}",
         )
 
-    try:
-        # Создаем processor
-        user_processed_dir = f"media/user_{ctx.user_id}/video/processed"
-        processor = VideoProcessor(
-            silence_threshold=config.silence_threshold,
-            min_silence_duration=config.min_silence_duration,
-            padding_before=config.padding_before,
-            padding_after=config.padding_after,
-            output_dir=user_processed_dir,
-        )
+    # Запускаем асинхронную задачу
+    task = process_video_task.delay(
+        recording_id=recording_id,
+        user_id=ctx.user_id,
+        silence_threshold=config.silence_threshold,
+        min_silence_duration=config.min_silence_duration,
+        padding_before=config.padding_before,
+        padding_after=config.padding_after,
+    )
 
-        # Преобразуем RecordingModel в MeetingRecording
-        from models import MeetingRecording
+    logger.info(f"Process task {task.id} created for recording {recording_id}, user {ctx.user_id}")
 
-        meeting_id = recording.source.source_key if recording.source else str(recording.id)
-
-        meeting_recording = MeetingRecording(
-            {
-                "id": meeting_id,
-                "topic": recording.display_name,
-                "start_time": recording.start_time.isoformat(),
-                "duration": recording.duration or 0,
-            }
-        )
-        meeting_recording.db_id = recording.id
-        meeting_recording.local_video_path = recording.local_video_path
-        meeting_recording.status = recording.status
-
-        # Обрабатываем
-        success = await processor.process_recording(meeting_recording)
-
-        if success:
-            # Обновляем запись в БД
-            recording.processed_video_path = meeting_recording.processed_video_path
-            recording.status = ProcessingStatus.PROCESSED
-            await recording_repo.update(recording)
-            await ctx.session.commit()
-
-            logger.info(f"Processed recording {recording_id} for user {ctx.user_id}")
-
-            return {
-                "success": True,
-                "recording_id": recording_id,
-                "processed_video_path": recording.processed_video_path,
-            }
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Processing failed",
-            )
-
-    except Exception as e:
-        logger.error(f"Processing failed for recording {recording_id}: {e}", exc_info=True)
-        await ctx.session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Processing failed: {str(e)}",
-        )
+    return {
+        "success": True,
+        "task_id": task.id,
+        "recording_id": recording_id,
+        "status": "queued",
+        "message": "Processing task has been queued",
+        "check_status_url": f"/api/v1/tasks/{task.id}",
+    }
 
 
 @router.post("/batch-process")
@@ -488,7 +414,7 @@ async def batch_process_recordings(
     ctx: ServiceContext = Depends(get_service_context),
 ):
     """
-    Пакетная обработка нескольких записей.
+    Пакетная обработка нескольких записей (асинхронные задачи).
 
     Args:
         recording_ids: Список ID записей
@@ -496,38 +422,76 @@ async def batch_process_recordings(
         ctx: Service context
 
     Returns:
-        Результаты обработки для каждой записи
+        Список task_id для каждой записи
+
+    Note:
+        Каждая запись обрабатывается в отдельной задаче.
+        Используйте GET /api/v1/tasks/{task_id} для проверки статуса каждой задачи.
     """
-    results = []
+    from api.tasks.processing import full_pipeline_task
+
+    recording_repo = RecordingAsyncRepository(ctx.session)
+    tasks = []
 
     for recording_id in recording_ids:
         try:
-            result = await full_pipeline_processing(
-                recording_id=recording_id, config=config, ctx=ctx
-            )
-            results.append(result)
-        except HTTPException as e:
-            results.append(
-                {
+            # Проверяем существование записи
+            recording = await recording_repo.get_by_id(recording_id, ctx.user_id)
+
+            if not recording:
+                tasks.append({
                     "recording_id": recording_id,
-                    "status": "failed",
-                    "error": e.detail,
-                }
+                    "status": "error",
+                    "error": "Recording not found or no access",
+                    "task_id": None,
+                })
+                continue
+
+            # Запускаем задачу для этой записи
+            task = full_pipeline_task.delay(
+                recording_id=recording_id,
+                user_id=ctx.user_id,
+                download=config.download,
+                process=config.process,
+                transcribe=config.transcribe,
+                upload=config.upload,
+                platforms=config.platforms,
+                preset_ids=config.preset_ids,
+                granularity=config.granularity,
+                process_config={
+                    "silence_threshold": config.process_config.silence_threshold,
+                    "min_silence_duration": config.process_config.min_silence_duration,
+                    "padding_before": config.process_config.padding_before,
+                    "padding_after": config.process_config.padding_after,
+                },
             )
+
+            tasks.append({
+                "recording_id": recording_id,
+                "status": "queued",
+                "task_id": task.id,
+                "check_status_url": f"/api/v1/tasks/{task.id}",
+            })
+
+            logger.info(f"Batch task {task.id} created for recording {recording_id}, user {ctx.user_id}")
+
         except Exception as e:
-            results.append(
-                {
-                    "recording_id": recording_id,
-                    "status": "failed",
-                    "error": str(e),
-                }
-            )
+            logger.error(f"Failed to create task for recording {recording_id}: {e}")
+            tasks.append({
+                "recording_id": recording_id,
+                "status": "error",
+                "error": str(e),
+                "task_id": None,
+            })
+
+    queued_count = len([t for t in tasks if t["status"] == "queued"])
+    error_count = len([t for t in tasks if t["status"] == "error"])
 
     return {
         "total": len(recording_ids),
-        "processed": len([r for r in results if r.get("status") != "failed"]),
-        "failed": len([r for r in results if r.get("status") == "failed"]),
-        "results": results,
+        "queued": queued_count,
+        "errors": error_count,
+        "tasks": tasks,
     }
 
 
@@ -538,7 +502,7 @@ async def full_pipeline_processing(
     ctx: ServiceContext = Depends(get_service_context),
 ):
     """
-    Полный пайплайн обработки: download → process → transcribe → upload.
+    Полный пайплайн обработки (асинхронная задача): download → process → transcribe → upload.
 
     Args:
         recording_id: ID записи
@@ -546,8 +510,14 @@ async def full_pipeline_processing(
         ctx: Service context
 
     Returns:
-        Результаты обработки
+        Task ID для проверки статуса
+
+    Note:
+        Это асинхронная операция, выполняющая все шаги последовательно.
+        Используйте GET /api/v1/tasks/{task_id} для проверки прогресса.
     """
+    from api.tasks.processing import full_pipeline_task
+
     recording_repo = RecordingAsyncRepository(ctx.session)
     recording = await recording_repo.get_by_id(recording_id, ctx.user_id)
 
@@ -557,93 +527,41 @@ async def full_pipeline_processing(
             detail=f"Recording {recording_id} not found or you don't have access",
         )
 
-    results: dict[str, Any] = {
+    # Запускаем полный пайплайн как одну задачу
+    task = full_pipeline_task.delay(
+        recording_id=recording_id,
+        user_id=ctx.user_id,
+        download=config.download,
+        process=config.process,
+        transcribe=config.transcribe,
+        upload=config.upload,
+        platforms=config.platforms,
+        preset_ids=config.preset_ids,
+        granularity=config.granularity,
+        process_config={
+            "silence_threshold": config.process_config.silence_threshold,
+            "min_silence_duration": config.process_config.min_silence_duration,
+            "padding_before": config.process_config.padding_before,
+            "padding_after": config.process_config.padding_after,
+        },
+    )
+
+    logger.info(f"Full pipeline task {task.id} created for recording {recording_id}, user {ctx.user_id}")
+
+    return {
+        "success": True,
+        "task_id": task.id,
         "recording_id": recording_id,
-        "steps_completed": [],
-        "errors": [],
+        "status": "queued",
+        "message": "Full pipeline task has been queued",
+        "check_status_url": f"/api/v1/tasks/{task.id}",
+        "steps": {
+            "download": config.download,
+            "process": config.process,
+            "transcribe": config.transcribe,
+            "upload": config.upload and len(config.platforms) > 0,
+        },
     }
-
-    try:
-        # STEP 1: Download
-        if config.download and not recording.local_video_path:
-            try:
-                download_result = await download_recording(
-                    recording_id=recording_id, force=False, ctx=ctx
-                )
-                results["steps_completed"].append("download")
-                results["download"] = download_result
-                # Обновляем объект
-                recording = await recording_repo.get_by_id(recording_id, ctx.user_id)
-            except Exception as e:
-                results["errors"].append(f"Download failed: {str(e)}")
-                logger.error(f"Download step failed: {e}")
-
-        # STEP 2: Process
-        if config.process and not recording.processed_video_path:
-            try:
-                process_result = await process_recording(
-                    recording_id=recording_id, config=config.process_config, ctx=ctx
-                )
-                results["steps_completed"].append("process")
-                results["process"] = process_result
-                # Обновляем объект
-                recording = await recording_repo.get_by_id(recording_id, ctx.user_id)
-            except Exception as e:
-                results["errors"].append(f"Processing failed: {str(e)}")
-                logger.error(f"Processing step failed: {e}")
-
-        # STEP 3: Transcribe
-        if config.transcribe:
-            try:
-                transcribe_result = await transcribe_recording(
-                    recording_id=recording_id, granularity=config.granularity, ctx=ctx
-                )
-                results["steps_completed"].append("transcribe")
-                results["transcribe"] = transcribe_result
-            except Exception as e:
-                results["errors"].append(f"Transcription failed: {str(e)}")
-                logger.error(f"Transcription step failed: {e}")
-
-        # STEP 4: Upload
-        if config.upload and config.platforms:
-            upload_results = []
-            for platform in config.platforms:
-                try:
-                    preset_id = (
-                        config.preset_ids.get(platform) if config.preset_ids else None
-                    )
-                    upload_result = await upload_recording(
-                        recording_id=recording_id,
-                        platform=platform,
-                        preset_id=preset_id,
-                        ctx=ctx,
-                    )
-                    upload_results.append(upload_result)
-                except Exception as e:
-                    results["errors"].append(f"Upload to {platform} failed: {str(e)}")
-                    logger.error(f"Upload to {platform} failed: {e}")
-
-            if upload_results:
-                results["steps_completed"].append("upload")
-                results["upload"] = upload_results
-
-        # Финальный статус
-        if not results["errors"]:
-            results["status"] = "completed"
-        elif results["steps_completed"]:
-            results["status"] = "partially_completed"
-        else:
-            results["status"] = "failed"
-
-        return results
-
-    except Exception as e:
-        logger.error(f"Full pipeline failed for recording {recording_id}: {e}", exc_info=True)
-        await ctx.session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Pipeline failed: {str(e)}",
-        )
 
 
 @router.post("/{recording_id}/transcribe")
@@ -653,7 +571,7 @@ async def transcribe_recording(
     ctx: ServiceContext = Depends(get_service_context),
 ):
     """
-    Транскрибировать запись с использованием user credentials.
+    Транскрибировать запись (асинхронная задача) с использованием user credentials.
 
     Args:
         recording_id: ID записи
@@ -661,8 +579,14 @@ async def transcribe_recording(
         ctx: Service context с user_id и session
 
     Returns:
-        Результаты транскрибации
+        Task ID для проверки статуса
+
+    Note:
+        Это асинхронная операция. Используйте GET /api/v1/tasks/{task_id}
+        для проверки статуса выполнения и получения результатов.
     """
+    from api.tasks.processing import transcribe_recording_task
+
     # Получаем запись из БД
     recording_repo = RecordingAsyncRepository(ctx.session)
     recording = await recording_repo.get_by_id(recording_id, ctx.user_id)
@@ -689,60 +613,23 @@ async def transcribe_recording(
             detail=f"Video file not found at path: {audio_path}"
         )
 
-    try:
-        # Создаем TranscriptionService для пользователя
-        transcription_service = await TranscriptionServiceFactory.create_for_user(
-            session=ctx.session,
-            user_id=ctx.user_id
-        )
+    # Запускаем асинхронную задачу
+    task = transcribe_recording_task.delay(
+        recording_id=recording_id,
+        user_id=ctx.user_id,
+        granularity=granularity,
+    )
 
-        # Выполняем транскрибацию
-        result = await transcription_service.process_audio(
-            audio_path=audio_path,
-            recording_id=recording_id,
-            recording_topic=recording.display_name,
-            recording_start_time=recording.start_time.isoformat(),
-            granularity=granularity,
-        )
+    logger.info(f"Transcription task {task.id} created for recording {recording_id}, user {ctx.user_id}")
 
-        # Сохраняем результаты в БД
-        await recording_repo.save_transcription_result(
-            recording=recording,
-            transcription_dir=result["transcription_dir"],
-            transcription_info=result.get("fireworks_raw", {}),
-            topic_timestamps=result["topic_timestamps"],
-            main_topics=result["main_topics"],
-        )
-
-        await ctx.session.commit()
-
-        logger.info(
-            f"Transcription completed for recording {recording_id} (user {ctx.user_id})"
-        )
-
-        return {
-            "success": True,
-            "recording_id": recording_id,
-            "transcription_dir": result["transcription_dir"],
-            "topics_count": len(result["topic_timestamps"]),
-            "main_topics_count": len(result["main_topics"]),
-            "main_topics": result["main_topics"],
-            "language": result.get("language", "ru"),
-        }
-
-    except ValueError as e:
-        logger.error(f"Transcription failed for recording {recording_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
-    except Exception as e:
-        logger.error(f"Unexpected error during transcription: {e}", exc_info=True)
-        await ctx.session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Transcription failed: {str(e)}"
-        )
+    return {
+        "success": True,
+        "task_id": task.id,
+        "recording_id": recording_id,
+        "status": "queued",
+        "message": "Transcription task has been queued",
+        "check_status_url": f"/api/v1/tasks/{task.id}",
+    }
 
 
 @router.post("/{recording_id}/upload/{platform}")
@@ -753,7 +640,7 @@ async def upload_recording(
     ctx: ServiceContext = Depends(get_service_context),
 ):
     """
-    Загрузить запись на платформу с использованием user credentials.
+    Загрузить запись на платформу (асинхронная задача) с использованием user credentials.
 
     Args:
         recording_id: ID записи
@@ -762,8 +649,14 @@ async def upload_recording(
         ctx: Service context
 
     Returns:
-        Результаты загрузки
+        Task ID для проверки статуса
+
+    Note:
+        Это асинхронная операция. Используйте GET /api/v1/tasks/{task_id}
+        для проверки статуса выполнения и получения результатов.
     """
+    from api.tasks.upload import upload_recording_to_platform
+
     # Получаем запись из БД
     recording_repo = RecordingAsyncRepository(ctx.session)
     recording = await recording_repo.get_by_id(recording_id, ctx.user_id)
@@ -790,132 +683,28 @@ async def upload_recording(
             detail=f"Processed video file not found at path: {video_path}"
         )
 
-    try:
-        # Создаем uploader для платформы
-        if preset_id:
-            uploader = await UploaderFactory.create_uploader_by_preset_id(
-                session=ctx.session,
-                user_id=ctx.user_id,
-                preset_id=preset_id
-            )
-        else:
-            uploader = await UploaderFactory.create_uploader(
-                session=ctx.session,
-                user_id=ctx.user_id,
-                platform=platform
-            )
+    # Запускаем асинхронную задачу
+    task = upload_recording_to_platform.delay(
+        recording_id=recording_id,
+        user_id=ctx.user_id,
+        platform=platform,
+        preset_id=preset_id,
+    )
 
-        # Получаем параметры для загрузки
-        title = recording.display_name
-        description = f"Uploaded on {recording.start_time.strftime('%Y-%m-%d')}"
-
-        # Добавляем темы в описание, если есть
-        if recording.main_topics:
-            topics_str = ", ".join(recording.main_topics[:5])
-            description += f"\n\nТемы: {topics_str}"
-
-        # Аутентификация
-        auth_success = await uploader.authenticate()
-        if not auth_success:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Failed to authenticate with {platform}"
-            )
-
-        logger.info(
-            f"Starting upload of recording {recording_id} to {platform} "
-            f"(user {ctx.user_id})"
-        )
-
-        # Загрузка
-        upload_result = await uploader.upload_video(
-            video_path=video_path,
-            title=title,
-            description=description,
-        )
-
-        if not upload_result or not upload_result.success:
-            error_msg = upload_result.error if upload_result else 'Unknown error'
-            logger.error(f"Upload failed: {error_msg}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Upload failed: {error_msg}"
-            )
-
-        # Сохраняем результаты в БД
-        target_type_map = {
-            "youtube": "YOUTUBE",
-            "vk": "VK",
-        }
-
-        target_type = target_type_map.get(platform.lower(), platform.upper())
-
-        await recording_repo.save_upload_result(
-            recording=recording,
-            target_type=target_type,
-            preset_id=preset_id,
-            video_id=upload_result.video_id,
-            video_url=upload_result.video_url,
-            target_meta={
-                "platform": platform,
-                "uploaded_by_api": True,
-            }
-        )
-
-        await ctx.session.commit()
-
-        logger.info(
-            f"Upload completed for recording {recording_id} to {platform} "
-            f"(user {ctx.user_id}): {upload_result.video_url}"
-        )
-
-        return {
-            "success": True,
-            "recording_id": recording_id,
-            "platform": platform,
-            "video_id": upload_result.video_id,
-            "video_url": upload_result.video_url,
-        }
-
-    except HTTPException:
-        raise
-    except ValueError as e:
-        logger.error(f"Upload failed for recording {recording_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
-    except Exception as e:
-        logger.error(f"Unexpected error during upload: {e}", exc_info=True)
-        await ctx.session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Upload failed: {str(e)}"
-        )
-
-
-@router.get("/credentials/status")
-async def check_credentials_status(
-    ctx: ServiceContext = Depends(get_service_context),
-):
-    """
-    Проверить наличие необходимых credentials у пользователя.
-
-    Args:
-        ctx: Service context
-
-    Returns:
-        Статус credentials для разных платформ
-    """
-    platforms = await ctx.config_helper.list_available_platforms()
-
-    status_map = {}
-    for platform in ["zoom", "youtube", "vk", "fireworks", "deepseek", "openai"]:
-        status_map[platform] = await ctx.config_helper.has_credentials_for_platform(platform)
+    logger.info(
+        f"Upload task {task.id} created for recording {recording_id} to {platform}, "
+        f"user {ctx.user_id}"
+    )
 
     return {
-        "user_id": ctx.user_id,
-        "available_platforms": platforms,
-        "credentials_status": status_map,
+        "success": True,
+        "task_id": task.id,
+        "recording_id": recording_id,
+        "platform": platform,
+        "status": "queued",
+        "message": f"Upload task to {platform} has been queued",
+        "check_status_url": f"/api/v1/tasks/{task.id}",
     }
+
+
 

@@ -16,22 +16,49 @@ install:
 # API: Запуск FastAPI сервера
 .PHONY: api
 api:
-	uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+	uv run uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 
 # API: Production запуск (без reload)
 .PHONY: api-prod
 api-prod:
-	uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 4
+	uv run uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 4
 
-# Celery: Запуск worker
+# Celery: Запуск worker (все очереди)
 .PHONY: celery
 celery:
-	celery -A api.celery_app worker --loglevel=info --queues=processing,upload --concurrency=4
+	uv run celery -A api.celery_app worker --loglevel=info --queues=processing,upload --concurrency=4
+
+# Celery: Запуск worker только для processing
+.PHONY: celery-processing
+celery-processing:
+	uv run celery -A api.celery_app worker --loglevel=info -Q processing --concurrency=2
+
+# Celery: Запуск worker только для upload
+.PHONY: celery-upload
+celery-upload:
+	uv run celery -A api.celery_app worker --loglevel=info -Q upload --concurrency=2
 
 # Celery: Запуск Flower (мониторинг)
 .PHONY: flower
 flower:
-	celery -A api.celery_app flower --port=5555
+	uv run celery -A api.celery_app flower --port=5555
+
+# Celery: Проверить активные tasks
+.PHONY: celery-status
+celery-status:
+	@echo "📊 Active workers:"
+	@uv run celery -A api.celery_app inspect active
+	@echo "\n📋 Registered tasks:"
+	@uv run celery -A api.celery_app inspect registered
+	@echo "\n📈 Stats:"
+	@uv run celery -A api.celery_app inspect stats
+
+# Celery: Очистить все задачи из очередей
+.PHONY: celery-purge
+celery-purge:
+	@echo "⚠️  Удаление всех задач из очередей..."
+	@uv run celery -A api.celery_app purge -f
+	@echo "✅ Очереди очищены!"
 
 # Docker: Запуск PostgreSQL и Redis
 .PHONY: docker-up
@@ -48,26 +75,54 @@ docker-down:
 docker-full:
 	docker-compose up --build -d
 
+# Database: Инициализация (создание БД + миграции)
+.PHONY: init-db
+init-db:
+	@echo "🚀 Инициализация базы данных..."
+	@uv run python -c "\
+import asyncio; \
+from database.config import DatabaseConfig; \
+from database.manager import DatabaseManager; \
+async def init(): \
+    db = DatabaseManager(DatabaseConfig.from_env()); \
+    await db.create_database_if_not_exists(); \
+    await db.close(); \
+asyncio.run(init())" 2>/dev/null || true
+	@echo "✅ База данных создана"
+	@echo "🔄 Применение миграций..."
+	@uv run alembic upgrade head
+	@echo "✅ Миграции применены!"
+
 # Database: Применить миграции
 .PHONY: migrate
 migrate:
-	alembic upgrade head
+	uv run alembic upgrade head
 
 # Database: Откатить последнюю миграцию
 .PHONY: migrate-down
 migrate-down:
-	alembic downgrade -1
+	uv run alembic downgrade -1
 
 # Database: Создать новую миграцию
 .PHONY: migration
 migration:
 	@read -p "Enter migration name: " name; \
-	alembic revision --autogenerate -m "$$name"
+	uv run alembic revision --autogenerate -m "$$name"
+
+# Database: Проверить текущую версию БД
+.PHONY: db-version
+db-version:
+	@uv run alembic current
+
+# Database: Показать историю миграций
+.PHONY: db-history
+db-history:
+	@uv run alembic history
 
 # Tests: Запуск всех тестов
 .PHONY: test
 test:
-	pytest tests/ -v
+	uv run pytest tests/ -v
 
 .PHONY: help
 help:
@@ -88,7 +143,13 @@ help:
 	@echo "  make flower         - Запуск Flower (мониторинг)"
 	@echo "  make docker-up      - Запуск PostgreSQL + Redis"
 	@echo "  make docker-down    - Остановка сервисов"
+	@echo ""
+	@echo "🗄️ База данных:"
+	@echo "  make init-db        - Инициализация БД (создание + миграции)"
 	@echo "  make migrate        - Применить миграции БД"
+	@echo "  make migrate-down   - Откатить последнюю миграцию"
+	@echo "  make db-version     - Показать текущую версию БД"
+	@echo "  make db-history     - Показать историю миграций"
 	@echo ""
 	@echo "📋 Работа с записями:"
 	@echo "  make list           - Показать записи за сегодня"

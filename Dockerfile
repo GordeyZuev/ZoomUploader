@@ -22,8 +22,15 @@ COPY . .
 # Создание директорий для media
 RUN mkdir -p media/video media/processed_audio media/transcriptions
 
+# Копирование и настройка entrypoint
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Порт API
 EXPOSE 8000
+
+# Entrypoint для инициализации БД
+ENTRYPOINT ["/entrypoint.sh"]
 
 # По умолчанию запускаем API
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

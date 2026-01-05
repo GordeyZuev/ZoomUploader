@@ -1,5 +1,6 @@
 from .auth_models import RefreshTokenModel, UserCredentialModel, UserModel, UserQuotaModel
 from .config import DatabaseConfig
+from .config_models import UserConfigModel
 from .manager import DatabaseManager
 from .models import (
     Base,
@@ -27,6 +28,8 @@ __all__ = [
     "UserCredentialModel",
     "UserQuotaModel",
     "RefreshTokenModel",
+    # Config models
+    "UserConfigModel",
     # Template models
     "BaseConfigModel",
     "InputSourceModel",

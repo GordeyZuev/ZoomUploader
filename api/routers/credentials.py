@@ -300,8 +300,6 @@ async def update_credential_account_name(
         )
 
     # Обновляем account_name
-    cred_update = UserCredentialUpdate(encrypted_data=credential.encrypted_data)
-
     result = await session.execute(select(UserCredentialModel).where(UserCredentialModel.id == credential_id))
     db_credential = result.scalars().first()
     if db_credential:
@@ -411,3 +409,26 @@ async def delete_credentials(
     logger.info(f"User credentials deleted: user_id={current_user.id} | credential_id={credential_id}")
 
     return {"message": f"Credential {credential_id} deleted successfully"}
+
+
+@router.get("/status")
+async def check_credentials_status(
+    current_user: UserInDB = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    cred_repo = UserCredentialRepository(session)
+
+    platforms = ["zoom", "youtube", "vk_video", "fireworks", "deepseek", "openai", "yandex_disk", "google_drive"]
+
+    status_map = {}
+    for platform in platforms:
+        credentials = await cred_repo.list_by_platform(current_user.id, platform)
+        status_map[platform] = len(credentials) > 0
+
+    available_platforms = [p for p, has_creds in status_map.items() if has_creds]
+
+    return {
+        "user_id": current_user.id,
+        "available_platforms": available_platforms,
+        "credentials_status": status_map,
+    }

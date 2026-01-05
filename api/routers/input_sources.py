@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.dependencies import get_current_active_user
 from api.dependencies import get_db_session
+from api.repositories.auth_repos import UserCredentialRepository
 from api.repositories.recording_repos import RecordingAsyncRepository
 from api.repositories.template_repos import InputSourceRepository
 from api.schemas.template import (
@@ -14,14 +15,13 @@ from api.schemas.template import (
     InputSourceResponse,
     InputSourceUpdate,
 )
-from api.services.credential_service import CredentialService
 from api.zoom_api import ZoomAPI
 from config.settings import ZoomConfig
 from database.auth_models import UserModel
 from logger import get_logger
 from models.recording import SourceType
 
-router = APIRouter(prefix="/sources", tags=["input-sources"])
+router = APIRouter(prefix="/api/v1/sources", tags=["Input Sources"])
 logger = get_logger()
 
 
@@ -69,10 +69,22 @@ async def create_source(
 ):
     """Создание нового источника."""
     repo = InputSourceRepository(session)
+
+    source_type = data.platform.value.upper()
+
+    if data.credential_id:
+        cred_repo = UserCredentialRepository(session)
+        credential = await cred_repo.get_by_id(data.credential_id)
+        if not credential or credential.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Credential {data.credential_id} not found"
+            )
+
     source = await repo.create(
         user_id=current_user.id,
         name=data.name,
-        source_type=data.source_type,
+        source_type=source_type,
         credential_id=data.credential_id,
         config=data.config,
         description=data.description,
@@ -139,14 +151,14 @@ async def sync_source(
 ):
     """
     Синхронизация записей из источника.
-    
+
     Args:
         source_id: ID источника
         from_date: Дата начала в формате YYYY-MM-DD
         to_date: Дата окончания в формате YYYY-MM-DD (опционально)
         session: Database session
         current_user: Текущий пользователь
-    
+
     Returns:
         Статус синхронизации
     """
@@ -172,16 +184,19 @@ async def sync_source(
         )
 
     # Получаем credentials для источника
-    cred_service = CredentialService(session)
+    cred_repo = UserCredentialRepository(session)
+    credential = await cred_repo.get_by_id(source.credential_id)
 
-    try:
-        credentials = await cred_service.get_credentials_by_id(source.credential_id)
-    except ValueError as e:
-        logger.error(f"Failed to get credentials for source {source_id}: {e}")
+    if not credential:
+        logger.error(f"Failed to get credentials for source {source_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Credentials not found: {str(e)}"
+            detail=f"Credentials {source.credential_id} not found"
         )
+
+    from api.auth.encryption import get_encryption
+    encryption = get_encryption()
+    credentials = encryption.decrypt_credentials(credential.encrypted_data)
 
     # Синхронизация в зависимости от типа источника
     meetings = []
@@ -246,11 +261,21 @@ async def sync_source(
                                 video_file = file
                                 break
 
+                    # Получаем детальную информацию с download_access_token
+                    download_access_token = None
+                    try:
+                        meeting_details = await zoom_api.get_recording_details(meeting_id, include_download_token=True)
+                        download_access_token = meeting_details.get("download_access_token")
+                        logger.info(f"Got download_access_token for meeting {meeting_id}: {bool(download_access_token)}")
+                    except Exception as e:
+                        logger.warning(f"Failed to get download_access_token for meeting {meeting_id}: {e}")
+
                     # Собираем метаданные
                     source_metadata = {
                         "meeting_id": meeting_id,
                         "account": credentials.get("account", ""),
-                        "video_file_download_url": video_file.get("download_url") if video_file else None,
+                        "download_url": video_file.get("download_url") if video_file else None,
+                        "download_access_token": download_access_token,
                         "video_file_size": video_file.get("file_size") if video_file else None,
                         "password": meeting.get("password"),
                         "recording_play_passcode": meeting.get("recording_play_passcode"),

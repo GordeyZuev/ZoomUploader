@@ -13,7 +13,7 @@ from api.schemas.template import (
 )
 from database.auth_models import UserModel
 
-router = APIRouter(prefix="/presets", tags=["output-presets"])
+router = APIRouter(prefix="/api/v1/presets", tags=["Output Presets"])
 
 
 @router.get("", response_model=list[OutputPresetResponse])

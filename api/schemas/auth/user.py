@@ -57,8 +57,12 @@ class UserInDB(UserBase):
     role: str = "user"
     can_transcribe: bool = True
     can_process_video: bool = True
-    can_upload_to_youtube: bool = True
-    can_upload_to_google_drive: bool = True
+    can_upload: bool = True
+    can_create_templates: bool = True
+    can_delete_recordings: bool = True
+    can_update_uploaded_videos: bool = True
+    can_manage_credentials: bool = True
+    can_export_data: bool = True
     created_at: datetime
     last_login_at: datetime | None = None
 
@@ -78,8 +82,12 @@ class UserResponse(BaseModel):
     role: str
     can_transcribe: bool
     can_process_video: bool
-    can_upload_to_youtube: bool
-    can_upload_to_google_drive: bool
+    can_upload: bool
+    can_create_templates: bool
+    can_delete_recordings: bool
+    can_update_uploaded_videos: bool
+    can_manage_credentials: bool
+    can_export_data: bool
     created_at: datetime
     last_login_at: datetime | None
 

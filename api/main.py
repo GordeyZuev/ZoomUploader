@@ -1,5 +1,7 @@
 """FastAPI приложение."""
 
+import subprocess
+
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,7 +18,6 @@ from api.middleware.logging import LoggingMiddleware
 from api.middleware.rate_limit import RateLimitMiddleware
 from api.routers import (
     auth,
-    configs,
     credentials,
     health,
     input_sources,
@@ -24,10 +25,16 @@ from api.routers import (
     recordings,
     tasks,
     templates,
+    user_config,
+    users,
 )
 from api.shared.exceptions import APIException
+from database.config import DatabaseConfig
+from database.manager import DatabaseManager
+from logger import get_logger
 
 settings = get_settings()
+logger = get_logger()
 
 app = FastAPI(
     title=settings.api_title,
@@ -37,6 +44,39 @@ app = FastAPI(
     redoc_url=settings.redoc_url,
     openapi_url=settings.openapi_url,
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Инициализация БД при запуске приложения."""
+    try:
+        logger.info("🚀 Инициализация базы данных...")
+
+        # Создаем БД, если её нет
+        db_config = DatabaseConfig.from_env()
+        db_manager = DatabaseManager(db_config)
+        await db_manager.create_database_if_not_exists()
+        await db_manager.close()
+
+        logger.info("✅ База данных создана (если не существовала)")
+
+        # Применяем миграции Alembic
+        logger.info("🔄 Применение миграций Alembic...")
+        result = subprocess.run(
+            ["alembic", "upgrade", "head"],
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode == 0:
+            logger.info("✅ Миграции применены успешно")
+        else:
+            logger.error(f"❌ Ошибка применения миграций: {result.stderr}")
+            # Не падаем, чтобы приложение могло запуститься для диагностики
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка инициализации БД: {e}")
+        # Не падаем, чтобы приложение могло запуститься для диагностики
 
 # CORS
 app.add_middleware(
@@ -66,6 +106,8 @@ app.add_exception_handler(Exception, global_exception_handler)
 # Routers
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(users.router)
+app.include_router(user_config.router)
 app.include_router(credentials.router)
 app.include_router(recordings.router)
 app.include_router(tasks.router)
@@ -73,7 +115,6 @@ app.include_router(tasks.router)
 app.include_router(templates.router)
 app.include_router(input_sources.router)
 app.include_router(output_presets.router)
-app.include_router(configs.router)
 
 
 @app.get("/")

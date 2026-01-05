@@ -43,6 +43,7 @@ class UserModel(Base):
     credentials = relationship("UserCredentialModel", back_populates="user", cascade="all, delete-orphan")
     recordings = relationship("RecordingModel", back_populates="owner", cascade="all, delete-orphan")
     quotas = relationship("UserQuotaModel", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    config = relationship("UserConfigModel", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User(id={self.id}, email='{self.email}', role={self.role}, active={self.is_active})>"

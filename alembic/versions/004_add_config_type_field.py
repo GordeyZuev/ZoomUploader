@@ -1,18 +1,17 @@
 """Add config_type field to base_configs table
 
-Revision ID: add_config_type_field
-Revises: add_full_multitenancy
-Create Date: 2025-01-02 12:00:00.000000
+Revision ID: 004
+Revises: 003
+Create Date: 2026-01-04 23:03:00.000000
 
 """
-
 import sqlalchemy as sa
 
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "add_config_type_field"
-down_revision = "add_full_multitenancy"
+revision = "004"
+down_revision = "003"
 branch_labels = None
 depends_on = None
 

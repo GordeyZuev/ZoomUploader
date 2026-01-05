@@ -16,7 +16,7 @@ from api.tasks.processing import (
 from api.tasks.processing import (
     generate_subtitles as generate_subtitles_task,
 )
-from api.tasks.upload import upload_to_platforms
+from api.tasks.upload import batch_upload_recordings as upload_to_platforms
 from logger import get_logger
 from models import MeetingRecording, ProcessingStatus
 from pipeline_manager import PipelineManager

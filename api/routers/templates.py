@@ -14,7 +14,7 @@ from api.schemas.template import (
 )
 from database.auth_models import UserModel
 
-router = APIRouter(prefix="/templates", tags=["templates"])
+router = APIRouter(prefix="/api/v1/templates", tags=["Templates"])
 
 
 @router.get("", response_model=list[RecordingTemplateResponse])

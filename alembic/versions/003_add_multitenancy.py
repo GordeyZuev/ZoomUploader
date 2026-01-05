@@ -1,11 +1,10 @@
 """Add full multi-tenancy support and template system
 
-Revision ID: add_full_multitenancy
-Revises: add_auth_tables
-Create Date: 2025-01-02 14:00:00.000000
+Revision ID: 003
+Revises: 002
+Create Date: 2026-01-04 23:02:00.000000
 
 """
-
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -14,8 +13,8 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "add_full_multitenancy"
-down_revision: str | None = "add_auth_tables"
+revision: str = "003"
+down_revision: str | None = "002"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -34,29 +33,7 @@ def upgrade() -> None:
     op.add_column("users", sa.Column("can_manage_credentials", sa.Boolean(), nullable=False, server_default="true"))
     op.add_column("users", sa.Column("can_export_data", sa.Boolean(), nullable=False, server_default="true"))
 
-    # ===== 2. Добавление user_id в связанные таблицы =====
-    # source_metadata
-    op.add_column("source_metadata", sa.Column("user_id", sa.Integer(), nullable=True))
-    op.create_foreign_key(
-        "fk_source_metadata_user_id", "source_metadata", "users", ["user_id"], ["id"], ondelete="CASCADE"
-    )
-    op.create_index("ix_source_metadata_user_id", "source_metadata", ["user_id"])
-
-    # output_targets
-    op.add_column("output_targets", sa.Column("user_id", sa.Integer(), nullable=True))
-    op.create_foreign_key(
-        "fk_output_targets_user_id", "output_targets", "users", ["user_id"], ["id"], ondelete="CASCADE"
-    )
-    op.create_index("ix_output_targets_user_id", "output_targets", ["user_id"])
-
-    # processing_stages
-    op.add_column("processing_stages", sa.Column("user_id", sa.Integer(), nullable=True))
-    op.create_foreign_key(
-        "fk_processing_stages_user_id", "processing_stages", "users", ["user_id"], ["id"], ondelete="CASCADE"
-    )
-    op.create_index("ix_processing_stages_user_id", "processing_stages", ["user_id"])
-
-    # ===== 3. Создание таблицы base_configs =====
+    # ===== 2. Создание таблицы base_configs =====
     op.create_table(
         "base_configs",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
@@ -72,7 +49,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_base_configs_user_id", "base_configs", ["user_id"])
 
-    # ===== 4. Создание таблицы input_sources =====
+    # ===== 3. Создание таблицы input_sources =====
     op.create_table(
         "input_sources",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
@@ -92,7 +69,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_input_sources_user_id", "input_sources", ["user_id"])
 
-    # ===== 5. Создание таблицы output_presets =====
+    # ===== 4. Создание таблицы output_presets =====
     op.create_table(
         "output_presets",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
@@ -111,7 +88,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_output_presets_user_id", "output_presets", ["user_id"])
 
-    # ===== 6. Создание таблицы recording_templates =====
+    # ===== 5. Создание таблицы recording_templates =====
     op.create_table(
         "recording_templates",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
@@ -150,19 +127,6 @@ def downgrade() -> None:
 
     op.drop_index("ix_base_configs_user_id", table_name="base_configs")
     op.drop_table("base_configs")
-
-    # Удаление user_id из связанных таблиц
-    op.drop_index("ix_processing_stages_user_id", table_name="processing_stages")
-    op.drop_constraint("fk_processing_stages_user_id", "processing_stages", type_="foreignkey")
-    op.drop_column("processing_stages", "user_id")
-
-    op.drop_index("ix_output_targets_user_id", table_name="output_targets")
-    op.drop_constraint("fk_output_targets_user_id", "output_targets", type_="foreignkey")
-    op.drop_column("output_targets", "user_id")
-
-    op.drop_index("ix_source_metadata_user_id", table_name="source_metadata")
-    op.drop_constraint("fk_source_metadata_user_id", "source_metadata", type_="foreignkey")
-    op.drop_column("source_metadata", "user_id")
 
     # Удаление ролей и прав из users
     op.drop_column("users", "can_export_data")

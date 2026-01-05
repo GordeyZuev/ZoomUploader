@@ -1,11 +1,12 @@
 """Endpoints для аутентификации и управления пользователями."""
 
+import json
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.auth.dependencies import get_current_user
 from api.auth.security import JWTHelper, PasswordHelper
 from api.config import get_settings
 from api.dependencies import get_db_session
@@ -14,6 +15,7 @@ from api.repositories.auth_repos import (
     UserQuotaRepository,
     UserRepository,
 )
+from api.repositories.config_repos import UserConfigRepository
 from api.schemas.auth import (
     LoginRequest,
     RefreshTokenCreate,
@@ -21,12 +23,10 @@ from api.schemas.auth import (
     RegisterRequest,
     TokenPair,
     UserCreate,
-    UserInDB,
     UserQuotaCreate,
     UserResponse,
     UserUpdate,
 )
-from api.schemas.auth.response import MeResponse
 from logger import get_logger
 
 logger = get_logger()
@@ -52,6 +52,7 @@ async def register(request: RegisterRequest, session: AsyncSession = Depends(get
     """
     user_repo = UserRepository(session)
     quota_repo = UserQuotaRepository(session)
+    config_repo = UserConfigRepository(session)
 
     existing_user = await user_repo.get_by_email(request.email)
     if existing_user:
@@ -77,6 +78,16 @@ async def register(request: RegisterRequest, session: AsyncSession = Depends(get
         max_concurrent_tasks=3,
     )
     await quota_repo.create(quota_data=quota_create)
+
+    existing_config = await config_repo.get_by_user_id(user.id)
+    if not existing_config:
+        config_path = Path(__file__).parent.parent.parent / "config" / "default_user_config.json"
+        with open(config_path, "r", encoding="utf-8") as f:
+            default_config = json.load(f)
+
+        await config_repo.create(user_id=user.id, config_data=default_config)
+
+    await session.commit()
 
     logger.info(f"New user registered: {user.email} (ID: {user.id})")
 
@@ -230,39 +241,3 @@ async def logout(request: RefreshTokenRequest, session: AsyncSession = Depends(g
     return {"message": "Successfully logged out"}
 
 
-@router.get("/me", response_model=MeResponse)
-async def get_me(
-    current_user: UserInDB = Depends(get_current_user),
-    session: AsyncSession = Depends(get_db_session),
-):
-    """
-    Получить информацию о текущем пользователе.
-
-    Требует аутентификации через JWT токен.
-
-    Args:
-        current_user: Текущий пользователь (из JWT токена)
-        session: Database session
-
-    Returns:
-        Информация о пользователе и его квотах
-    """
-    quota_repo = UserQuotaRepository(session)
-
-    quota = await quota_repo.get_by_user_id(current_user.id)
-    quotas_dict = None
-    if quota:
-        quotas_dict = {
-            "max_recordings_per_month": quota.max_recordings_per_month,
-            "max_storage_gb": quota.max_storage_gb,
-            "max_concurrent_tasks": quota.max_concurrent_tasks,
-            "current_recordings_count": quota.current_recordings_count,
-            "current_storage_gb": quota.current_storage_gb,
-            "current_tasks_count": quota.current_tasks_count,
-            "quota_reset_at": quota.quota_reset_at.isoformat(),
-        }
-
-    return MeResponse(
-        user=UserResponse.model_validate(current_user),
-        quotas=quotas_dict,
-    )

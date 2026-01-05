@@ -1,0 +1,70 @@
+{
+  "processing": {
+    "enable_processing": true,
+    "audio_detection": true,
+    "silence_threshold": -40.0,
+    "min_silence_duration": 2.0,
+    "padding_before": 5.0,
+    "padding_after": 5.0
+  },
+  "transcription": {
+    "enable_transcription": true,
+    "provider": "fireworks",
+    "language": "ru",
+    "prompt": "",
+    "temperature": 0.0,
+    "granularity": "long",
+    "enable_topics": true,
+    "topic_mode": "long",
+    "enable_subtitles": true,
+    "enable_translation": false,
+    "translation_language": "en"
+  },
+  "download": {
+    "auto_download": false,
+    "max_file_size_mb": 5000,
+    "quality": "high",
+    "retry_attempts": 3,
+    "retry_delay": 5
+  },
+  "upload": {
+    "auto_upload": false,
+    "upload_captions": true,
+    "default_platforms": [],
+    "default_preset_ids": {}
+  },
+  "metadata": {
+    "title_template": "{display_name} | {topic} ({date})",
+    "description_template": "Запись от {date}",
+    "date_format": "DD.MM.YYYY",
+    "tags": [],
+    "thumbnail_path": null,
+    "category": null,
+    "topics_display": {
+      "enabled": true,
+      "max_count": 10,
+      "min_length": 5,
+      "max_length": 100,
+      "display_location": "description",
+      "format": "numbered_list",
+      "separator": "\n",
+      "prefix": "Темы:",
+      "include_timestamps": false
+    }
+  },
+  "platforms": {
+    "youtube": {
+      "enabled": false,
+      "default_privacy": "unlisted",
+      "default_language": "ru"
+    },
+    "vk_video": {
+      "enabled": false,
+      "default_privacy": "0",
+      "privacy_comment": "1",
+      "no_comments": false,
+      "repeat": false
+    }
+  }
+}
+

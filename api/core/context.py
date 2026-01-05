@@ -15,7 +15,7 @@ from api.helpers.config_helper import ConfigHelper
 class ServiceContext:
     """
     Контекст выполнения операции для пользователя.
-    
+
     Централизует доступ к session, user_id и config_helper,
     избегая передачи множества параметров.
     """
@@ -31,7 +31,7 @@ class ServiceContext:
     def config_helper(self) -> ConfigHelper:
         """
         Lazy-loaded ConfigHelper для доступа к credentials.
-        
+
         Returns:
             ConfigHelper для текущего пользователя
         """
@@ -43,11 +43,11 @@ class ServiceContext:
     def create(cls, session: AsyncSession, user_id: int) -> "ServiceContext":
         """
         Factory method для создания контекста.
-        
+
         Args:
             session: Database session
             user_id: ID пользователя
-            
+
         Returns:
             Новый ServiceContext
         """

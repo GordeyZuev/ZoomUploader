@@ -1,175 +1,169 @@
-"""Endpoints для управления и мониторинга Celery задач."""
+"""API endpoints для проверки статуса Celery задач."""
+
+from typing import Any
 
 from celery.result import AsyncResult
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
 
 from api.celery_app import celery_app
-from logger import logger
 
 router = APIRouter(prefix="/api/v1/tasks", tags=["Tasks"])
 
 
-class TaskStatusResponse(BaseModel):
-    """Ответ со статусом задачи."""
-
-    task_id: str
-    status: str
-    result: dict | None = None
-    error: str | None = None
-    progress: dict | None = None
-
-
-class TaskCancelResponse(BaseModel):
-    """Ответ на отмену задачи."""
-
-    task_id: str
-    status: str
-    message: str
-
-
-@router.get("/{task_id}", response_model=TaskStatusResponse)
-async def get_task_status(task_id: str):
+@router.get("/{task_id}")
+async def get_task_status(task_id: str) -> dict[str, Any]:
     """
     Получить статус задачи по ID.
 
     Args:
-        task_id: ID задачи Celery
+        task_id: ID задачи из Celery
 
     Returns:
-        Статус задачи и результат (если завершена)
+        Информация о статусе задачи с прогрессом
 
-    Raises:
-        HTTPException: Если задача не найдена
+    Статусы задачи:
+        - PENDING: задача в очереди, еще не началась
+        - PROCESSING: задача выполняется (с прогрессом 0-100)
+        - SUCCESS: задача завершена успешно
+        - FAILURE: задача завершена с ошибкой
+        - RETRY: задача будет повторена
     """
-    try:
-        task_result = AsyncResult(task_id, app=celery_app)
+    task = AsyncResult(task_id, app=celery_app)
 
-        # Статусы Celery: PENDING, STARTED, RETRY, FAILURE, SUCCESS
-        status_map = {
-            "PENDING": "pending",
-            "STARTED": "in_progress",
-            "RETRY": "retrying",
-            "FAILURE": "failed",
-            "SUCCESS": "completed",
-        }
-
-        response = {
+    if task.state == "PENDING":
+        # Задача в очереди
+        return {
             "task_id": task_id,
-            "status": status_map.get(task_result.state, task_result.state.lower()),
+            "state": "PENDING",
+            "status": "Task is pending in queue",
+            "progress": 0,
+            "result": None,
+            "error": None,
         }
 
-        # Если задача завершена успешно
-        if task_result.successful():
-            response["result"] = task_result.result
+    elif task.state == "PROCESSING":
+        # Задача выполняется
+        info = task.info or {}
+        return {
+            "task_id": task_id,
+            "state": "PROCESSING",
+            "status": info.get("status", "Processing..."),
+            "progress": info.get("progress", 0),
+            "step": info.get("step", None),
+            "result": None,
+            "error": None,
+        }
 
-        # Если задача провалилась
-        elif task_result.failed():
-            response["error"] = str(task_result.info)
+    elif task.state == "SUCCESS":
+        # Задача завершена успешно
+        return {
+            "task_id": task_id,
+            "state": "SUCCESS",
+            "status": "Task completed successfully",
+            "progress": 100,
+            "result": task.result,
+            "error": None,
+        }
 
-        # Если задача выполняется (можно добавить прогресс)
-        elif task_result.state == "STARTED":
-            # Если задача поддерживает прогресс
-            if hasattr(task_result.info, "get"):
-                response["progress"] = task_result.info
+    elif task.state == "FAILURE":
+        # Задача завершена с ошибкой
+        error_info = str(task.info) if task.info else "Unknown error"
+        return {
+            "task_id": task_id,
+            "state": "FAILURE",
+            "status": "Task failed",
+            "progress": 0,
+            "result": None,
+            "error": error_info,
+        }
 
-        return TaskStatusResponse(**response)
+    elif task.state == "RETRY":
+        # Задача будет повторена
+        info = task.info or {}
+        return {
+            "task_id": task_id,
+            "state": "RETRY",
+            "status": "Task is retrying",
+            "progress": 0,
+            "result": None,
+            "error": str(info),
+        }
 
-    except Exception as e:
-        logger.error(f"Error getting task status {task_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving task status: {str(e)}",
-        )
+    else:
+        # Неизвестный статус
+        return {
+            "task_id": task_id,
+            "state": task.state,
+            "status": f"Unknown state: {task.state}",
+            "progress": 0,
+            "result": None,
+            "error": None,
+        }
 
 
-@router.delete("/{task_id}", response_model=TaskCancelResponse)
-async def cancel_task(task_id: str):
+@router.delete("/{task_id}")
+async def cancel_task(task_id: str) -> dict[str, Any]:
     """
-    Отменить выполняющуюся задачу.
+    Отменить задачу.
 
     Args:
-        task_id: ID задачи Celery
+        task_id: ID задачи из Celery
 
     Returns:
-        Подтверждение отмены
+        Результат отмены
 
-    Raises:
-        HTTPException: Если задача не найдена или не может быть отменена
+    Note:
+        - Задачи, которые уже выполняются, могут не отменится сразу
+        - PENDING задачи будут отменены
     """
-    try:
-        task_result = AsyncResult(task_id, app=celery_app)
+    task = AsyncResult(task_id, app=celery_app)
 
-        if task_result.state in ["SUCCESS", "FAILURE"]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot cancel task in state: {task_result.state}",
-            )
-
-        # Отмена задачи
-        celery_app.control.revoke(task_id, terminate=True, signal="SIGKILL")
-
-        return TaskCancelResponse(task_id=task_id, status="cancelled", message="Task cancellation requested")
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error cancelling task {task_id}: {e}")
+    if task.state in ["SUCCESS", "FAILURE"]:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error cancelling task: {str(e)}",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot cancel task in state {task.state}",
         )
 
+    # Отменяем задачу
+    task.revoke(terminate=True, signal="SIGKILL")
 
-@router.get("/", response_model=dict)
-async def get_active_tasks():
+    return {
+        "task_id": task_id,
+        "status": "cancelled",
+        "message": "Task cancellation requested",
+    }
+
+
+@router.get("/{task_id}/result")
+async def get_task_result(task_id: str) -> dict[str, Any]:
     """
-    Получить список активных задач.
+    Получить только результат задачи (блокирующий вызов).
+
+    Args:
+        task_id: ID задачи из Celery
 
     Returns:
-        Словарь с активными задачами по очередям
+        Результат выполнения задачи
+
+    Note:
+        Этот endpoint НЕ рекомендуется использовать, так как он блокирующий.
+        Используйте GET /tasks/{task_id} для проверки статуса.
     """
-    try:
-        # Получение активных задач из Celery
-        inspect = celery_app.control.inspect()
+    task = AsyncResult(task_id, app=celery_app)
 
-        active_tasks = inspect.active()
-        scheduled_tasks = inspect.scheduled()
-        reserved_tasks = inspect.reserved()
-
-        return {
-            "active": active_tasks or {},
-            "scheduled": scheduled_tasks or {},
-            "reserved": reserved_tasks or {},
-        }
-
-    except Exception as e:
-        logger.error(f"Error getting active tasks: {e}")
+    if not task.ready():
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving active tasks: {str(e)}",
+            status_code=status.HTTP_202_ACCEPTED,
+            detail="Task is not ready yet. Use GET /tasks/{task_id} to check status.",
         )
 
-
-@router.get("/stats", response_model=dict)
-async def get_task_stats():
-    """
-    Получить статистику по задачам.
-
-    Returns:
-        Статистика Celery
-    """
-    try:
-        inspect = celery_app.control.inspect()
-
-        stats = inspect.stats()
-        active_queues = inspect.active_queues()
-
-        return {"stats": stats or {}, "queues": active_queues or {}}
-
-    except Exception as e:
-        logger.error(f"Error getting task stats: {e}")
+    if task.failed():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving task stats: {str(e)}",
+            detail=f"Task failed: {task.info}",
         )
+
+    return {
+        "task_id": task_id,
+        "result": task.result,
+    }
