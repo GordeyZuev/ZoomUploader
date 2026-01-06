@@ -206,8 +206,8 @@ class VideoTitleMapping(BaseSettings):
         description="Формат даты",
     )
     thumbnail_directory: str = Field(
-        default="thumbnails/",
-        description="Директория для миниатюр",
+        default="media/templates/thumbnails/",
+        description="Директория для глобальных template миниатюр",
     )
 
 

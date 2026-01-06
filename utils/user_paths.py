@@ -47,10 +47,6 @@ class UserPathManager:
             trans_dir = trans_dir / str(recording_id)
         return trans_dir
 
-    def get_thumbnail_dir(self, user_id: int) -> Path:
-        """Получить директорию для миниатюр."""
-        return self.get_user_root(user_id) / "thumbnails"
-
     def ensure_user_directories(self, user_id: int) -> None:
         """Создать все необходимые директории для пользователя."""
         directories = [
@@ -60,7 +56,6 @@ class UserPathManager:
             self.get_temp_processing_dir(user_id),
             self.get_audio_dir(user_id),
             self.get_transcription_dir(user_id),
-            self.get_thumbnail_dir(user_id),
         ]
 
         for directory in directories:

@@ -787,6 +787,224 @@ curl -X GET "http://localhost:8000/api/v1/recordings" \
 
 ---
 
-**Последнее обновление:** 5 января 2026  
-**Версия API:** v1  
+## 🔄 Специальные возможности
+
+### Обработка SKIPPED записей
+
+По умолчанию записи со статусом `SKIPPED` **не обрабатываются** на всех этапах pipeline для предотвращения случайной обработки нежелательного контента.
+
+#### Как разрешить обработку SKIPPED записей
+
+**1. Query Parameter (явно в запросе):**
+
+```bash
+# Download SKIPPED recording
+POST /api/v1/recordings/19/download?allow_skipped=true
+
+# Process SKIPPED recording
+POST /api/v1/recordings/19/process?allow_skipped=true
+
+# Upload SKIPPED recording
+POST /api/v1/recordings/19/upload/youtube?allow_skipped=true
+```
+
+**2. User Config (глобально для пользователя):**
+
+```bash
+PUT /api/v1/users/me/config
+{
+  "processing": {
+    "allow_skipped": true
+  }
+}
+```
+
+**3. Template Config (для конкретного шаблона):**
+
+```json
+{
+  "name": "My Template",
+  "processing_config": {
+    "allow_skipped": true
+  }
+}
+```
+
+**Приоритет:** Query Parameter → Template Config → User Config → Default (false)
+
+---
+
+### Система миниатюр (Thumbnails)
+
+**Структура:**
+
+```
+media/
+├── templates/thumbnails/       # Глобальные templates (для всех)
+│   ├── machine_learning.png
+│   └── ...
+│
+└── user_{id}/thumbnails/       # Личные thumbnails пользователя
+    ├── machine_learning.png    # Копия template
+    ├── custom.png              # Загружено пользователем
+    └── ...
+```
+
+**Python API:**
+
+```python
+from utils.thumbnail_manager import get_thumbnail_manager
+
+thumbnail_manager = get_thumbnail_manager()
+
+# Умный поиск (user → templates fallback)
+thumbnail_path = thumbnail_manager.get_thumbnail_path(
+    user_id=1,
+    thumbnail_name="machine_learning.png",
+    fallback_to_template=True
+)
+
+# Загрузить пользовательский thumbnail
+saved_path = thumbnail_manager.upload_user_thumbnail(
+    user_id=1,
+    source_path="/tmp/my_thumbnail.png"
+)
+```
+
+**REST API:**
+
+```bash
+# Список thumbnails (метаданные)
+GET /api/v1/thumbnails?include_templates=true
+
+# Получить файл
+GET /api/v1/thumbnails/{name}
+
+# Загрузить новый
+POST /api/v1/thumbnails
+
+# Удалить
+DELETE /api/v1/thumbnails/{name}
+```
+
+**Автоматическая инициализация:** При регистрации нового пользователя создается `media/user_{id}/thumbnails/` и копируются все templates.
+
+---
+
+### Отслеживание использования токенов и моделей
+
+Система отслеживает использование AI моделей для:
+- **Транскрипции аудио** (Fireworks Whisper API)
+- **Извлечения топиков** (DeepSeek / Fireworks DeepSeek API)
+
+**Хранение данных:**
+
+1. **Транскрипция** (`media/user_{user_id}/transcriptions/{recording_id}/master.json`):
+
+```json
+{
+  "recording_id": 21,
+  "model": "fireworks",
+  "duration": 5606.683,
+  "stats": {
+    "words_count": 11202,
+    "segments_count": 252
+  },
+  "_metadata": {
+    "model": "whisper-v3-turbo",
+    "config": {
+      "temperature": 0.01,
+      "language": "ru"
+    },
+    "usage": null
+  }
+}
+```
+
+2. **Топики** (`media/user_{user_id}/transcriptions/{recording_id}/topics.json`):
+
+```json
+{
+  "recording_id": 21,
+  "active_version": "v1",
+  "versions": [
+    {
+      "id": "v1",
+      "model": "deepseek-chat",
+      "_metadata": {
+        "model": "deepseek-chat",
+        "config": {
+          "temperature": 0.0,
+          "max_tokens": 8000
+        }
+      }
+    }
+  ]
+}
+```
+
+**Утилиты для анализа:**
+
+```bash
+# Статистика по всем записям пользователя
+python utils/usage_stats.py 4
+
+# Статистика по конкретной записи
+python utils/usage_stats.py 4 21
+
+# Расчет стоимости
+python utils/cost_calculator.py 4
+
+# Экспорт в JSON
+python utils/usage_stats.py 4 --export
+```
+
+**Цены на API (актуальные):**
+
+| Сервис | Модель | Цена |
+|--------|--------|------|
+| Fireworks AI | whisper-v3-turbo | $0.0001 за минуту |
+| DeepSeek | deepseek-chat | $0.14 за 1M input tokens |
+| Fireworks AI | deepseek-chat | $0.09 за 1M input tokens |
+
+---
+
+### Исправление дубликатов при синхронизации
+
+**Проблема:** При повторных вызовах `POST /api/v1/sources/{source_id}/sync` создавались дубликаты записей.
+
+**Решение:**
+
+1. **Метод `find_by_source_key`** в `RecordingRepository` находит существующие записи
+2. **Метод `create_or_update`** реализует upsert логику:
+   - Если запись найдена и статус НЕ `UPLOADED` → обновляет
+   - Если запись найдена и статус `UPLOADED` → НЕ обновляет
+   - Если запись НЕ найдена → создает новую
+3. **Проверка маппинга** с шаблонами определяет статус:
+   - `is_mapped=True` → статус `INITIALIZED`
+   - `is_mapped=False` → статус `SKIPPED`
+
+**API Response:**
+
+```json
+{
+  "message": "Sync completed",
+  "recordings_found": 10,
+  "recordings_saved": 3,      // новые записи
+  "recordings_updated": 7     // обновленные записи
+}
+```
+
+**Сохранение метаданных Zoom:**
+
+Теперь в `source_metadata` сохраняются все важные поля:
+- `share_url` - ссылка на просмотр в Zoom
+- `download_url` - ссылка для скачивания
+- `delete_time` - дата удаления (если в корзине)
+- `auto_delete_date` - дата автоматического удаления
+- `zoom_api_meeting` - полный ответ API
+- И многое другое
+
+---
+
 **Общее количество endpoints:** 49

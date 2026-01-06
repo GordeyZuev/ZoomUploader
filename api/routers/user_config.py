@@ -76,7 +76,7 @@ async def update_user_config(
     return updated_config
 
 
-@router.put("/reset", response_model=UserConfigResponse)
+@router.post("/reset", response_model=UserConfigResponse)
 async def reset_user_config(
     session: AsyncSession = Depends(get_db_session),
     current_user: UserModel = Depends(get_current_active_user),

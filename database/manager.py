@@ -60,10 +60,12 @@ def _build_source_metadata_payload(recording: MeetingRecording) -> dict:
     """Формирует JSONB метаданных источника из модели."""
     meta = dict(recording.source_metadata or {})
 
+    # Основные поля Zoom (для обратной совместимости)
     zoom_fields = {
         "meeting_id": getattr(recording, "meeting_id", None),
         "account": getattr(recording, "account", None),
         "video_file_download_url": getattr(recording, "video_file_download_url", None),
+        "download_url": getattr(recording, "video_file_download_url", None),  # Алиас
         "download_access_token": getattr(recording, "download_access_token", None),
         "password": getattr(recording, "password", None),
         "recording_play_passcode": getattr(recording, "recording_play_passcode", None),
@@ -600,6 +602,7 @@ class DatabaseManager:
             )
 
         meeting_data = {
+            "user_id": db_recording.user_id,
             "display_name": db_recording.display_name,
             "start_time": start_time_str,
             "duration": db_recording.duration,
@@ -632,10 +635,16 @@ class DatabaseManager:
         if source_meta:
             meeting_data["id"] = source_meta.get("meeting_id", "")
             meeting_data["account"] = source_meta.get("account", "default")
-            meeting_data["video_file_download_url"] = source_meta.get("video_file_download_url")
+
+            # Ссылки для скачивания (с поддержкой старого и нового формата)
+            meeting_data["video_file_download_url"] = source_meta.get("download_url") or source_meta.get("video_file_download_url")
             meeting_data["download_access_token"] = source_meta.get("download_access_token")
+
+            # Пароли и доступ
             meeting_data["password"] = source_meta.get("password")
             meeting_data["recording_play_passcode"] = source_meta.get("recording_play_passcode")
+
+            # Мульти-part записи
             meeting_data["part_index"] = source_meta.get("part_index")
             meeting_data["total_visible_parts"] = source_meta.get("total_visible_parts")
 

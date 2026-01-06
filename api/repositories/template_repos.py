@@ -110,6 +110,35 @@ class InputSourceRepository:
         )
         return list(result.scalars().all())
 
+    async def find_duplicate(
+        self,
+        user_id: int,
+        name: str,
+        source_type: str,
+        credential_id: int | None,
+    ) -> InputSourceModel | None:
+        """
+        Поиск дубликата источника.
+
+        Источник считается дубликатом, если у пользователя уже есть источник с таким же:
+        - name
+        - source_type
+        - credential_id
+        """
+        query = select(InputSourceModel).where(
+            InputSourceModel.user_id == user_id,
+            InputSourceModel.name == name,
+            InputSourceModel.source_type == source_type,
+        )
+
+        if credential_id is not None:
+            query = query.where(InputSourceModel.credential_id == credential_id)
+        else:
+            query = query.where(InputSourceModel.credential_id.is_(None))
+
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
     async def create(
         self,
         user_id: int,

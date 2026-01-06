@@ -5,7 +5,6 @@ from datetime import datetime
 from typing import Any
 
 from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -15,6 +14,7 @@ from logger import get_logger
 
 from ...config_factory import YouTubeConfig
 from ...core.base import BaseUploader, UploadResult
+from ...credentials_provider import CredentialProvider, FileCredentialProvider
 
 logger = get_logger()
 
@@ -22,45 +22,49 @@ logger = get_logger()
 class YouTubeUploader(BaseUploader):
     """Загрузчик видео на YouTube."""
 
-    def __init__(self, config: YouTubeConfig):
+    def __init__(self, config: YouTubeConfig, credential_provider: CredentialProvider | None = None):
         super().__init__(config)
         self.config = config
         self.service = None
         self.credentials = None
+        self.credential_provider = credential_provider
 
         self.logger = logger
 
     async def authenticate(self) -> bool:
         """Аутентификация в YouTube API."""
         try:
-            if os.path.exists(self.config.credentials_file):
-                try:
-                    self.credentials = Credentials.from_authorized_user_file(
-                        self.config.credentials_file, self.config.scopes
-                    )
-                except Exception:
-                    with open(self.config.credentials_file, encoding="utf-8") as f:
-                        data = json.load(f)
-                    if isinstance(data, dict) and "token" in data:
-                        try:
-                            self.credentials = Credentials.from_authorized_user_info(data["token"], self.config.scopes)
-                        except Exception:
-                            self.credentials = None
+            # If no credential provider, create file-based provider for backward compatibility
+            if not self.credential_provider:
+                self.credential_provider = FileCredentialProvider(self.config.credentials_file)
 
+            # Try to load existing credentials
+            self.credentials = await self.credential_provider.get_google_credentials(self.config.scopes)
+
+            # Check if credentials are valid or need refresh
             if not self.credentials or not self.credentials.valid:
                 refreshed_successfully = False
+
+                # Try to refresh token if available
                 if self.credentials and self.credentials.refresh_token:
                     try:
+                        self.logger.info("Refreshing YouTube access token...")
                         self.credentials.refresh(Request())
                         refreshed_successfully = True
+
+                        # Save refreshed credentials back to storage
+                        await self.credential_provider.update_google_credentials(self.credentials)
+                        self.logger.info("YouTube token refreshed and saved successfully")
+
                     except Exception as e:
-                        # Если рефреш провалился (например invalid_grant), сбрасываем креды и идем по интерактивному флоу
-                        self.logger.warning(f"Не удалось обновить токен, запускаю интерактивную авторизацию: {e}")
+                        self.logger.warning(f"Failed to refresh token: {e}")
                         self.credentials = None
 
-                if not refreshed_successfully or not self.credentials or not self.credentials.valid:
-                    flow = None
+                # If refresh failed and using file provider, try interactive flow
+                if not refreshed_successfully and isinstance(self.credential_provider, FileCredentialProvider):
+                    self.logger.warning("Refresh failed, attempting interactive authorization...")
 
+                    flow = None
                     try:
                         with open(self.config.client_secrets_file, encoding="utf-8") as f:
                             secrets_data = json.load(f)
@@ -73,32 +77,31 @@ class YouTubeUploader(BaseUploader):
                                 self.config.client_secrets_file, self.config.scopes
                             )
                     except FileNotFoundError:
-                        self.logger.error(f"Файл с секретами клиента не найден: {self.config.client_secrets_file}")
+                        self.logger.error(f"Client secrets file not found: {self.config.client_secrets_file}")
                         return False
+
                     self.credentials = flow.run_local_server(port=0)
 
-                try:
-                    with open(self.config.credentials_file, encoding="utf-8") as f:
-                        bundle = json.load(f)
-                    if isinstance(bundle, dict) and "client_secrets" in bundle:
-                        bundle["token"] = json.loads(self.credentials.to_json())
-                        with open(self.config.credentials_file, "w", encoding="utf-8") as f:
-                            json.dump(bundle, f, ensure_ascii=False, indent=2)
-                    else:
-                        with open(self.config.credentials_file, "w", encoding="utf-8") as token_file:
-                            token_file.write(self.credentials.to_json())
-                except Exception:
-                    with open(self.config.credentials_file, "w", encoding="utf-8") as token_file:
-                        token_file.write(self.credentials.to_json())
+                    # Save new credentials
+                    await self.credential_provider.update_google_credentials(self.credentials)
 
+                elif not refreshed_successfully:
+                    # Using DB provider but no valid token - user needs to re-authorize via OAuth
+                    self.logger.error(
+                        "YouTube credentials expired and cannot be refreshed. "
+                        "User must re-authorize via OAuth flow."
+                    )
+                    return False
+
+            # Build YouTube service
             self.service = build("youtube", "v3", credentials=self.credentials)
             self._authenticated = True
 
-            self.logger.info("Аутентификация YouTube успешна")
+            self.logger.info("YouTube authentication successful")
             return True
 
         except Exception as e:
-            self.logger.error(f"Ошибка аутентификации YouTube: {e}")
+            self.logger.error(f"YouTube authentication error: {e}")
             return False
 
     async def upload_video(

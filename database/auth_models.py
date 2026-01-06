@@ -44,6 +44,7 @@ class UserModel(Base):
     recordings = relationship("RecordingModel", back_populates="owner", cascade="all, delete-orphan")
     quotas = relationship("UserQuotaModel", back_populates="user", uselist=False, cascade="all, delete-orphan")
     config = relationship("UserConfigModel", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    automation_jobs = relationship("AutomationJobModel", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User(id={self.id}, email='{self.email}', role={self.role}, active={self.is_active})>"
@@ -80,6 +81,8 @@ class UserQuotaModel(Base):
     max_recordings_per_month = Column(Integer, default=100, nullable=False)
     max_storage_gb = Column(Integer, default=50, nullable=False)
     max_concurrent_tasks = Column(Integer, default=3, nullable=False)
+    max_automation_jobs = Column(Integer, default=5, nullable=False)
+    min_automation_interval_hours = Column(Integer, default=1, nullable=False)
     current_recordings_count = Column(Integer, default=0, nullable=False)
     current_storage_gb = Column(Integer, default=0, nullable=False)
     current_tasks_count = Column(Integer, default=0, nullable=False)

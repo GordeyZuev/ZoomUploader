@@ -1,18 +1,34 @@
 """Конфигурация Celery для асинхронной обработки задач."""
 
-from celery import Celery
-from celery.signals import task_failure, task_postrun, task_prerun
+import sys
+from pathlib import Path
 
-from api.config import get_settings
+# Добавляем корневую директорию проекта в sys.path
+# Это необходимо для импорта модулей из корня (transcription_module, video_processing_module и т.д.)
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from celery import Celery  # noqa: E402
+from celery.signals import task_failure, task_postrun, task_prerun  # noqa: E402
+
+from api.config import get_settings  # noqa: E402
+from config.settings import settings as app_settings  # noqa: E402
 
 settings = get_settings()
+
+# Construct database URL for Celery Beat scheduler
+database_url = (
+    f"postgresql://{app_settings.database.username}:{app_settings.database.password}"
+    f"@{app_settings.database.host}:{app_settings.database.port}/{app_settings.database.database}"
+)
 
 # Создание Celery приложения
 celery_app = Celery(
     "zoom_publishing",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["api.tasks.processing", "api.tasks.upload"],
+    include=["api.tasks.processing", "api.tasks.upload", "api.tasks.automation"],
 )
 
 # Конфигурация Celery
@@ -30,12 +46,14 @@ celery_app.conf.update(
     task_acks_late=True,  # Подтверждать выполнение после завершения
     task_reject_on_worker_lost=True,  # Отклонять при сбое воркера
     result_expires=86400,  # Результаты хранятся 24 часа
+    beat_dburi=database_url,  # Database URI for celery-sqlalchemy-scheduler
 )
 
 # Настройка очередей
 celery_app.conf.task_routes = {
     "api.tasks.processing.*": {"queue": "processing"},
     "api.tasks.upload.*": {"queue": "upload"},
+    "api.tasks.automation.*": {"queue": "automation"},
 }
 
 # Приоритеты очередей

@@ -9,7 +9,7 @@ from api.auth.dependencies import get_current_active_user
 from api.dependencies import get_db_session
 from api.repositories.auth_repos import UserCredentialRepository
 from api.repositories.recording_repos import RecordingAsyncRepository
-from api.repositories.template_repos import InputSourceRepository
+from api.repositories.template_repos import InputSourceRepository, RecordingTemplateRepository
 from api.schemas.template import (
     InputSourceCreate,
     InputSourceResponse,
@@ -23,6 +23,59 @@ from models.recording import SourceType
 
 router = APIRouter(prefix="/api/v1/sources", tags=["Input Sources"])
 logger = get_logger()
+
+
+def _check_recording_mapping(display_name: str, templates: list) -> bool:
+    """
+    Проверяет, соответствует ли запись хотя бы одному шаблону.
+
+    Args:
+        display_name: Название записи
+        templates: Список активных шаблонов пользователя
+
+    Returns:
+        True если найдено совпадение, False иначе
+    """
+    if not templates:
+        return False
+
+    display_name_lower = display_name.lower().strip()
+
+    for template in templates:
+        # Проверяем matching_rules шаблона
+        matching_rules = template.matching_rules or {}
+
+        # Проверка по ключевым словам (keywords)
+        keywords = matching_rules.get("keywords", [])
+        if keywords:
+            for keyword in keywords:
+                if isinstance(keyword, str) and keyword.lower() in display_name_lower:
+                    logger.debug(f"Recording '{display_name}' matched template '{template.name}' by keyword '{keyword}'")
+                    return True
+
+        # Проверка по паттернам (patterns)
+        patterns = matching_rules.get("patterns", [])
+        if patterns:
+            import re
+            for pattern in patterns:
+                if isinstance(pattern, str):
+                    try:
+                        if re.search(pattern, display_name, re.IGNORECASE):
+                            logger.debug(f"Recording '{display_name}' matched template '{template.name}' by pattern '{pattern}'")
+                            return True
+                    except re.error as e:
+                        logger.warning(f"Invalid regex pattern '{pattern}' in template '{template.name}': {e}")
+
+        # Проверка по точному совпадению (exact_match)
+        exact_matches = matching_rules.get("exact_matches", [])
+        if exact_matches:
+            for exact in exact_matches:
+                if isinstance(exact, str) and exact.lower() == display_name_lower:
+                    logger.debug(f"Recording '{display_name}' matched template '{template.name}' by exact match")
+                    return True
+
+    logger.debug(f"Recording '{display_name}' did not match any template")
+    return False
 
 
 @router.get("", response_model=list[InputSourceResponse])
@@ -80,6 +133,20 @@ async def create_source(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Credential {data.credential_id} not found"
             )
+
+    # Проверка на дубликаты
+    duplicate = await repo.find_duplicate(
+        user_id=current_user.id,
+        name=data.name,
+        source_type=source_type,
+        credential_id=data.credential_id,
+    )
+
+    if duplicate:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Source with name '{data.name}', type '{source_type}' and credential_id {data.credential_id} already exists"
+        )
 
     source = await repo.create(
         user_id=current_user.id,
@@ -225,9 +292,14 @@ async def sync_source(
 
             logger.info(f"Found {len(meetings)} recordings from Zoom source {source_id}")
 
+            # Получаем активные шаблоны пользователя для проверки маппинга
+            template_repo = RecordingTemplateRepository(session)
+            templates = await template_repo.find_active_by_user(current_user.id)
+
             # Сохраняем recordings в БД
             recording_repo = RecordingAsyncRepository(session)
             saved_count = 0
+            updated_count = 0
 
             for meeting in meetings:
                 try:
@@ -263,6 +335,7 @@ async def sync_source(
 
                     # Получаем детальную информацию с download_access_token
                     download_access_token = None
+                    meeting_details = None
                     try:
                         meeting_details = await zoom_api.get_recording_details(meeting_id, include_download_token=True)
                         download_access_token = meeting_details.get("download_access_token")
@@ -270,19 +343,45 @@ async def sync_source(
                     except Exception as e:
                         logger.warning(f"Failed to get download_access_token for meeting {meeting_id}: {e}")
 
-                    # Собираем метаданные
+                    # Собираем метаданные (сохраняем все важные поля из Zoom API)
                     source_metadata = {
+                        # Основные идентификаторы
                         "meeting_id": meeting_id,
                         "account": credentials.get("account", ""),
+                        "account_id": meeting.get("account_id"),
+                        "host_id": meeting.get("host_id"),
+                        "host_email": meeting.get("host_email"),
+
+                        # Информация о записи
+                        "share_url": meeting.get("share_url"),  # Ссылка на просмотр в Zoom
+                        "recording_play_passcode": meeting.get("recording_play_passcode"),
+                        "password": meeting.get("password"),
+                        "timezone": meeting.get("timezone"),
+                        "total_size": meeting.get("total_size"),
+                        "recording_count": meeting.get("recording_count"),
+
+                        # Информация о видео файле
                         "download_url": video_file.get("download_url") if video_file else None,
+                        "play_url": video_file.get("play_url") if video_file else None,  # Ссылка для проигрывания
                         "download_access_token": download_access_token,
                         "video_file_size": video_file.get("file_size") if video_file else None,
-                        "password": meeting.get("password"),
-                        "recording_play_passcode": meeting.get("recording_play_passcode"),
+                        "video_file_type": video_file.get("file_type") if video_file else None,
+                        "recording_type": video_file.get("recording_type") if video_file else None,
+
+                        # Информация об удалении
+                        "delete_time": meeting.get("delete_time"),  # Дата удаления (если в корзине)
+                        "auto_delete_date": meeting.get("auto_delete_date"),  # Дата автоматического удаления
+
+                        # Полные данные от API (для возможности доступа к любым полям)
+                        "zoom_api_meeting": meeting,  # Полный ответ от get_recordings
+                        "zoom_api_details": meeting_details if meeting_details else {},  # Детали с download_token
                     }
 
-                    # Создаем запись
-                    await recording_repo.create(
+                    # Проверяем маппинг с шаблонами
+                    is_mapped = _check_recording_mapping(display_name, templates)
+
+                    # Создаем или обновляем запись (upsert)
+                    recording, is_new = await recording_repo.create_or_update(
                         user_id=current_user.id,
                         input_source_id=source_id,
                         display_name=display_name,
@@ -292,9 +391,13 @@ async def sync_source(
                         source_key=meeting_id,
                         source_metadata=source_metadata,
                         video_file_size=video_file.get("file_size") if video_file else None,
+                        is_mapped=is_mapped,
                     )
 
-                    saved_count += 1
+                    if is_new:
+                        saved_count += 1
+                    else:
+                        updated_count += 1
 
                 except Exception as e:
                     logger.warning(f"Failed to save recording {meeting.get('id')}: {e}")
@@ -302,7 +405,7 @@ async def sync_source(
 
             await session.commit()
 
-            logger.info(f"Saved {saved_count}/{len(meetings)} recordings from Zoom source {source_id}")
+            logger.info(f"Synced {saved_count + updated_count} recordings from Zoom source {source_id} (new={saved_count}, updated={updated_count})")
 
         except Exception as e:
             logger.error(f"Zoom sync failed for source {source_id}: {e}", exc_info=True)
@@ -334,6 +437,7 @@ async def sync_source(
 
     recordings_found = len(meetings) if source.source_type == "ZOOM" else 0
     recordings_saved = saved_count if source.source_type == "ZOOM" else 0
+    recordings_updated = updated_count if source.source_type == "ZOOM" else 0
 
     return {
         "message": "Sync completed",
@@ -341,5 +445,6 @@ async def sync_source(
         "source_type": source.source_type,
         "recordings_found": recordings_found,
         "recordings_saved": recordings_saved,
+        "recordings_updated": recordings_updated,
     }
 

@@ -51,6 +51,7 @@ from utils import (
 )
 from utils.formatting import normalize_datetime_string
 from utils.interactive_mapper import get_interactive_mapper
+from utils.thumbnail_manager import get_thumbnail_manager
 from utils.title_mapper import TitleMapper
 from video_download_module import ZoomDownloader
 from video_processing_module.video_processor import ProcessingConfig, VideoProcessor
@@ -1527,8 +1528,12 @@ class PipelineManager:
                     recording.mark_stage_in_progress(ProcessingStageType.TRANSCRIPTION)
                     await self.db_manager.update_recording(recording)
 
+                    if not recording.user_id:
+                        raise ValueError(f"Recording {recording.db_id} has no user_id")
+
                     result = await transcription_service.process_audio(
                         audio_path=audio_path,
+                        user_id=recording.user_id,
                         recording_id=recording.db_id,
                         recording_topic=recording.display_name,
                         recording_start_time=recording.start_time,
@@ -1677,6 +1682,18 @@ class PipelineManager:
                         title = mapping_result.title
                         description = mapping_result.description
                         thumbnail_path = mapping_result.thumbnail_path
+
+                        # Умный поиск thumbnail (user → templates fallback)
+                        if thumbnail_path and recording.user_id:
+                            thumbnail_manager = get_thumbnail_manager()
+                            resolved_path = thumbnail_manager.get_thumbnail_path(
+                                user_id=recording.user_id,
+                                thumbnail_name=thumbnail_path,
+                                fallback_to_template=True
+                            )
+                            if resolved_path:
+                                thumbnail_path = str(resolved_path)
+
                         playlist_id = mapping_result.youtube_playlist_id if platform == "youtube" else None
                         album_id = mapping_result.vk_album_id if platform == "vk" else None
                         privacy_status = "unlisted"

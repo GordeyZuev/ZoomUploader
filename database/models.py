@@ -99,6 +99,34 @@ class RecordingModel(Base):
         lazy="selectin",
     )
 
+    def mark_stage_completed(self, stage_type: ProcessingStageType, meta: dict[str, Any] | None = None) -> None:
+        """Пометить этап как завершенный."""
+        # Найти или создать этап
+        stage = None
+        for s in self.processing_stages:
+            if s.stage_type == stage_type:
+                stage = s
+                break
+
+        if stage is None:
+            # Создать новый этап
+            stage = ProcessingStageModel(
+                recording_id=self.id,
+                user_id=self.user_id,
+                stage_type=stage_type,
+                status=ProcessingStageStatus.COMPLETED,
+                completed_at=datetime.utcnow(),
+                stage_meta=meta or {},
+            )
+            self.processing_stages.append(stage)
+        else:
+            # Обновить существующий
+            stage.status = ProcessingStageStatus.COMPLETED
+            stage.completed_at = datetime.utcnow()
+            stage.failed = False
+            if meta:
+                stage.stage_meta = {**(stage.stage_meta or {}), **meta}
+
     def __repr__(self) -> str:
         return f"<Recording(id={self.id}, display_name='{self.display_name}', status={self.status})>"
 
@@ -157,6 +185,11 @@ class OutputTargetModel(Base):
     status: Mapped[str] = mapped_column(Enum(TargetStatus), default=TargetStatus.NOT_UPLOADED)
     target_meta: Mapped[Any | None] = mapped_column(JSONB)
     uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # FSM поля
+    failed: Mapped[bool] = mapped_column(Boolean, default=False)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_reason: Mapped[str | None] = mapped_column(String(1000))
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
@@ -182,8 +215,8 @@ class ProcessingStageModel(Base):
     user_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
     )
-    stage_type: Mapped[str] = mapped_column(Enum(ProcessingStageType))
-    status: Mapped[str] = mapped_column(Enum(ProcessingStageStatus), default=ProcessingStageStatus.PENDING)
+    stage_type: Mapped[str] = mapped_column(Enum(ProcessingStageType, name="processingstagetype"))
+    status: Mapped[str] = mapped_column(Enum(ProcessingStageStatus, name="processingstagestatus"), default=ProcessingStageStatus.PENDING)
     failed: Mapped[bool] = mapped_column(Boolean, default=False)
     failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     failed_reason: Mapped[str | None] = mapped_column(String(1000))

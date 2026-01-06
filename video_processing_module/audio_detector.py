@@ -146,7 +146,6 @@ class AudioDetector:
         """
         try:
             import os
-            from pathlib import Path
 
             # Проверяем существование файла
             if not os.path.exists(video_path):
@@ -166,13 +165,29 @@ class AudioDetector:
                     logger.error("Файл является HTML страницей, а не видео")
                     return False
 
-                # Для MP4 проверяем заголовок
-                if Path(video_path).suffix.lower() == ".mp4":
-                    if not (
-                        first_chunk.startswith(b"\x00\x00\x00") or b"ftyp" in first_chunk or b"moov" in first_chunk
-                    ):
-                        logger.error("Файл не является корректным MP4 видео")
-                        return False
+            # Используем ffprobe для проверки, что это действительно видео файл
+            cmd = ["ffprobe", "-v", "error", "-show_entries", "format=format_name", "-of", "json", video_path]
+
+            process = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+
+            stdout, stderr = await process.communicate()
+
+            if process.returncode != 0:
+                logger.error(f"ffprobe не смог обработать файл: {stderr.decode()}")
+                return False
+
+            # Проверяем, что ffprobe распознал формат
+            try:
+                data = json.loads(stdout.decode())
+                if "format" not in data or "format_name" not in data["format"]:
+                    logger.error("Файл не распознан как видео")
+                    return False
+                logger.info(f"Видео формат: {data['format']['format_name']}")
+            except json.JSONDecodeError:
+                logger.error("Не удалось распарсить вывод ffprobe")
+                return False
 
             return True
 

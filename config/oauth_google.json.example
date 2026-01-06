@@ -1,0 +1,9 @@
+{
+  "client_id": "YOUR_GOOGLE_CLIENT_ID_HERE.apps.googleusercontent.com",
+  "client_secret": "YOUR_GOOGLE_CLIENT_SECRET_HERE",
+  "project_id": "zoomuploader",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
+}
+

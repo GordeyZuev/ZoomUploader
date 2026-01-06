@@ -1,9 +1,7 @@
 """Основной сервис для транскрибации и извлечения тем"""
 
 import os
-import re
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +9,6 @@ from deepseek_module import DeepSeekConfig, TopicExtractor
 from fireworks_module import FireworksConfig, FireworksTranscriptionService
 from logger import get_logger
 from utils.audio_compressor import AudioCompressor
-from utils.formatting import normalize_datetime_string
 
 logger = get_logger()
 
@@ -46,9 +43,6 @@ class TranscriptionService:
             target_sample_rate=target_sample_rate,
             max_file_size_mb=max_file_size_mb,
         )
-
-        self.transcriptions_dir = Path("media/transcriptions")
-        self.transcriptions_dir.mkdir(exist_ok=True)
 
     @staticmethod
     def _format_timestamp(seconds: float) -> str:
@@ -85,17 +79,27 @@ class TranscriptionService:
         milliseconds = int((seconds - total_seconds) * 1000)
         return f"{hours:02d}:{minutes:02d}:{secs:02d}.{milliseconds:03d}"
 
-    def _compose_fireworks_prompt(self, recording_topic: str | None) -> str:
-        """Формирование подсказки для Fireworks с учетом предмета."""
-        base_prompt = (self.fireworks_config.prompt or "").strip()
+    @staticmethod
+    def _compose_fireworks_prompt(base_prompt: str | None, recording_topic: str | None) -> str:
+        """
+        Формирование подсказки для Fireworks с учетом предмета.
+
+        Args:
+            base_prompt: Базовый промпт из конфига (может быть None)
+            recording_topic: Название записи (может быть None)
+
+        Returns:
+            Сформированный промпт для Fireworks
+        """
+        base = (base_prompt or "").strip()
         topic = (recording_topic or "").strip()
 
-        if base_prompt and topic:
+        if base and topic:
             # Объединяем базовый промпт с названием пары в связный текст
-            return f'{base_prompt} Название пары: "{topic}". Учитывай специфику этого курса при распознавании терминов.'
-        elif base_prompt:
+            return f'{base} Название пары: "{topic}". Учитывай специфику этого курса при распознавании терминов.'
+        elif base:
             # Только базовый промпт
-            return base_prompt
+            return base
         elif topic:
             # Только название пары с базовыми инструкциями
             return f'Это лекция магистратуры по Computer Science со специализацией в Machine Learning и Data Science. Название пары: "{topic}". Сохраняй правильное написание профильных терминов (включая английские), латинских обозначений, аббревиатур, элементов кода и имён собственных.'
@@ -106,6 +110,7 @@ class TranscriptionService:
     async def process_audio(
         self,
         audio_path: str,
+        user_id: int,
         recording_id: int | None = None,
         recording_topic: str | None = None,
         recording_start_time: str | None = None,
@@ -134,7 +139,7 @@ class TranscriptionService:
 
         logger.info(f"🎬 Начало обработки аудио: {audio_path} (модель: Fireworks)")
 
-        fireworks_prompt = self._compose_fireworks_prompt(recording_topic)
+        fireworks_prompt = self._compose_fireworks_prompt(self.fireworks_config.prompt, recording_topic)
 
         prepared_audio, temp_files_to_cleanup = await self._prepare_audio(audio_path)
         transcription_language = self.fireworks_config.language
@@ -165,6 +170,7 @@ class TranscriptionService:
                 words=words,
                 segments_auto=segments_auto,
                 srt_content=srt_content,
+                user_id=user_id,
                 recording_id=recording_id,
                 recording_topic=recording_topic,
                 recording_start_time=recording_start_time,
@@ -281,6 +287,7 @@ class TranscriptionService:
         words: list[dict[str, Any]] | None = None,
         segments_auto: list[dict[str, Any]] | None = None,
         srt_content: str | None = None,
+        user_id: int | None = None,
         recording_id: int | None = None,
         recording_topic: str | None = None,
         recording_start_time: str | None = None,
@@ -289,7 +296,7 @@ class TranscriptionService:
         Сохранение транскрипции в папку с файлами.
 
         Структура папки:
-        - transcription_<topic>/
+        - media/user_{user_id}/transcriptions/{recording_id}/
           - words.txt (слова с временными метками)
           - segments.txt (сегменты с временными метками)
           - subtitles.srt (субтитры SRT)
@@ -300,35 +307,28 @@ class TranscriptionService:
             segments: Список сегментов с временными метками
             words: Список слов с временными метками (обязательно для генерации субтитров)
             srt_content: Оригинальный SRT от Fireworks (опционально)
-            recording_id: ID записи (для именования папки, если нет topic)
-            recording_topic: Название записи (для именования папки, приоритетно)
+            user_id: ID пользователя (обязательно для изоляции данных)
+            recording_id: ID записи
+            recording_topic: Название записи
+            recording_start_time: Время начала записи
 
         Returns:
             Относительный путь к папке с транскрипцией
         """
-        if recording_topic:
-            safe_topic = re.sub(r'[<>:"/\\|?*]', "_", recording_topic)
-            safe_topic = re.sub(r"\s+", "_", safe_topic)
-            safe_topic = safe_topic.strip("_")
-            if len(safe_topic) > 200:
-                safe_topic = safe_topic[:200]
+        from utils.user_paths import get_path_manager
 
-            date_suffix = ""
-            if recording_start_time:
-                try:
-                    normalized_time = normalize_datetime_string(recording_start_time)
-                    date_obj = datetime.fromisoformat(normalized_time)
-                    date_suffix = f"_{date_obj.strftime('%y-%m-%d_%H-%M')}"
-                except Exception as e:
-                    logger.warning(f"⚠️ Ошибка парсинга даты '{recording_start_time}' для имени папки транскрипции: {e}")
+        if user_id is None:
+            raise ValueError("user_id is required for transcription isolation")
 
-            folder_name = f"transcription_{safe_topic}{date_suffix}"
-        elif recording_id is not None:
-            folder_name = f"transcription_{recording_id}"
+        path_manager = get_path_manager()
+
+        # Используем recording_id для создания уникальной папки
+        if recording_id is not None:
+            transcription_folder = path_manager.get_transcription_dir(user_id, recording_id)
         else:
-            folder_name = f"transcription_{int(time.time())}"
+            # Fallback для случаев без recording_id (например, тесты)
+            transcription_folder = path_manager.get_transcription_dir(user_id) / f"temp_{int(time.time())}"
 
-        transcription_folder = (self.transcriptions_dir / folder_name).resolve()
         transcription_folder.mkdir(parents=True, exist_ok=True)
 
         logger.info(f"📁 Создана папка для транскрипции: {transcription_folder}")

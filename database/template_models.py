@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
@@ -33,6 +33,12 @@ class InputSourceModel(Base):
     """Источник данных для синхронизации записей."""
 
     __tablename__ = "input_sources"
+    __table_args__ = (
+        # Уникальное ограничение: один пользователь не может иметь несколько источников
+        # с одинаковым именем, типом и credential_id
+        UniqueConstraint('user_id', 'name', 'source_type', 'credential_id',
+                        name='uq_input_sources_user_name_type_credential'),
+    )
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)

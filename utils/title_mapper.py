@@ -93,7 +93,7 @@ class TitleMapper:
 
         description = ""
 
-        thumbnail_path = rule.get("thumbnail", "thumbnails/default_thumbnail.jpg")
+        thumbnail_path = rule.get("thumbnail", "media/templates/thumbnails/default_thumbnail.jpg")
 
         youtube_playlist_id = rule.get("youtube_playlist_id", "")
         vk_album_id = rule.get("vk_album_id", "")

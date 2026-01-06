@@ -1,9 +1,9 @@
 [project]
 name = "zoomtest"
-version = "0.1.0"
+version = "0.9.1"
 description = "Zoom video processing pipeline for automatic video downloads and uploads"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "Business Source License 1.1"}
 requires-python = ">=3.13"
 authors = [
     {name = "Gordey Zuev", email = "gordey.zuev@gmail.com"}
@@ -30,6 +30,9 @@ dependencies = [
     # Task queue
     "celery>=5.6.1",
     "redis>=5.0.0",
+    "celery-sqlalchemy-scheduler>=0.3.0",
+    "croniter>=2.0.1",
+    "pytz>=2024.1",
     
     # Security
     "bcrypt>=5.0.0",

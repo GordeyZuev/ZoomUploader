@@ -18,13 +18,16 @@ from api.middleware.logging import LoggingMiddleware
 from api.middleware.rate_limit import RateLimitMiddleware
 from api.routers import (
     auth,
+    automation,
     credentials,
     health,
     input_sources,
+    oauth,
     output_presets,
     recordings,
     tasks,
     templates,
+    thumbnails,
     user_config,
     users,
 )
@@ -109,12 +112,16 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(user_config.router)
 app.include_router(credentials.router)
+app.include_router(oauth.router)
 app.include_router(recordings.router)
 app.include_router(tasks.router)
 # New template system routers
 app.include_router(templates.router)
 app.include_router(input_sources.router)
 app.include_router(output_presets.router)
+app.include_router(thumbnails.router)
+# Automation router
+app.include_router(automation.router)
 
 
 @app.get("/")

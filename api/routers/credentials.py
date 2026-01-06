@@ -2,7 +2,6 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.dependencies import get_current_user
@@ -10,7 +9,6 @@ from api.auth.encryption import get_encryption
 from api.dependencies import get_db_session
 from api.repositories.auth_repos import UserCredentialRepository
 from api.schemas.auth import UserCredentialCreate, UserCredentialUpdate, UserInDB
-from database.auth_models import UserCredentialModel
 from logger import get_logger
 
 logger = get_logger()
@@ -94,6 +92,29 @@ async def list_credentials(
         result.append(response)
 
     return result
+
+
+@router.get("/status")
+async def check_credentials_status(
+    current_user: UserInDB = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    cred_repo = UserCredentialRepository(session)
+
+    platforms = ["zoom", "youtube", "vk_video", "fireworks", "deepseek", "openai", "yandex_disk", "google_drive"]
+
+    status_map = {}
+    for platform in platforms:
+        credentials = await cred_repo.list_by_platform(current_user.id, platform)
+        status_map[platform] = len(credentials) > 0
+
+    available_platforms = [p for p, has_creds in status_map.items() if has_creds]
+
+    return {
+        "user_id": current_user.id,
+        "available_platforms": available_platforms,
+        "credentials_status": status_map,
+    }
 
 
 @router.get("/{credential_id}", response_model=CredentialResponse)
@@ -260,66 +281,6 @@ async def create_credentials(
     )
 
 
-@router.patch("/{credential_id}/account-name")
-async def update_credential_account_name(
-    credential_id: int,
-    account_name: str,
-    current_user: UserInDB = Depends(get_current_user),
-    session: AsyncSession = Depends(get_db_session),
-):
-    """
-    Обновить account_name для существующего credential.
-
-    Args:
-        credential_id: ID credential
-        account_name: Новое имя аккаунта
-        current_user: Текущий пользователь
-        session: Database session
-
-    Returns:
-        Обновленный credential
-
-    Raises:
-        HTTPException: Если credential не найден или account_name уже занят
-    """
-    cred_repo = UserCredentialRepository(session)
-
-    credential = await cred_repo.get_by_id(credential_id)
-    if not credential or credential.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Credential {credential_id} not found",
-        )
-
-    # Проверяем что такой account_name еще не занят
-    existing = await cred_repo.get_by_platform(current_user.id, credential.platform, account_name)
-    if existing and existing.id != credential_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Account name '{account_name}' already exists for platform '{credential.platform}'",
-        )
-
-    # Обновляем account_name
-    result = await session.execute(select(UserCredentialModel).where(UserCredentialModel.id == credential_id))
-    db_credential = result.scalars().first()
-    if db_credential:
-        db_credential.account_name = account_name
-        await session.commit()
-        await session.refresh(db_credential)
-
-        logger.info(f"Updated account_name for credential {credential_id}: {account_name}")
-
-        return CredentialResponse(
-            id=db_credential.id,
-            platform=db_credential.platform,
-            account_name=db_credential.account_name,
-            is_active=db_credential.is_active,
-            last_used_at=db_credential.last_used_at.isoformat() if db_credential.last_used_at else None,
-        )
-
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Credential not found")
-
-
 @router.put("/{credential_id}", response_model=CredentialResponse)
 async def update_credentials(
     credential_id: int,
@@ -409,26 +370,3 @@ async def delete_credentials(
     logger.info(f"User credentials deleted: user_id={current_user.id} | credential_id={credential_id}")
 
     return {"message": f"Credential {credential_id} deleted successfully"}
-
-
-@router.get("/status")
-async def check_credentials_status(
-    current_user: UserInDB = Depends(get_current_user),
-    session: AsyncSession = Depends(get_db_session),
-):
-    cred_repo = UserCredentialRepository(session)
-
-    platforms = ["zoom", "youtube", "vk_video", "fireworks", "deepseek", "openai", "yandex_disk", "google_drive"]
-
-    status_map = {}
-    for platform in platforms:
-        credentials = await cred_repo.list_by_platform(current_user.id, platform)
-        status_map[platform] = len(credentials) > 0
-
-    available_platforms = [p for p, has_creds in status_map.items() if has_creds]
-
-    return {
-        "user_id": current_user.id,
-        "available_platforms": available_platforms,
-        "credentials_status": status_map,
-    }

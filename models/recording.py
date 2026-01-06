@@ -12,69 +12,71 @@ def _normalize_enum(value: T | str, enum_class: type[T]) -> T:
 
 
 class ProcessingStatus(Enum):
-    """Статусы обработки видео записи"""
+    """Статусы обработки видео записи (агрегированный статус из processing_stages/outputs)"""
 
-    INITIALIZED = "initialized"  # Инициализировано (загружено из Zoom API)
-    DOWNLOADING = "downloading"  # В процессе загрузки
-    DOWNLOADED = "downloaded"  # Загружено
-    PROCESSING = "processing"  # В процессе обработки
-    PROCESSED = "processed"  # Обработано
-    TRANSCRIBING = "transcribing"  # В процессе транскрибации
-    TRANSCRIBED = "transcribed"  # Транскрибировано
-    UPLOADING = "uploading"  # В процессе выгрузки
-    UPLOADED = "uploaded"  # Выгружено в API
-    SKIPPED = "skipped"  # Пропущено
-    EXPIRED = "expired"  # Устарело (очищено)
+    INITIALIZED = "INITIALIZED"  # Инициализировано (загружено из Zoom API)
+    DOWNLOADING = "DOWNLOADING"  # В процессе загрузки (runtime)
+    DOWNLOADED = "DOWNLOADED"  # Загружено
+    PROCESSING = "PROCESSING"  # В процессе обработки (runtime)
+    PROCESSED = "PROCESSED"  # Обработано
+    PREPARING = "PREPARING"  # Подготовка (транскрипция, топики, субтитры) - runtime
+    TRANSCRIBING = "TRANSCRIBING"  # В процессе транскрибации (runtime, legacy)
+    TRANSCRIBED = "TRANSCRIBED"  # Транскрибировано (все stages completed)
+    UPLOADING = "UPLOADING"  # В процессе выгрузки (runtime)
+    UPLOADED = "UPLOADED"  # Выгружено в API (legacy)
+    READY = "READY"  # Готово (все этапы завершены, включая загрузку)
+    SKIPPED = "SKIPPED"  # Пропущено
+    EXPIRED = "EXPIRED"  # Устарело (очищено)
+    # FAILED удален - используется recording.failed (boolean) + failed_reason
 
 
 class SourceType(Enum):
     """Тип источника видео."""
 
-    ZOOM = "zoom"
-    LOCAL_FILE = "local_file"
-    YOUTUBE = "youtube"
-    VK = "vk"
-    HTTP_LINK = "http_link"
-    YANDEX_DISK_API = "yandex_disk_api"
+    ZOOM = "ZOOM"
+    LOCAL_FILE = "LOCAL_FILE"
+    GOOGLE_DRIVE = "GOOGLE_DRIVE"
+    YOUTUBE = "YOUTUBE"
+    OTHER = "OTHER"
 
 
 class TargetType(Enum):
     """Тип вывода/публикации."""
 
-    YOUTUBE = "youtube"
-    VK = "vk"
-    YANDEX_DISK = "yandex_disk"
-    LOCAL = "local"
-    WEBHOOK = "webhook"
-    GDRIVE = "gdrive"
+    YOUTUBE = "YOUTUBE"
+    VK = "VK"
+    LOCAL_STORAGE = "LOCAL_STORAGE"
+    GOOGLE_DRIVE = "GOOGLE_DRIVE"
+    OTHER = "OTHER"
 
 
 class TargetStatus(Enum):
     """Статусы загрузки на выходные площадки."""
 
-    NOT_UPLOADED = "not_uploaded"
-    UPLOADING = "uploading"
-    UPLOADED = "uploaded"
-    FAILED = "failed"
+    NOT_UPLOADED = "NOT_UPLOADED"
+    UPLOADING = "UPLOADING"
+    UPLOADED = "UPLOADED"
+    FAILED = "FAILED"
 
 
 class ProcessingStageType(Enum):
-    """Типы этапов обработки записи."""
+    """Типы этапов ТРАНСКРИПЦИОННОГО пайплайна (детализация для ProcessingStatus.TRANSCRIBING/TRANSCRIBED)."""
 
-    TRANSCRIPTION = "transcription"  # Транскрибация аудио
-    TOPIC_EXTRACTION = "topic_extraction"  # Извлечение тем
-    SUBTITLE_GENERATION = "subtitle_generation"  # Генерация субтитров
-    TRANSLATION = "translation"  # Перевод (будущее)
+    TRANSCRIBE = "TRANSCRIBE"  # Транскрибация аудио
+    EXTRACT_TOPICS = "EXTRACT_TOPICS"  # Извлечение тем
+    GENERATE_SUBTITLES = "GENERATE_SUBTITLES"  # Генерация субтитров
+    # TRANSLATION = "TRANSLATION"  # Перевод
 
 
 class ProcessingStageStatus(Enum):
     """Статусы отдельного этапа обработки."""
 
-    PENDING = "pending"  # Ожидает выполнения
-    IN_PROGRESS = "in_progress"  # В процессе
-    COMPLETED = "completed"  # Завершено успешно
-    FAILED = "failed"  # Ошибка
-    SKIPPED = "skipped"  # Пропущено
+    PENDING = "PENDING"  # Ожидает выполнения
+    IN_PROGRESS = "IN_PROGRESS"  # В процессе
+    COMPLETED = "COMPLETED"  # Завершено успешно
+    FAILED = "FAILED"  # Ошибка
+    # Будущие значения (нужно добавить в БД через миграцию):
+    # SKIPPED = "SKIPPED"  # Пропущено
 
 
 class OutputTarget:
@@ -152,7 +154,10 @@ class ProcessingStage:
 
     def mark_skipped(self):
         """Пометить этап как пропущенный (FSM: переход в SKIPPED)."""
-        self.status = ProcessingStageStatus.SKIPPED
+        # TODO: Добавить SKIPPED в БД через миграцию
+        # self.status = ProcessingStageStatus.SKIPPED
+        # Пока используем PENDING
+        self.status = ProcessingStageStatus.PENDING
 
     def can_retry(self, max_retries: int = 2) -> bool:
         """Проверить возможность retry этапа (FSM: проверка переходов)."""
@@ -176,6 +181,7 @@ class MeetingRecording:
 
     def __init__(self, meeting_data: dict[str, Any]):
         self.db_id: int | None = None
+        self.user_id: int | None = meeting_data.get("user_id")
         self.display_name: str = meeting_data.get("display_name") or meeting_data.get("topic", "")
         self.start_time: str = meeting_data.get("start_time", "")
         self.duration: int = meeting_data.get("duration", 0)
@@ -370,7 +376,7 @@ class MeetingRecording:
                 rollback_to_status = ProcessingStatus.DOWNLOADED
             elif self.status == ProcessingStatus.UPLOADING:
                 # Откат к TRANSCRIBED если есть, иначе PROCESSED
-                transcription_stage = self.get_stage(ProcessingStageType.TRANSCRIPTION)
+                transcription_stage = self.get_stage(ProcessingStageType.TRANSCRIBE)
                 if transcription_stage and transcription_stage.status == ProcessingStageStatus.COMPLETED:
                     rollback_to_status = ProcessingStatus.TRANSCRIBED
                 else:
@@ -547,9 +553,9 @@ class MeetingRecording:
         """
         # Маппинг этапов на предыдущие статусы
         stage_to_previous_status = {
-            ProcessingStageType.TRANSCRIPTION: ProcessingStatus.PROCESSED,
-            ProcessingStageType.TOPIC_EXTRACTION: ProcessingStatus.PROCESSED,  # Может быть TRANSCRIBED если транскрибация есть
-            ProcessingStageType.SUBTITLE_GENERATION: ProcessingStatus.PROCESSED,  # Аналогично
+            ProcessingStageType.TRANSCRIBE: ProcessingStatus.PROCESSED,
+            ProcessingStageType.EXTRACT_TOPICS: ProcessingStatus.PROCESSED,  # Может быть TRANSCRIBED если транскрибация есть
+            ProcessingStageType.GENERATE_SUBTITLES: ProcessingStatus.PROCESSED,  # Аналогично
         }
 
         previous = stage_to_previous_status.get(stage_type)
@@ -557,11 +563,11 @@ class MeetingRecording:
             return previous
 
         # Если транскрибация завершена, то топики/субтитры откатываются к TRANSCRIBED
-        transcription_stage = self.get_stage(ProcessingStageType.TRANSCRIPTION)
+        transcription_stage = self.get_stage(ProcessingStageType.TRANSCRIBE)
         if (
             transcription_stage
             and transcription_stage.status == ProcessingStageStatus.COMPLETED
-            and stage_type in [ProcessingStageType.TOPIC_EXTRACTION, ProcessingStageType.SUBTITLE_GENERATION]
+            and stage_type in [ProcessingStageType.EXTRACT_TOPICS, ProcessingStageType.GENERATE_SUBTITLES]
         ):
             return ProcessingStatus.TRANSCRIBED
 
@@ -587,9 +593,9 @@ class MeetingRecording:
             return
 
         # Проверяем этапы после PROCESSED
-        transcription_stage = self.get_stage(ProcessingStageType.TRANSCRIPTION)
-        topic_stage = self.get_stage(ProcessingStageType.TOPIC_EXTRACTION)
-        subtitle_stage = self.get_stage(ProcessingStageType.SUBTITLE_GENERATION)
+        transcription_stage = self.get_stage(ProcessingStageType.TRANSCRIBE)
+        topic_stage = self.get_stage(ProcessingStageType.EXTRACT_TOPICS)
+        subtitle_stage = self.get_stage(ProcessingStageType.GENERATE_SUBTITLES)
 
         # Если статус PROCESSED, но есть завершенная транскрибация - обновляем статус
         if self.status == ProcessingStatus.PROCESSED:
@@ -622,15 +628,9 @@ class MeetingRecording:
                     self.status = ProcessingStatus.TRANSCRIBED
                     return
 
-                # Все этапы завершены или пропущены
-                topic_done = not topic_stage or topic_stage.status in [
-                    ProcessingStageStatus.COMPLETED,
-                    ProcessingStageStatus.SKIPPED,
-                ]
-                subtitle_done = not subtitle_stage or subtitle_stage.status in [
-                    ProcessingStageStatus.COMPLETED,
-                    ProcessingStageStatus.SKIPPED,
-                ]
+                # Все этапы завершены
+                topic_done = not topic_stage or topic_stage.status == ProcessingStageStatus.COMPLETED
+                subtitle_done = not subtitle_stage or subtitle_stage.status == ProcessingStageStatus.COMPLETED
 
                 if topic_done and subtitle_done:
                     self.status = ProcessingStatus.TRANSCRIBED

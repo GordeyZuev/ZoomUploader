@@ -92,9 +92,9 @@ class VideoMappingConfigData(BaseModel):
     default_title_template: str = Field(
         "{original_title} | {topic} ({date})", description="Шаблон названия по умолчанию"
     )
-    default_thumbnail: str = Field("thumbnails/default.png", description="Миниатюра по умолчанию")
+    default_thumbnail: str = Field("media/templates/thumbnails/default.png", description="Миниатюра по умолчанию")
     date_format: str = Field("DD.MM.YYYY", description="Формат даты")
-    thumbnail_directory: str = Field("thumbnails/", description="Директория для миниатюр")
+    thumbnail_directory: str = Field("media/templates/thumbnails/", description="Директория для глобальных template миниатюр")
 
     @field_validator("mapping_rules")
     @classmethod

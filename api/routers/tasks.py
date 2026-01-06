@@ -132,38 +132,3 @@ async def cancel_task(task_id: str) -> dict[str, Any]:
         "status": "cancelled",
         "message": "Task cancellation requested",
     }
-
-
-@router.get("/{task_id}/result")
-async def get_task_result(task_id: str) -> dict[str, Any]:
-    """
-    Получить только результат задачи (блокирующий вызов).
-
-    Args:
-        task_id: ID задачи из Celery
-
-    Returns:
-        Результат выполнения задачи
-
-    Note:
-        Этот endpoint НЕ рекомендуется использовать, так как он блокирующий.
-        Используйте GET /tasks/{task_id} для проверки статуса.
-    """
-    task = AsyncResult(task_id, app=celery_app)
-
-    if not task.ready():
-        raise HTTPException(
-            status_code=status.HTTP_202_ACCEPTED,
-            detail="Task is not ready yet. Use GET /tasks/{task_id} to check status.",
-        )
-
-    if task.failed():
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Task failed: {task.info}",
-        )
-
-    return {
-        "task_id": task_id,
-        "result": task.result,
-    }

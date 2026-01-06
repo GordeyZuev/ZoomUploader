@@ -1,10 +1,31 @@
 import csv
 import json
+import re
 
 from models.recording import MeetingRecording
 
 from .data_processing import get_recordings_statistics
 from .formatting import format_duration, format_file_size
+
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Создание безопасного имени файла.
+
+    Удаляет недопустимые символы и пробелы, заменяя их на подчеркивания.
+
+    Args:
+        filename: Исходное имя файла
+
+    Returns:
+        Безопасное имя файла
+    """
+    filename = re.sub(r'[<>:"/\\|?*]', "_", filename)
+    filename = re.sub(r"\s+", "_", filename)
+    filename = filename.strip("_")
+    if len(filename) > 200:
+        filename = filename[:200]
+    return filename
 
 
 def save_recordings_to_json(recordings: list[MeetingRecording], filename: str = "meetings.json") -> None:

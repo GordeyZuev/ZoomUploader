@@ -1,366 +1,356 @@
-# Zoom Publishing Platform
+# 🎥 Zoom Publishing Platform
 
-> **Production-Ready Multi-Tenant Platform для автоматической обработки и публикации видеоконтента**
+> **Multi-Tenant Platform для автоматической обработки и публикации видеоконтента**
 
-Полнофункциональная платформа с REST API для автоматизации полного цикла обработки образовательного видеоконтента. Система забирает видеозаписи из различных источников, обрабатывает их с использованием AI-технологий для транскрибации и структурирования, автоматически генерирует метаданные с таймкодами и публикует на целевые платформы.
+![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)
+![FastAPI](https://img.shields.io/badge/FastAPI-async-green.svg)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-12+-blue.svg)
+![License](https://img.shields.io/badge/license-BSL%201.1-orange.svg)
 
-**Версия:** v2.1 - Production-Ready with Async Processing
+Production-ready платформа с полным `REST API` для автоматизации end-to-end обработки образовательного контента — от загрузки до публикации с AI-транскрибацией, структурированием и профессиональным оформлением.
 
-**Ключевые возможности:**
-- REST API (49 endpoints) с JWT аутентификацией
-- Multi-tenancy архитектура с полной изоляцией данных
-- Асинхронная обработка задач (Celery + Redis)
-- Система шаблонов для автоматизации
-- Роли, права доступа и квоты
-- Progress tracking в реальном времени
+**Версия:** `v0.9.1` (Dev Status)  
+**Tech:** `Python 3.11+` • `FastAPI` • `PostgreSQL` • `Redis` • `Celery` • `AI` (Whisper, DeepSeek)
 
 ---
 
-## Описание проекта
+## 🎯 Use Cases
 
-**Zoom Publishing Platform** — автоматизированный пайплайн для превращения записей Zoom-лекций в готовые к публикации видео с AI-структурированием контента.
+**🏫 Университеты и образовательные платформы**
+- Автоматическая публикация тысяч лекций с минимальными усилиями
+- AI-структурирование контента для удобной навигации
+- Multi-tenant изоляция для разных кафедр/факультетов
 
-### Основная цель
+**🎓 Онлайн-школы и EdTech**
+- Быстрый time-to-market для образовательного контента
+- Профессиональное оформление с таймкодами и субтитрами
+- Scheduled automation для регулярных публикаций
 
-Автоматизация процесса публикации учебных лекций с использованием современных AI-технологий для транскрибации и структурирования контента, минимизация ручной работы и обеспечение единообразного качества публикаций.
+**🎬 Контент-команды**
+- Batch processing для массовой обработки архивов
+- Template-based автоматизация для разных типов контента
+- API-first подход для интеграции в существующие системы
 
-### Целевая аудитория
-
-**Учебные заведения**
-- Оперативная публикация занятий с удобной навигацией по темам
-- Автоматизация процесса публикации учебного контента
-
-**Преподаватели и студенты**
-- Быстрый доступ к структурированным лекциям с таймкодами
-- Автоматическая генерация оглавления и субтитров
-
-**Контент-команды**
-- Быстрый конвейер «запись → оформленное видео → публикация»
-- Batch processing для массовой обработки
-
-### Преимущества
-
-**Экономия времени**
-- Сокращение времени обработки на 80%+
-- Полная автоматизация от загрузки до публикации
-
-**Качество контента**
-- Удаление тишины и технических пауз
-- Профессиональное оформление с таймкодами
-- Автоматическая генерация субтитров
-
-**Масштабируемость**
-- Multi-tenant архитектура
-- Асинхронная обработка
-- Horizontal scaling
+**👨‍💼 Enterprise**
+- Multi-tenancy для изоляции клиентов/проектов
+- RBAC и квоты для контроля доступа
+- Audit logs и usage tracking
 
 ---
 
-## Функциональность
+## 🔄 Как это работает
 
-### Полный цикл обработки
+Платформа автоматизирует полный цикл обработки видео от загрузки до публикации:
 
-**1. Получение исходных данных**
-- Синхронизация с Zoom API (OAuth 2.0)
+```
+📥 Zoom/Файлы → ✂️ FFmpeg → 🤖 AI (Whisper+DeepSeek) → 📝 Метаданные → 📤 YouTube/VK
+                Видео        Транскрипция+Темы        Таймкоды         Публикация
+                  ↓              ↓                        ↓                 ↓
+              Тишина       Структура контента      Описание+Субтитры   Multi-platform
+              удалена      с таймкодами           Template-based       Auto-retry
+```
+
+### Этап 1: 📥 Получение контента
+
+**Источники данных:**
+- Синхронизация с `Zoom API` через `OAuth 2.0`
 - Загрузка локальных файлов
-- Поддержка различных источников (планируется расширение)
+- Automatic retry при сбоях
 
-**2. Обработка видео**
-- Детекция и удаление тишины (FFmpeg)
+**Что происходит:**
+- Система забирает записи из Zoom или загружает файлы
+- Создает записи в БД с метаданными
+- Скачивает видео в user-isolated storage
+
+### Этап 2: ✂️ Обработка видео
+
+**FFmpeg Processing:**
+- Детекция и удаление тишины
 - Обрезка пустого начала и конца
 - Удаление длинных пауз
-- Извлечение аудиодорожки
+- Извлечение аудиодорожки для транскрибации
 
-**3. AI-обработка контента**
-- Транскрибация через Fireworks AI (whisper-v3-turbo)
-- Извлечение тем через DeepSeek
-- Определение основных и детализированных тем
-- Автоматическое обнаружение перерывов
-- Генерация субтитров (SRT, VTT)
+**Результат:**
+- Чистое видео без технических пауз
+- Оптимизированная длительность
+- Готовый аудио-файл
 
-**4. Формирование метаданных**
-- Создание структурированного описания
-- Таймкоды в формате HH:MM:SS
-- Автоматический подбор миниатюр
-- Применение шаблонов оформления
+### Этап 3: 🤖 AI-обработка
 
-**5. Публикация**
-- Загрузка на YouTube с субтитрами
-- Загрузка на VK
-- Добавление в плейлисты/альбомы
-- Tracking статусов
-
-**6. Мониторинг и управление**
-- Журнал операций
-- Progress tracking
-- Обработка ошибок
-- Automatic retry
-
----
-
-## Технологический стек
-
-### Backend & Infrastructure
-
-**Core**
-- Python 3.11+ (asyncio, type hints)
-- FastAPI (async web framework)
-- PostgreSQL 12+ (реляционная БД)
-- Redis (кэширование, очереди задач)
-
-**ORM & Migrations**
-- SQLAlchemy 2.0 (async ORM)
-- Alembic (управление схемой БД)
-- Asyncpg (PostgreSQL driver)
-
-**Task Queue & Processing**
-- Celery (асинхронная обработка)
-- Flower (мониторинг задач)
-- FFmpeg (обработка видео/аудио)
-
-**Validation & Configuration**
-- Pydantic (валидация данных)
-- Pydantic Settings (конфигурация)
-- Python-dotenv (переменные окружения)
-
-### AI & ML Services
-
-**Транскрибация**
-- Fireworks AI (whisper-v3-turbo)
+**Транскрибация (`Fireworks AI`):**
+- `whisper-v3-turbo` для точной транскрибации
 - Поддержка больших файлов
-- Автоматические retry
-- Ограничение параллелизма
+- Automatic chunking и retry
 
-**Структурирование контента**
-- DeepSeek API (deepseek-chat)
-- Извлечение тем
-- Генерация таймкодов
-- Определение перерывов
+**Извлечение структуры (`DeepSeek`):**
+- Определение основных и детализированных тем
+- Автоматическая генерация таймкодов (`HH:MM:SS`)
+- Обнаружение перерывов и пауз
 
-### External APIs
+**Субтитры:**
+- Генерация `SRT` и `VTT` файлов
+- Поддержка multiple языков
 
-**Интеграции**
-- Zoom API (OAuth 2.0) — получение записей
-- YouTube Data API v3 — загрузка видео и субтитров
-- VK API — публикация в сообществах
+### Этап 4: 📝 Формирование метаданных
 
-### Security
+**Автоматическая генерация:**
+- Структурированное описание с таймкодами
+- Заголовок на основе шаблона
+- Подбор миниатюр (thumbnails)
+- Применение user config и templates
 
-**Аутентификация и авторизация**
-- JWT tokens (access + refresh)
-- Fernet encryption для credentials
-- PBKDF2 password hashing
-- Role-based access control (RBAC)
+**Template-Based:**
+- Matching rules для автоматического применения
+- Пресеты для разных типов контента
+- Настройка через API или config файлы
 
-### Development Tools
+### Этап 5: 📤 Публикация
 
-**Development & Testing**
-- UV (быстрый менеджер пакетов)
-- Ruff (современный линтер)
-- Docker & Docker Compose
-- Make (автоматизация команд)
+**YouTube:**
+- Загрузка видео через `YouTube Data API v3`
+- Автоматическая загрузка субтитров
+- Добавление в плейлисты
+- Настройка privacy и категории
 
-**Мониторинг**
-- Structured logging
-- Flower (Celery monitoring)
-- Health check endpoints
+**VK:**
+- Загрузка в сообщества
+- Добавление в альбомы
+- Настройка видимости
+
+**Multi-Platform:**
+- Параллельная загрузка на несколько платформ
+- Tracking статусов для каждой
+- Retry при сбоях
+
+### Этап 6: 📊 Мониторинг
+
+**Real-Time Tracking:**
+- Progress tracking для каждого этапа
+- Журнал операций
+- Usage tracking (AI costs, storage)
+- Audit logs
+
+**Automation:**
+- Scheduled jobs через `Celery Beat`
+- Automatic retry при ошибках
+- Notifications (планируется)
 
 ---
 
-## Быстрый старт
+## 🚀 Почему этот проект
 
-### Требования
+### Enterprise-Ready Features
 
-**Обязательные компоненты:**
-- Python 3.8+ (рекомендуется 3.11+)
-- PostgreSQL 12+
-- Redis (для Celery)
-- FFmpeg
+**⚡ 64 REST API Endpoints**
+- Полноценный `CRUD` для всех сущностей
+- `JWT` аутентификация + `RBAC`
+- `OpenAPI` документация (`Swagger`, `ReDoc`)
+- Асинхронная архитектура на `FastAPI`
 
-**Рекомендуемые характеристики:**
-- CPU: 4+ ядра
-- RAM: 8+ GB
-- Диск: SSD, 100+ GB для видео
-- Сеть: 10+ Мбит/с
+**👥 Multi-Tenancy из коробки**
+- Полная изоляция данных пользователей
+- Шифрование credentials (`Fernet`)
+- User-isolated file storage
+- Квоты и rate limiting
 
-**API ключи:**
-- Zoom API (OAuth 2.0 credentials)
-- YouTube Data API v3 (Google Cloud OAuth)
-- VK API (Access Token)
-- Fireworks AI (API key)
-- DeepSeek (API key)
+**🔐 Production Security**
+- `OAuth 2.0` интеграция (YouTube, VK)
+- Automatic token refresh
+- `CSRF` protection через `Redis`
+- Encrypted credentials в БД
 
-### Установка
+**🤖 Smart Automation**
+- `Celery Beat` scheduling
+- Declarative job configuration
+- Automatic sync + process + upload
+- Dry-run mode для preview
 
-```bash
-# 1. Установка UV (рекомендуется)
-curl -LsSf https://astral.sh/uv/install.sh | sh
+**📊 AI-Powered Processing**
+- `Fireworks AI` (`whisper-v3-turbo`) для транскрибации
+- `DeepSeek` для извлечения тем
+- Автоматическая генерация таймкодов
+- Генерация субтитров (`SRT`, `VTT`)
 
-# 2. Установка зависимостей
-uv sync
+---
 
-# Альтернативно через pip
-pip install -r requirements.txt
+## 📈 Key Metrics
+
+```
+📊 API Endpoints:        64
+🗄️  Database Migrations:  14
+🔌 Platform Integrations: 3 (Zoom, YouTube, VK)
+🤖 AI Models:            2 (Whisper, DeepSeek)
+🔒 Security Features:    JWT + OAuth2 + RBAC + Encryption
+⚡ Processing Pipeline:  6 stages, fully automated
 ```
 
-### Настройка
+---
 
-**1. База данных**
+## 💎 Ключевые преимущества
 
-```bash
-# Запуск PostgreSQL через Docker
-make docker-up
+### ⚡ Производительность
 
-# Инициализация БД (создание + миграции)
-make init-db
+**80%+ экономия времени**
+- Полная автоматизация: от синхронизации до публикации
+- Batch processing для массовой обработки
+- Concurrent execution с оптимизацией ресурсов
+- Scheduled automation — публикация в фоне
+
+**Масштабируемость**
+- Multi-tenant архитектура для тысяч пользователей
+- Horizontal scaling через `Celery` workers
+- Async-first для высокой пропускной способности
+- Resource quotas для fair usage
+
+### 🤖 AI-Powered Intelligence
+
+**Smart Content Processing**
+- `Fireworks AI` (`whisper-v3-turbo`) — точная транскрибация
+- `DeepSeek` — интеллектуальное извлечение тем
+- Автоматические таймкоды для навигации
+- Генерация субтитров (`SRT`, `VTT`)
+
+**Video Enhancement**
+- `FFmpeg` — удаление тишины и пауз
+- Automatic trimming начала/конца
+- Audio extraction для AI processing
+- Quality optimization
+
+### 🏢 Enterprise-Grade
+
+**Security & Compliance**
+- `OAuth 2.0` + `JWT` authentication
+- `Fernet` encryption для credentials
+- `RBAC` для управления доступом
+- Audit logs и usage tracking
+
+**Production-Ready**
+- 64 REST API endpoints с `OpenAPI` docs
+- Health checks и monitoring (`Flower`)
+- Automatic retry mechanisms
+- Error handling и graceful degradation
+
+---
+
+## 🛠️ Технологический стек
+
+### Modern Python Stack
+
+**Core Framework**
+```
+Python 3.11+ • FastAPI (async) • SQLAlchemy 2.0 (async ORM)
+PostgreSQL 12+ • Redis • Celery + Beat • Alembic
 ```
 
-**2. Переменные окружения**
-
-Создайте файл `.env`:
-
-```env
-# Database
-DATABASE_HOST=localhost
-DATABASE_PORT=5432
-DATABASE_NAME=zoom_manager
-DATABASE_USERNAME=postgres
-DATABASE_PASSWORD=postgres
-
-# API
-API_JWT_SECRET_KEY=your-secret-key-change-in-production
-
-# Celery (optional)
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/0
-
-# General
-TIMEZONE=Europe/Moscow
+**AI & ML**
+```
+Fireworks AI (whisper-v3-turbo) • DeepSeek API
+FFmpeg • Pydantic V2
 ```
 
-**3. API ключи**
+**External Integrations**
+```
+Zoom API (OAuth 2.0) • YouTube Data API v3 • VK API
+```
 
-Создайте файлы конфигурации в папке `config/`:
-- `zoom_creds.json`
-- `youtube_creds.json`
-- `vk_creds.json`
-- `fireworks_creds.json`
-- `deepseek_creds.json`
+**Security Stack**
+```
+JWT Authentication • OAuth 2.0 • Fernet Encryption
+PBKDF2 Hashing • RBAC • CSRF Protection
+```
 
-Подробные инструкции: [Руководство по развертыванию](docs/DEPLOYMENT.md)
+**DevOps & Tools**
+```
+Docker & Docker Compose • UV (package manager)
+Ruff (linter) • Flower (monitoring) • Make
+```
 
-### Запуск
+### Архитектурные паттерны
 
-**Вариант 1: Docker Compose (рекомендуется для production)**
+- **Repository Pattern** — изоляция доступа к данным
+- **Factory Pattern** — создание сервисов с credentials
+- **Service Context** — централизованный контекст выполнения
+- **Config-Driven** — template-based автоматизация
+- **Async-First** — полностью асинхронная архитектура
+
+---
+
+## 🚀 Быстрый старт
+
+### Production Deployment
 
 ```bash
-# Запуск всего стека
+# Docker Compose (рекомендуется)
 docker-compose up -d
 
 # Проверка статуса
 docker-compose ps
-
-# Просмотр логов
-docker-compose logs -f celery_worker
 ```
 
-**Вариант 2: Локальная разработка**
-
-```bash
-# Terminal 1: Инфраструктура (Postgres + Redis)
-make docker-up
-
-# Terminal 2: FastAPI
-make api
-
-# Terminal 3: Celery Worker
-make celery
-
-# Terminal 4: Flower (мониторинг, опционально)
-make flower
-```
-
-**Доступ к сервисам:**
+**Доступ:**
 - API: http://localhost:8000
 - Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
 - Flower: http://localhost:5555
 
-### Основные команды
+### Development Setup
 
 ```bash
-# Синхронизация с Zoom
-python main.py sync --last 7
+# 1. Установка зависимостей (UV рекомендуется)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync
 
-# Полный пайплайн
-python main.py full-process --all
+# 2. Запуск инфраструктуры
+make docker-up
 
-# Просмотр записей
-python main.py list --last 7
+# 3. Инициализация БД
+make init-db
 
-# Генерация субтитров
-python main.py subtitles --all
-
-# Добавление локального видео
-python main.py add-video "/path/to/video.mp4" --name "Лекция 1"
+# 4. Запуск API
+make api
 ```
 
-Полный список команд: [Техническая документация](docs/TECHNICAL.md)
+### Требования
+
+**Система:**
+- `Python 3.11+` • `PostgreSQL 12+` • `Redis` • `FFmpeg`
+- CPU: 4+ cores • RAM: 8+ GB • SSD: 100+ GB
+
+**API Keys:**
+- `Zoom` • `YouTube` • `VK` • `Fireworks AI` • `DeepSeek`
+
+📖 Подробные инструкции: [DEPLOYMENT.md](docs/DEPLOYMENT.md) • [OAUTH_SETUP.md](docs/OAUTH_SETUP.md)
 
 ---
 
-## REST API
+## 🌐 REST API (64 endpoints)
 
-### Endpoints (49 total)
+Production-ready `REST API` с полной `OpenAPI` документацией:
 
-Платформа предоставляет полноценный production-ready REST API:
+### Основные группы
 
-**Authentication** (`/api/v1/auth`)
-- POST `/register` — регистрация
-- POST `/login` — вход
-- POST `/refresh` — обновление токена
-- POST `/logout` — выход
-- GET `/me` — информация о пользователе
+| Группа | Endpoints | Описание |
+|--------|-----------|----------|
+| 🔐 **Authentication** | 5 | Register, Login, Refresh, Logout, Profile |
+| 👤 **User Management** | 6 | Profile, Config, Password, Account deletion |
+| 🎥 **Recordings** | 15+ | CRUD, Processing pipeline, Batch operations |
+| 🔑 **Credentials** | 4 | Encrypted storage для API keys |
+| 📋 **Templates** | 8+ | Template-based automation rules |
+| 🔌 **OAuth** | 4 | YouTube & VK OAuth 2.0 flows |
+| 🤖 **Automation** | 6 | Scheduled jobs, Celery Beat integration |
+| 📊 **Tasks** | 4+ | Async task monitoring & management |
+| 🖼️ **Thumbnails** | 4 | Multi-tenant thumbnail system |
+| 🎯 **Sources & Presets** | 8+ | Data sources, Upload presets |
 
-**User Management** (`/api/v1/users`)
-- PATCH `/me` — обновление профиля
-- POST `/me/password` — смена пароля
-- DELETE `/me` — удаление аккаунта
+**Документация:**
+- 📖 Interactive API: http://localhost:8000/docs (`Swagger UI`)
+- 📘 Alternative Docs: http://localhost:8000/redoc (`ReDoc`)
+- 🔧 Technical Details: [TECHNICAL.md](docs/TECHNICAL.md#rest-api-endpoints)
 
-**Recordings** (`/api/v1/recordings`)
-- GET `/` — список записей (с фильтрацией)
-- POST `/` — добавление локального видео
-- POST `/{id}/download` — загрузка из Zoom
-- POST `/{id}/process` — обработка видео
-- POST `/{id}/transcribe` — транскрибация
-- POST `/{id}/upload/{platform}` — публикация
-- POST `/{id}/full-pipeline` — полный цикл
-- POST `/batch-process` — массовая обработка
-
-**Credentials** (`/api/v1/credentials`)
-- GET `/` — список credentials
-- POST `/` — создание
-- PUT `/{id}` — обновление
-- DELETE `/{id}` — удаление
-
-**Templates, Sources, Presets** (`/api/v1/*`)
-- Полный CRUD для шаблонов обработки
-- Управление источниками данных
-- Настройка пресетов публикации
-
-**Tasks** (`/api/v1/tasks`)
-- GET `/{id}` — статус задачи
-- DELETE `/{id}` — отмена задачи
-
-Полная документация API: [Техническая документация](docs/TECHNICAL.md#rest-api-endpoints)
-
-### Автоматизация через шаблоны
-
-Система поддерживает автоматическое применение правил обработки:
+### Template-Based Automation Example
 
 ```json
 {
-  "name": "Лекции ML",
+  "name": "ML Lectures Auto-Publish",
   "matching_rules": {
     "name_pattern": "Лекция*",
     "source_type": "ZOOM"
@@ -369,241 +359,140 @@ python main.py add-video "/path/to/video.mp4" --name "Лекция 1"
     "video": {"remove_silence": true},
     "transcription": {"model": "whisper-v3-turbo"}
   },
-  "metadata_config": {
-    "title_template": "{original_title} - {date}",
-    "description_template": "Темы:\n{topics_list}"
+  "output_targets": {
+    "youtube": {"playlist_id": "PLxxx", "privacy": "public"},
+    "vk": {"album_id": "12345"}
   }
 }
 ```
 
 ---
 
-## Multi-Tenancy архитектура
+## 🏗️ Enterprise Architecture
 
-### Изоляция данных
+### Multi-Tenancy
 
-**Database Level**
-- Все таблицы с user_id
-- Автоматическая фильтрация по пользователю
-- Индексы для производительности
+**3-Level Data Isolation**
+```
+Database:    user_id filtering + indexes
+Service:     ServiceContext + ConfigHelper
+File System: media/user_{user_id}/ isolation
+```
 
-**Service Level**
-- ServiceContext pattern
-- ConfigHelper для credentials
-- Factory pattern для создания сервисов
+### Security
 
-**File System**
-- Изоляция: `media/user_{user_id}/`
-- Автоматическое управление путями
-- UserPathManager
+**Authentication & Authorization**
+- `JWT` (access + refresh) • `OAuth 2.0` • `RBAC`
+- `Fernet` encryption • `PBKDF2` hashing
+- `CSRF` protection via `Redis`
 
-### Безопасность
-
-**Аутентификация**
-- JWT tokens (access + refresh)
-- Secure password hashing (PBKDF2)
-- Token rotation
-
-**Шифрование**
-- Fernet для credentials в БД
-- Автоматическое дешифрование через CredentialService
-- Защита от утечек
-
-**Авторизация**
-- Role-based access (admin/user)
-- Endpoint-level permissions
-- Resource ownership validation
-
-### Управление ресурсами
-
-**Квоты**
-- API requests per minute/hour
-- Storage limits
-- Processing limits
-- Concurrent tasks
-
-**Rate Limiting**
-- 60 requests/minute
-- 1000 requests/hour
-- Автоматическая блокировка при превышении
-
-**Мониторинг**
-- Usage tracking
-- Audit logging
-- Performance metrics
-
----
-
-## Архитектура и компоненты
+**Resource Management**
+- Rate limiting (60/min, 1000/hr)
+- Storage & processing quotas
+- Concurrent task limits
+- Usage tracking & audit logs
 
 ### Модульная структура
 
-**API Module**
-- FastAPI endpoints
-- JWT authentication
-- Request validation
-- Error handling
+```
+api/                 ← FastAPI endpoints, JWT auth, validation
+database/            ← SQLAlchemy models, Alembic migrations
+*_module/            ← Processing modules (video, transcription, upload)
+api/services/        ← Business logic layer
+api/repositories/    ← Data access layer (Repository pattern)
+api/tasks/           ← Celery background tasks
+```
 
-**Database Module**
-- SQLAlchemy models
-- Alembic migrations
-- Repository pattern
-- Async operations
+**Design Patterns:**
+- **Repository** — data access isolation
+- **Factory** — service creation with credentials
+- **Service Context** — unified execution context
+- **Config-Driven** — template-based automation
 
-**Processing Modules**
-- Video download
-- FFmpeg processing
-- Transcription (Fireworks AI)
-- Topic extraction (DeepSeek)
-- Subtitle generation
-- Upload (YouTube, VK)
-
-**Background Tasks**
-- Celery integration
-- Progress tracking
-- Automatic retry
-- Result storage
-
-### Ключевые паттерны
-
-**ServiceContext**
-- Централизованный контекст выполнения
-- Передача session + user_id
-- Lazy-loading ConfigHelper
-
-**ConfigHelper**
-- Унифицированный доступ к credentials
-- Автоматическое дешифрование
-- Platform-specific методы
-
-**Factory Pattern**
-- TranscriptionServiceFactory
-- UploaderFactory
-- Создание сервисов с правильными credentials
-
-**Repository Pattern**
-- Изоляция доступа к данным
-- Автоматическая фильтрация по user_id
-- Асинхронные операции
-
-Подробнее: [Техническая документация](docs/TECHNICAL.md)
+📖 Детали: [TECHNICAL.md](docs/TECHNICAL.md) • [ADR.md](docs/ADR.md)
 
 ---
 
-## Статусы обработки
+## 📊 Processing Pipeline
 
-| Статус | Описание |
-|--------|----------|
-| INITIALIZED | Инициализировано |
-| DOWNLOADING | Загрузка из источника |
-| DOWNLOADED | Загружено |
-| PROCESSING | Обработка видео |
-| PROCESSED | Обработано |
-| TRANSCRIBING | Транскрибация |
-| TRANSCRIBED | Транскрибировано |
-| UPLOADING | Публикация |
-| UPLOADED | Опубликовано |
-| FAILED | Ошибка |
-| SKIPPED | Пропущено |
-| EXPIRED | Устарело |
+**Status Flow:**
+```
+INITIALIZED → DOWNLOADING → DOWNLOADED → 
+PROCESSING → PROCESSED → PREPARING → 
+TRANSCRIBED → UPLOADING → READY
+```
+
+**Special Statuses:**
+- `SKIPPED` — пропущено (config-driven)
+- `EXPIRED` — устарело (TTL exceeded)
 
 ---
 
-## Документация
+## 📚 Документация
 
-### Основные документы
+| Документ | Описание |
+|----------|----------|
+| 📖 [TECHNICAL.md](docs/TECHNICAL.md) | Полная техническая документация (API, Architecture, Security) |
+| 🚀 [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production deployment guide |
+| 🏛️ [ADR.md](docs/ADR.md) | Architecture Decision Records |
+| 📜 [WHAT_WAS_DONE.md](docs/WHAT_WAS_DONE.md) | Детальная история проекта |
+| 🎯 [PLAN.md](docs/PLAN.md) | Цели и задачи проекта |
 
-**[План ВКР](docs/PLAN.md)**
-- Цели и задачи проекта
-- Исследовательская часть
-- Планируемое развитие
-
-**[История проекта](docs/WHAT_WAS_DONE.md)**
-- Детальная хронология всех изменений
-- Реализованные функции
-- Технические детали
-
-**[Архитектурные решения](docs/ADR.md)**
-- Ключевые технические решения
-- Обоснования выбора технологий
-- Lessons learned
-
-**[Техническая документация](docs/TECHNICAL.md)**
-- Архитектура системы
-- REST API (49 endpoints)
-- Настройка БД и миграции
-- Модули обработки
-- Безопасность
-
-**[Руководство по развертыванию](docs/DEPLOYMENT.md)**
-- Установка и настройка
-- Production deployment
-- Мониторинг
-- Troubleshooting
+**OAuth & Automation:**
+- 🔐 [OAUTH_SETUP.md](docs/OAUTH_SETUP.md) — настройка за 30 минут
+- 🔧 [OAUTH_TECHNICAL.md](docs/OAUTH_TECHNICAL.md) — техническая спецификация
+- 🤖 [AUTOMATION_IMPLEMENTATION_PLAN.md](docs/AUTOMATION_IMPLEMENTATION_PLAN.md) — система автоматизации
 
 ---
 
-## Последние обновления
+## 🆕 Latest Release: v0.9.1
 
-### v2.1 (2026-01-05) - Async Processing
+**Major Features:**
 
-**Новое:**
-- Асинхронная обработка задач (Celery + Redis)
-- Progress tracking в реальном времени
-- Automatic retry на ошибках
-- Horizontal scaling support
-- Flower для мониторинга задач
+🔐 **OAuth 2.0 Integration**
+- Web-based flow для YouTube & VK
+- Auto-refresh tokens • CSRF protection
+- Multi-tenant credential management
 
-**Улучшения:**
-- API response time < 50ms
-- Unlimited concurrent users
-- Improved error handling
-- Better logging
+🤖 **Automation System**
+- Celery Beat scheduling
+- Declarative config (time/cron/weekdays)
+- Dry-run mode • Quota management
 
-### v2.0 (2025-01-02) - Production-Ready
+⭐ **Config-Driven Architecture**
+- Template-based automation
+- Deep merge updates • FSM state management
+- SKIPPED records handling
 
-**Новое:**
-- REST API (49 endpoints)
-- JWT аутентификация
-- Multi-tenancy архитектура
-- Система шаблонов
-- Роли и права доступа
-- Квоты и rate limiting
+📊 **Enhanced Processing**
+- Decoupled pipeline (transcribe → topics → subtitles)
+- Topic versioning • Cost tracking
+- Multi-tenant thumbnails system
 
-**База данных:**
-- 4 новые таблицы (templates, sources, presets, configs)
-- Template Matcher
-- UserPathManager
-- Credential encryption
+**Statistics:**
+```
+API Endpoints:  49 → 64 (+15)
+DB Migrations:  8 → 14 (+6)
+New Models:     AutomationJobModel, FSM fields
+New Statuses:   PREPARING, READY
+```
 
-### v0.7.3 - Core Features
-
-**Функциональность:**
-- Асинхронный TokenManager для Zoom
-- Fireworks ASR с валидацией
-- Извлечение тем через DeepSeek
-- Генерация субтитров (SRT, VTT)
-- Нормализованные модели БД
-- Multi-source/multi-output support
-
-Полная история: [История проекта](docs/WHAT_WAS_DONE.md)
+📜 Полная история: [WHAT_WAS_DONE.md](docs/WHAT_WAS_DONE.md)
 
 ---
 
-## Лицензия
+## 📄 Лицензия
 
-См. файл [LICENSE](LICENSE)
+**Business Source License 1.1**
 
----
-
-## Контакты и поддержка
-
-**Документация:** [docs/](docs/)
-**API Docs:** http://localhost:8000/docs
-**Issues:** Создавайте issue в репозитории
+Проект распространяется под лицензией Business Source License 1.1. См. файл [LICENSE](LICENSE) для полной информации.
 
 ---
 
-**Версия:** v2.1  
-**Статус:** Production-Ready  
-**Последнее обновление:** 5 января 2026
+## 📞 Контакты
+
+**Документация:** [папка `docs`](docs/)
+
+---
+
+**Версия:** `v0.9.1` • **Статус:** Dev Status

@@ -1,0 +1,6 @@
+{
+  "app_id": "YOUR_VK_APP_ID_HERE",
+  "client_secret": "YOUR_VK_CLIENT_SECRET_HERE",
+  "redirect_uri": "http://localhost:8080/api/v1/oauth/vk/callback"
+}
+

@@ -28,6 +28,8 @@ from api.schemas.auth import (
     UserUpdate,
 )
 from logger import get_logger
+from utils.thumbnail_manager import get_thumbnail_manager
+from utils.user_paths import get_path_manager
 
 logger = get_logger()
 settings = get_settings()
@@ -86,6 +88,14 @@ async def register(request: RegisterRequest, session: AsyncSession = Depends(get
             default_config = json.load(f)
 
         await config_repo.create(user_id=user.id, config_data=default_config)
+
+    # Создать директории пользователя
+    path_manager = get_path_manager()
+    path_manager.ensure_user_directories(user.id)
+
+    # Инициализировать thumbnails (создать пустую папку)
+    thumbnail_manager = get_thumbnail_manager()
+    thumbnail_manager.initialize_user_thumbnails(user.id, copy_templates=False)
 
     await session.commit()
 

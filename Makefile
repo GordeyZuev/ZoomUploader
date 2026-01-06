@@ -26,38 +26,48 @@ api-prod:
 # Celery: Запуск worker (все очереди)
 .PHONY: celery
 celery:
-	uv run celery -A api.celery_app worker --loglevel=info --queues=processing,upload --concurrency=4
+	PYTHONPATH=$$PWD:$$PYTHONPATH uv run celery -A api.celery_app worker --loglevel=info --queues=processing,upload --concurrency=4
 
 # Celery: Запуск worker только для processing
 .PHONY: celery-processing
 celery-processing:
-	uv run celery -A api.celery_app worker --loglevel=info -Q processing --concurrency=2
+	PYTHONPATH=$$PWD:$$PYTHONPATH uv run celery -A api.celery_app worker --loglevel=info -Q processing --concurrency=2
 
 # Celery: Запуск worker только для upload
 .PHONY: celery-upload
 celery-upload:
-	uv run celery -A api.celery_app worker --loglevel=info -Q upload --concurrency=2
+	PYTHONPATH=$$PWD:$$PYTHONPATH uv run celery -A api.celery_app worker --loglevel=info -Q upload --concurrency=2
 
 # Celery: Запуск Flower (мониторинг)
 .PHONY: flower
 flower:
-	uv run celery -A api.celery_app flower --port=5555
+	PYTHONPATH=$$PWD:$$PYTHONPATH uv run celery -A api.celery_app flower --port=5555
+
+# Celery Beat: Запуск scheduler (для automation jobs)
+.PHONY: celery-beat
+celery-beat:
+	PYTHONPATH=$$PWD:$$PYTHONPATH uv run celery -A api.celery_app beat --loglevel=info --scheduler celery_sqlalchemy_scheduler.schedulers:DatabaseScheduler
+
+# Celery: Запуск worker + beat вместе (dev mode)
+.PHONY: celery-dev
+celery-dev:
+	PYTHONPATH=$$PWD:$$PYTHONPATH uv run celery -A api.celery_app worker --beat --loglevel=info --queues=processing,upload,automation --concurrency=4
 
 # Celery: Проверить активные tasks
 .PHONY: celery-status
 celery-status:
 	@echo "📊 Active workers:"
-	@uv run celery -A api.celery_app inspect active
+	@PYTHONPATH=$$PWD:$$PYTHONPATH uv run celery -A api.celery_app inspect active
 	@echo "\n📋 Registered tasks:"
-	@uv run celery -A api.celery_app inspect registered
+	@PYTHONPATH=$$PWD:$$PYTHONPATH uv run celery -A api.celery_app inspect registered
 	@echo "\n📈 Stats:"
-	@uv run celery -A api.celery_app inspect stats
+	@PYTHONPATH=$$PWD:$$PYTHONPATH uv run celery -A api.celery_app inspect stats
 
 # Celery: Очистить все задачи из очередей
 .PHONY: celery-purge
 celery-purge:
 	@echo "⚠️  Удаление всех задач из очередей..."
-	@uv run celery -A api.celery_app purge -f
+	@PYTHONPATH=$$PWD:$$PYTHONPATH uv run celery -A api.celery_app purge -f
 	@echo "✅ Очереди очищены!"
 
 # Docker: Запуск PostgreSQL и Redis
@@ -140,6 +150,8 @@ help:
 	@echo "  make api            - Запуск FastAPI (dev режим)"
 	@echo "  make api-prod       - Запуск FastAPI (production)"
 	@echo "  make celery         - Запуск Celery worker"
+	@echo "  make celery-beat    - Запуск Celery Beat (automation scheduler)"
+	@echo "  make celery-dev     - Запуск worker + beat вместе (dev)"
 	@echo "  make flower         - Запуск Flower (мониторинг)"
 	@echo "  make docker-up      - Запуск PostgreSQL + Redis"
 	@echo "  make docker-down    - Остановка сервисов"

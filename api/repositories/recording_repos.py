@@ -136,6 +136,8 @@ class RecordingAsyncRepository:
             is_mapped=kwargs.get("is_mapped", False),
             video_file_size=kwargs.get("video_file_size"),
             expire_at=kwargs.get("expire_at"),
+            local_video_path=kwargs.get("local_video_path"),
+            processed_video_path=kwargs.get("processed_video_path"),
         )
 
         self.session.add(recording)
@@ -312,6 +314,155 @@ class RecordingAsyncRepository:
 
         result = await self.session.execute(query)
         return result.scalar() or 0
+
+    async def find_by_source_key(
+        self,
+        user_id: int,
+        source_type: SourceType,
+        source_key: str,
+        start_time: datetime,
+    ) -> RecordingModel | None:
+        """
+        Найти запись по source_key, source_type и start_time.
+
+        Args:
+            user_id: ID пользователя
+            source_type: Тип источника
+            source_key: Ключ источника (meeting_id для Zoom)
+            start_time: Время начала
+
+        Returns:
+            Recording или None
+        """
+        query = (
+            select(RecordingModel)
+            .options(
+                selectinload(RecordingModel.source),
+                selectinload(RecordingModel.outputs),
+                selectinload(RecordingModel.processing_stages),
+                selectinload(RecordingModel.input_source),
+            )
+            .join(SourceMetadataModel)
+            .where(
+                RecordingModel.user_id == user_id,
+                SourceMetadataModel.source_type == source_type,
+                SourceMetadataModel.source_key == source_key,
+                RecordingModel.start_time == start_time,
+            )
+        )
+
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def create_or_update(
+        self,
+        user_id: int,
+        input_source_id: int | None,
+        display_name: str,
+        start_time: datetime,
+        duration: int,
+        source_type: SourceType,
+        source_key: str,
+        source_metadata: dict[str, Any] | None = None,
+        **kwargs,
+    ) -> tuple[RecordingModel, bool]:
+        """
+        Создать или обновить запись (upsert логика).
+
+        Args:
+            user_id: ID пользователя
+            input_source_id: ID источника
+            display_name: Название записи
+            start_time: Время начала
+            duration: Длительность
+            source_type: Тип источника
+            source_key: Ключ источника
+            source_metadata: Метаданные источника
+            **kwargs: Дополнительные поля
+
+        Returns:
+            Tuple (запись, был_ли_создан_новый)
+        """
+        # Проверяем существующую запись
+        existing = await self.find_by_source_key(user_id, source_type, source_key, start_time)
+
+        if existing:
+            # Обновляем существующую запись, но только если статус не UPLOADED
+            if existing.status != ProcessingStatus.UPLOADED:
+                existing.display_name = display_name
+                existing.duration = duration
+                existing.video_file_size = kwargs.get("video_file_size", existing.video_file_size)
+
+                # Обновляем is_mapped если передан
+                if "is_mapped" in kwargs:
+                    old_is_mapped = existing.is_mapped
+                    existing.is_mapped = kwargs["is_mapped"]
+
+                    # Если is_mapped изменился, обновляем статус
+                    if old_is_mapped != existing.is_mapped and existing.status in [ProcessingStatus.INITIALIZED, ProcessingStatus.SKIPPED]:
+                        existing.status = ProcessingStatus.INITIALIZED if existing.is_mapped else ProcessingStatus.SKIPPED
+
+                # Обновляем source metadata
+                if existing.source:
+                    existing_meta = existing.source.meta or {}
+                    merged_meta = dict(existing_meta)
+                    merged_meta.update(source_metadata or {})
+                    existing.source.meta = merged_meta
+
+                existing.updated_at = datetime.utcnow()
+
+                logger.info(
+                    f"Updated existing recording {existing.id} for user {user_id} (status={existing.status})"
+                )
+
+                await self.session.flush()
+                return existing, False
+            else:
+                # Запись уже загружена, не обновляем
+                logger.info(
+                    f"Skipped updating recording {existing.id} - already uploaded"
+                )
+                return existing, False
+        else:
+            # Создаем новую запись
+            is_mapped = kwargs.get("is_mapped", False)
+            status = ProcessingStatus.INITIALIZED if is_mapped else ProcessingStatus.SKIPPED
+
+            recording = RecordingModel(
+                user_id=user_id,
+                input_source_id=input_source_id,
+                display_name=display_name,
+                start_time=start_time,
+                duration=duration,
+                status=status,
+                is_mapped=is_mapped,
+                video_file_size=kwargs.get("video_file_size"),
+                expire_at=kwargs.get("expire_at"),
+                local_video_path=kwargs.get("local_video_path"),
+                processed_video_path=kwargs.get("processed_video_path"),
+            )
+
+            self.session.add(recording)
+            await self.session.flush()
+
+            # Создаем source metadata
+            source = SourceMetadataModel(
+                recording_id=recording.id,
+                user_id=user_id,
+                input_source_id=input_source_id,
+                source_type=source_type,
+                source_key=source_key,
+                meta=source_metadata or {},
+            )
+
+            self.session.add(source)
+            await self.session.flush()
+
+            logger.info(
+                f"Created new recording {recording.id} for user {user_id} (is_mapped={is_mapped}, status={status})"
+            )
+
+            return recording, True
 
     async def delete(self, recording: RecordingModel) -> None:
         """
