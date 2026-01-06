@@ -18,10 +18,10 @@ class APISettings(BaseSettings):
     )
 
     # API
-    api_title: str = Field(default="Zoom Publishing Platform API", description="Название API")
-    api_version: str = Field(default="1.0.0", description="Версия API")
+    api_title: str = Field(default="LEAP API - Lecture Enhancement & Automation Platform", description="Название API")
+    api_version: str = Field(default="0.9.1", description="Версия API")
     api_description: str = Field(
-        default="API для автоматизированной обработки видеоконтента", description="Описание API"
+        default="AI-powered platform for intelligent educational video content processing", description="Описание API"
     )
     docs_url: str = Field(default="/docs", description="URL документации Swagger")
     redoc_url: str = Field(default="/redoc", description="URL документации ReDoc")

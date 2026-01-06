@@ -1,13 +1,13 @@
-# 🎥 Zoom Publishing Platform
+# 🎥 LEAP
 
-> **Multi-Tenant Platform для автоматической обработки и публикации видеоконтента**
+> **AI-powered platform for intelligent educational video content processing**
 
 ![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-async-green.svg)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-12+-blue.svg)
 ![License](https://img.shields.io/badge/license-BSL%201.1-orange.svg)
 
-Production-ready платформа с полным `REST API` для автоматизации end-to-end обработки образовательного контента — от загрузки до публикации с AI-транскрибацией, структурированием и профессиональным оформлением.
+**LEAP** — это production-ready multi-tenant платформа с полным `REST API` для автоматизации end-to-end обработки образовательного видеоконтента — от загрузки до публикации с AI-транскрибацией, интеллектуальным структурированием и профессиональным оформлением.
 
 **Версия:** `v0.9.1` (Dev Status)  
 **Tech:** `Python 3.11+` • `FastAPI` • `PostgreSQL` • `Redis` • `Celery` • `AI` (Whisper, DeepSeek)

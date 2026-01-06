@@ -1,3 +1,3 @@
-"""FastAPI application for Zoom Publishing Platform."""
+"""FastAPI application for LEAP."""
 
-__version__ = "1.0.0"
+__version__ = "0.9.1"

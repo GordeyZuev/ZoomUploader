@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Starting Zoom Publishing Platform..."
+echo "🚀 Starting LEAP..."
 
 # Ждем, пока PostgreSQL будет готов
 echo "⏳ Waiting for PostgreSQL..."

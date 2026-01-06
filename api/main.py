@@ -128,7 +128,7 @@ app.include_router(automation.router)
 async def root():
     """Корневой endpoint."""
     return {
-        "message": "Zoom Publishing Platform API",
+        "message": "LEAP API - Lecture Enhancement & Automation Platform",
         "version": settings.api_version,
         "docs": settings.docs_url,
     }

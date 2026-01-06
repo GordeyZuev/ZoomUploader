@@ -3,9 +3,9 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: zoom_postgres
+    container_name: leap_postgres
     environment:
-      POSTGRES_DB: zoom_publishing
+      POSTGRES_DB: leap_platform
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     volumes:
@@ -20,7 +20,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: zoom_redis
+    container_name: leap_redis
     ports:
       - "6379:6379"
     healthcheck:
@@ -32,12 +32,12 @@ services:
   # API (комментируем для локальной разработки, раскомментируйте для production)
   # api:
   #   build: .
-  #   container_name: zoom_api
+  #   container_name: leap_api
   #   command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 4
   #   environment:
   #     DATABASE_HOST: postgres
   #     DATABASE_PORT: 5432
-  #     DATABASE_NAME: zoom_publishing
+  #     DATABASE_NAME: leap_platform
   #     DATABASE_USERNAME: postgres
   #     DATABASE_PASSWORD: ${DB_PASSWORD:-postgres}
   #     CELERY_BROKER_URL: redis://redis:6379/0
@@ -56,12 +56,12 @@ services:
   # Celery Worker
   celery_worker:
     build: .
-    container_name: zoom_celery_worker
+    container_name: leap_celery_worker
     command: celery -A api.celery_app worker --loglevel=info --queues=processing,upload --concurrency=4
     environment:
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
-      DATABASE_NAME: zoom_publishing
+      DATABASE_NAME: leap_platform
       DATABASE_USERNAME: postgres
       DATABASE_PASSWORD: ${DB_PASSWORD:-postgres}
       CELERY_BROKER_URL: redis://redis:6379/0
@@ -77,7 +77,7 @@ services:
   # Celery Flower (мониторинг)
   flower:
     build: .
-    container_name: zoom_flower
+    container_name: leap_flower
     command: celery -A api.celery_app flower --port=5555
     environment:
       CELERY_BROKER_URL: redis://redis:6379/0
@@ -93,5 +93,5 @@ volumes:
 
 networks:
   default:
-    name: zoom_network
+    name: leap_network
 

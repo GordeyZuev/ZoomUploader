@@ -1,7 +1,7 @@
 [project]
-name = "zoomtest"
+name = "leap"
 version = "0.9.1"
-description = "Zoom video processing pipeline for automatic video downloads and uploads"
+description = "LEAP - Lecture Enhancement & Automation Platform for intelligent video content processing"
 readme = "README.md"
 license = {text = "Business Source License 1.1"}
 requires-python = ">=3.13"
