@@ -77,3 +77,42 @@ class InputSourceResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class BatchSyncRequest(BaseModel):
+    """Схема для batch sync запроса."""
+
+    source_ids: list[int] = Field(..., min_length=1, description="Список ID источников для синхронизации")
+    from_date: str = Field("2024-01-01", description="Дата начала в формате YYYY-MM-DD")
+    to_date: str | None = Field(None, description="Дата окончания в формате YYYY-MM-DD (опционально)")
+
+    @field_validator("source_ids")
+    @classmethod
+    def validate_source_ids(cls, v: list[int]) -> list[int]:
+        if not v:
+            raise ValueError("source_ids не может быть пустым")
+        if len(v) > 50:
+            raise ValueError("Максимум 50 источников за один раз")
+        return v
+
+
+class SourceSyncResult(BaseModel):
+    """Результат синхронизации одного источника."""
+
+    source_id: int
+    source_name: str | None = None
+    status: str  # "success" | "error"
+    recordings_found: int | None = None
+    recordings_saved: int | None = None
+    recordings_updated: int | None = None
+    error: str | None = None
+
+
+class BatchSyncResponse(BaseModel):
+    """Схема ответа для batch sync."""
+
+    message: str
+    total_sources: int
+    successful: int
+    failed: int
+    results: list[SourceSyncResult]
+

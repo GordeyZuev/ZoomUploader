@@ -50,14 +50,16 @@ def download_recording_task(
     recording_id: int,
     user_id: int,
     force: bool = False,
+    manual_override: dict | None = None,
 ) -> dict:
     """
-    Скачать запись из Zoom.
+    Скачать запись из Zoom (template-driven).
 
     Args:
         recording_id: ID записи
         user_id: ID пользователя
         force: Пересохранить если уже скачано
+        manual_override: Опциональное переопределение конфигурации
 
     Returns:
         Результат скачивания
@@ -70,13 +72,8 @@ def download_recording_task(
             meta={'progress': 10, 'status': 'Initializing download...', 'step': 'download'}
         )
 
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        result = loop.run_until_complete(
-            _async_download_recording(self, recording_id, user_id, force)
+        result = asyncio.run(
+            _async_download_recording(self, recording_id, user_id, force, manual_override)
         )
 
         return {
@@ -95,17 +92,37 @@ def download_recording_task(
         raise self.retry(exc=exc)
 
 
-async def _async_download_recording(task_self, recording_id: int, user_id: int, force: bool) -> dict:
-    """Async функция для скачивания."""
+async def _async_download_recording(
+    task_self, 
+    recording_id: int, 
+    user_id: int, 
+    force: bool,
+    manual_override: dict | None = None,
+) -> dict:
+    """Async функция для скачивания (template-driven)."""
+    from api.helpers.config_resolution_helper import resolve_full_config
+    
     db_config = DatabaseConfig.from_env()
     db_manager = DatabaseManager(db_config)
 
     async with db_manager.async_session() as session:
+        # Resolve config
+        full_config, recording = await resolve_full_config(
+            session, recording_id, user_id, manual_override
+        )
+        
+        download_config = full_config.get("download", {})
+        
+        # Extract download parameters
+        max_file_size_mb = download_config.get("max_file_size_mb", 5000)
+        retry_attempts = download_config.get("retry_attempts", 3)
+        
+        logger.debug(
+            f"Download config for recording {recording_id}: "
+            f"max_file_size_mb={max_file_size_mb}, retry_attempts={retry_attempts}"
+        )
+        
         recording_repo = RecordingAsyncRepository(session)
-
-        recording = await recording_repo.get_by_id(recording_id, user_id)
-        if not recording:
-            raise ValueError(f"Recording {recording_id} not found for user {user_id}")
 
         # Проверяем download_url
         download_url = None
@@ -198,21 +215,21 @@ def process_video_task(
     self,
     recording_id: int,
     user_id: int,
-    silence_threshold: float = -40.0,
-    min_silence_duration: float = 2.0,
-    padding_before: float = 5.0,
-    padding_after: float = 5.0,
+    manual_override: dict | None = None,
 ) -> dict:
     """
-    Обработать видео (FFmpeg - удаление тишины).
+    Обработать видео - FFmpeg (template-driven).
+
+    Параметры берутся из resolved config (user_config < template < manual_override):
+    - processing.silence_threshold
+    - processing.min_silence_duration
+    - processing.padding_before
+    - processing.padding_after
 
     Args:
         recording_id: ID записи
         user_id: ID пользователя
-        silence_threshold: Порог тишины в дБ
-        min_silence_duration: Минимальная длительность тишины
-        padding_before: Отступ до звука
-        padding_after: Отступ после звука
+        manual_override: Опциональное переопределение конфигурации
 
     Returns:
         Результат обработки
@@ -225,21 +242,8 @@ def process_video_task(
             meta={'progress': 10, 'status': 'Initializing video processing...', 'step': 'process'}
         )
 
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        result = loop.run_until_complete(
-            _async_process_video(
-                self,
-                recording_id,
-                user_id,
-                silence_threshold,
-                min_silence_duration,
-                padding_before,
-                padding_after,
-            )
+        result = asyncio.run(
+            _async_process_video(self, recording_id, user_id, manual_override)
         )
 
         return {
@@ -262,21 +266,34 @@ async def _async_process_video(
     task_self,
     recording_id: int,
     user_id: int,
-    silence_threshold: float,
-    min_silence_duration: float,
-    padding_before: float,
-    padding_after: float,
+    manual_override: dict | None = None,
 ) -> dict:
-    """Async функция для обработки видео."""
+    """Async функция для обработки видео (template-driven)."""
+    from api.helpers.config_resolution_helper import resolve_full_config
+    
     db_config = DatabaseConfig.from_env()
     db_manager = DatabaseManager(db_config)
 
     async with db_manager.async_session() as session:
-        recording_repo = RecordingAsyncRepository(session)
+        # Resolve config from hierarchy
+        full_config, recording = await resolve_full_config(
+            session, recording_id, user_id, manual_override
+        )
+        
+        processing_config = full_config.get("processing", {})
+        
+        # Extract processing parameters
+        silence_threshold = processing_config.get("silence_threshold", -40.0)
+        min_silence_duration = processing_config.get("min_silence_duration", 2.0)
+        padding_before = processing_config.get("padding_before", 5.0)
+        padding_after = processing_config.get("padding_after", 5.0)
+        
+        logger.debug(
+            f"Processing config for recording {recording_id}: "
+            f"silence_threshold={silence_threshold}, min_silence_duration={min_silence_duration}"
+        )
 
-        recording = await recording_repo.get_by_id(recording_id, user_id)
-        if not recording:
-            raise ValueError(f"Recording {recording_id} not found for user {user_id}")
+        recording_repo = RecordingAsyncRepository(session)
 
         if not recording.local_video_path:
             raise ValueError("No video file available. Please download first.")
@@ -402,16 +419,23 @@ def transcribe_recording_task(
     self,
     recording_id: int,
     user_id: int,
+    manual_override: dict | None = None,
 ) -> dict:
     """
-    Транскрибация записи с АДМИНСКИМИ кредами.
+    Транскрибация записи с АДМИНСКИМИ кредами (template-driven).
 
     ВАЖНО: Только транскрибация (Fireworks), БЕЗ извлечения тем.
     Для извлечения тем используйте extract_topics_task.
+    
+    Config parameters used:
+    - transcription.language (default: "ru")
+    - transcription.prompt (default: "")
+    - transcription.temperature (default: 0.0)
 
     Args:
         recording_id: ID записи
         user_id: ID пользователя
+        manual_override: Опциональное переопределение конфигурации
 
     Returns:
         Результаты транскрибации (без топиков)
@@ -424,13 +448,8 @@ def transcribe_recording_task(
             meta={'progress': 10, 'status': 'Initializing transcription...', 'step': 'transcribe'}
         )
 
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        result = loop.run_until_complete(
-            _async_transcribe_recording(self, recording_id, user_id)
+        result = asyncio.run(
+            _async_transcribe_recording(self, recording_id, user_id, manual_override)
         )
 
         return {
@@ -449,25 +468,49 @@ def transcribe_recording_task(
         raise self.retry(exc=exc)
 
 
-async def _async_transcribe_recording(task_self, recording_id: int, user_id: int) -> dict:
+async def _async_transcribe_recording(
+    task_self, 
+    recording_id: int, 
+    user_id: int,
+    manual_override: dict | None = None,
+) -> dict:
     """
-    Async функция для транскрибации с АДМИНСКИМИ КРЕДАМИ.
+    Async функция для транскрибации с АДМИНСКИМИ КРЕДАМИ (template-driven).
 
     ВАЖНО: Только транскрибация (Fireworks), без извлечения тем.
     Извлечение тем делается отдельно через /topics endpoint.
+    
+    Config parameters used:
+    - transcription.language (default: "ru")
+    - transcription.prompt (default: "")
+    - transcription.temperature (default: 0.0)
     """
     from fireworks_module import FireworksConfig, FireworksTranscriptionService
     from transcription_module.manager import get_transcription_manager
+    from api.helpers.config_resolution_helper import resolve_full_config
 
     db_config = DatabaseConfig.from_env()
     db_manager = DatabaseManager(db_config)
 
     async with db_manager.async_session() as session:
-        recording_repo = RecordingAsyncRepository(session)
+        # Resolve config from hierarchy
+        full_config, recording = await resolve_full_config(
+            session, recording_id, user_id, manual_override
+        )
+        
+        transcription_config = full_config.get("transcription", {})
+        
+        # Extract transcription parameters
+        language = transcription_config.get("language", "ru")
+        user_prompt = transcription_config.get("prompt", "")
+        temperature = transcription_config.get("temperature", 0.0)
+        
+        logger.debug(
+            f"Transcription config for recording {recording_id}: "
+            f"language={language}, has_prompt={bool(user_prompt)}, temperature={temperature}"
+        )
 
-        recording = await recording_repo.get_by_id(recording_id, user_id)
-        if not recording:
-            raise ValueError(f"Recording {recording_id} not found for user {user_id}")
+        recording_repo = RecordingAsyncRepository(session)
 
         # Приоритет: обработанное аудио > обработанное видео > оригинальное видео
         audio_path = None
@@ -509,17 +552,18 @@ async def _async_transcribe_recording(task_self, recording_id: int, user_id: int
             meta={'progress': 30, 'status': 'Transcribing audio...', 'step': 'transcribe'}
         )
 
-        # Формируем промпт для Fireworks
+        # Формируем промпт: user_prompt (из config) + display_name
         from transcription_module.service import TranscriptionService
 
         fireworks_prompt = TranscriptionService._compose_fireworks_prompt(
-            fireworks_config.prompt, recording.display_name
+            user_prompt, recording.display_name
         )
 
         # Транскрибация через Fireworks API (ТОЛЬКО транскрибация, без извлечения тем)
+        # Используем language и temperature из resolved config
         transcription_result = await fireworks_service.transcribe_audio(
             audio_path=audio_path,
-            language=fireworks_config.language,
+            language=language,  # ← from resolved config
             prompt=fireworks_prompt,
         )
 
@@ -535,7 +579,7 @@ async def _async_transcribe_recording(task_self, recording_id: int, user_id: int
         # Подготавливаем данные
         words = transcription_result.get("words", [])
         segments = transcription_result.get("segments", [])
-        language = transcription_result.get("language", "ru")
+        detected_language = transcription_result.get("language", language)
 
         # Вычисляем длительность из последнего сегмента
         duration = 0.0
@@ -548,8 +592,9 @@ async def _async_transcribe_recording(task_self, recording_id: int, user_id: int
             "model": fireworks_config.model,
             "prompt_used": fireworks_prompt,
             "config": {
-                "temperature": fireworks_config.temperature,
-                "language": fireworks_config.language,
+                "temperature": temperature,  # ← from resolved config
+                "language": language,  # ← from resolved config
+                "detected_language": detected_language,
                 "response_format": fireworks_config.response_format,
                 "timestamp_granularities": fireworks_config.timestamp_granularities,
                 "preprocessing": fireworks_config.preprocessing,
@@ -625,29 +670,17 @@ def full_pipeline_task(
     self,
     recording_id: int,
     user_id: int,
-    download: bool = True,
-    process: bool = True,
-    transcribe: bool = True,
-    upload: bool = False,
-    platforms: list[str] | None = None,
-    preset_ids: dict[str, int] | None = None,
-    granularity: str = "long",
-    process_config: dict | None = None,
+    manual_override: dict | None = None,
 ) -> dict:
     """
     Полный пайплайн обработки: download → process → transcribe → upload.
 
+    Template-driven: все параметры берутся из resolved config (user_config < template < manual_override).
+
     Args:
         recording_id: ID записи
         user_id: ID пользователя
-        download: Выполнить download
-        process: Выполнить process
-        transcribe: Выполнить transcribe
-        upload: Выполнить upload
-        platforms: Список платформ для загрузки
-        preset_ids: Словарь {platform: preset_id}
-        granularity: Режим извлечения тем
-        process_config: Конфигурация обработки видео
+        manual_override: Опциональное переопределение конфигурации (любые поля)
 
     Returns:
         Результаты полного пайплайна
@@ -656,9 +689,64 @@ def full_pipeline_task(
         logger.info(f"[Task {self.request.id}] Full pipeline for recording {recording_id}, user {user_id}")
 
         from api.tasks.upload import upload_recording_to_platform
+        from api.helpers.config_resolution_helper import resolve_full_config
+        from database.manager import DatabaseManager
+        from database.config import DatabaseConfig
 
-        platforms = platforms or []
-        process_config = process_config or {}
+        manual_override = manual_override or {}
+
+        # Resolve configuration from hierarchy using helper
+        db_config = DatabaseConfig.from_env()
+        db_manager = DatabaseManager(db_config)
+        
+        async def _resolve_config():
+            async with db_manager.async_session() as session:
+                return await resolve_full_config(
+                    session, recording_id, user_id, manual_override, include_output_config=True
+                )
+
+        import asyncio
+        full_config, output_config, recording = asyncio.run(_resolve_config())
+
+        logger.info(
+            f"[Task {self.request.id}] Resolved config for recording {recording_id}: "
+            f"template_id={recording.template_id}, has_manual_override={bool(recording.processing_preferences)}"
+        )
+
+        # Extract pipeline parameters from resolved config
+        processing = full_config.get("processing", {})
+        transcription = full_config.get("transcription", {})
+        upload_config = full_config.get("upload", {})
+        
+        # Pipeline steps
+        download = True  # Always download if not already downloaded
+        process = processing.get("enable_processing", True)
+        transcribe = transcription.get("enable_transcription", True)
+        extract_topics = transcription.get("enable_topics", True)
+        generate_subs = transcription.get("enable_subtitles", True)
+        upload = upload_config.get("auto_upload", False)
+        
+        # Upload configuration
+        platforms = upload_config.get("default_platforms", [])
+        preset_ids_list = output_config.get("preset_ids", [])
+        
+        # Processing parameters
+        granularity = transcription.get("granularity", "long")
+        
+        # FFmpeg parameters
+        process_params = {
+            "silence_threshold": processing.get("silence_threshold", -40),
+            "min_silence_duration": processing.get("min_silence_duration", 2.0),
+            "padding_before": processing.get("padding_before", 5.0),
+            "padding_after": processing.get("padding_after", 5.0),
+        }
+
+        logger.info(
+            f"[Task {self.request.id}] Pipeline steps: "
+            f"download={download}, process={process}, transcribe={transcribe}, "
+            f"extract_topics={extract_topics}, generate_subs={generate_subs}, "
+            f"upload={upload}, platforms={platforms}"
+        )
 
         results = {
             "recording_id": recording_id,
@@ -666,7 +754,7 @@ def full_pipeline_task(
             "errors": [],
         }
 
-        total_steps = sum([download, process, transcribe, upload and len(platforms) > 0])
+        total_steps = sum([download, process, transcribe, extract_topics, generate_subs, upload and len(platforms) > 0])
         current_step = 0
 
         # STEP 1: Download
@@ -681,12 +769,13 @@ def full_pipeline_task(
                     }
                 )
 
-                download_result = download_recording_task.apply(
-                    args=[recording_id, user_id, False]
-                ).get()
+                # Call async function directly (bypass Celery task wrapper to avoid .run() issues)
+                download_result = asyncio.run(
+                    _async_download_recording(self, recording_id, user_id, False, manual_override)
+                )
 
                 results["steps_completed"].append("download")
-                results["download"] = download_result["result"]
+                results["download"] = download_result
                 current_step += 1
             except Exception as e:
                 results["errors"].append(f"Download failed: {str(e)}")
@@ -704,13 +793,13 @@ def full_pipeline_task(
                     }
                 )
 
-                process_result = process_video_task.apply(
-                    args=[recording_id, user_id],
-                    kwargs=process_config,
-                ).get()
+                # Call async function directly (bypass Celery task wrapper to avoid .run() issues)
+                process_result = asyncio.run(
+                    _async_process_video(self, recording_id, user_id, manual_override)
+                )
 
                 results["steps_completed"].append("process")
-                results["process"] = process_result["result"]
+                results["process"] = process_result
                 current_step += 1
             except Exception as e:
                 results["errors"].append(f"Processing failed: {str(e)}")
@@ -728,19 +817,93 @@ def full_pipeline_task(
                     }
                 )
 
-                transcribe_result = transcribe_recording_task.apply(
-                    args=[recording_id, user_id]
-                ).get()
+                # Call async function directly (bypass Celery task wrapper to avoid .run() issues)
+                transcribe_result = asyncio.run(
+                    _async_transcribe_recording(self, recording_id, user_id, manual_override)
+                )
 
                 results["steps_completed"].append("transcribe")
-                results["transcribe"] = transcribe_result["result"]
+                results["transcribe"] = transcribe_result
                 current_step += 1
             except Exception as e:
                 results["errors"].append(f"Transcription failed: {str(e)}")
                 logger.error(f"Transcription step failed: {e}")
 
-        # STEP 4: Upload
-        if upload and platforms:
+        # STEP 4: Extract Topics
+        if extract_topics:
+            try:
+                self.update_state(
+                    state='PROCESSING',
+                    meta={
+                        'progress': int((current_step / total_steps) * 100),
+                        'status': 'Extracting topics...',
+                        'step': 'extract_topics'
+                    }
+                )
+
+                # Call async function directly
+                topics_result = asyncio.run(
+                    _async_extract_topics(self, recording_id, user_id, granularity, None)
+                )
+
+                results["steps_completed"].append("extract_topics")
+                results["extract_topics"] = topics_result
+                current_step += 1
+            except Exception as e:
+                results["errors"].append(f"Topic extraction failed: {str(e)}")
+                logger.error(f"Topic extraction step failed: {e}")
+
+        # STEP 5: Generate Subtitles
+        if generate_subs:
+            try:
+                self.update_state(
+                    state='PROCESSING',
+                    meta={
+                        'progress': int((current_step / total_steps) * 100),
+                        'status': 'Generating subtitles...',
+                        'step': 'generate_subtitles'
+                    }
+                )
+
+                # Get subtitle formats from config
+                subtitle_formats = transcription.get("subtitle_formats", ["srt", "vtt"])
+
+                # Call async function directly
+                subtitles_result = asyncio.run(
+                    _async_generate_subtitles(self, recording_id, user_id, subtitle_formats)
+                )
+
+                results["steps_completed"].append("generate_subtitles")
+                results["generate_subtitles"] = subtitles_result
+                current_step += 1
+            except Exception as e:
+                results["errors"].append(f"Subtitle generation failed: {str(e)}")
+                logger.error(f"Subtitle generation step failed: {e}")
+
+        # STEP 6: Upload
+        if upload and (platforms or preset_ids_list):
+            # Load presets to map platform -> preset_id
+            async def _load_presets():
+                async with db_manager.async_session() as session:
+                    from api.repositories.template_repos import OutputPresetRepository
+                    preset_repo = OutputPresetRepository(session)
+                    
+                    presets = []
+                    for preset_id in preset_ids_list:
+                        preset = await preset_repo.find_by_id(preset_id, user_id)
+                        if preset:
+                            presets.append(preset)
+                    return presets
+            
+            presets = asyncio.run(_load_presets()) if preset_ids_list else []
+            
+            # Build platform -> preset_id mapping
+            preset_map = {preset.platform: preset.id for preset in presets}
+            
+            # If platforms not specified, use platforms from presets
+            if not platforms and presets:
+                platforms = [preset.platform for preset in presets]
+            
             upload_results = []
             for platform in platforms:
                 try:
@@ -753,7 +916,7 @@ def full_pipeline_task(
                         }
                     )
 
-                    preset_id = preset_ids.get(platform) if preset_ids else None
+                    preset_id = preset_map.get(platform)
 
                     upload_result = upload_recording_to_platform.apply(
                         args=[recording_id, user_id, platform, preset_id]
@@ -827,12 +990,7 @@ def extract_topics_task(
             meta={'progress': 10, 'status': 'Initializing topic extraction...', 'step': 'extract_topics'}
         )
 
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        result = loop.run_until_complete(
+        result = asyncio.run(
             _async_extract_topics(self, recording_id, user_id, granularity, version_id)
         )
 
@@ -1038,12 +1196,7 @@ def generate_subtitles_task(
             meta={'progress': 20, 'status': 'Initializing subtitle generation...', 'step': 'generate_subtitles'}
         )
 
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        result = loop.run_until_complete(
+        result = asyncio.run(
             _async_generate_subtitles(self, recording_id, user_id, formats)
         )
 
@@ -1115,3 +1268,216 @@ async def _async_generate_subtitles(task_self, recording_id: int, user_id: int, 
             "formats": formats,
             "files": subtitle_paths,
         }
+
+
+@celery_app.task(
+    bind=True,
+    base=ProcessingTask,
+    name="api.tasks.processing.batch_transcribe_recording",
+    max_retries=3,
+    default_retry_delay=300,
+)
+def batch_transcribe_recording_task(
+    self,
+    recording_id: int,
+    user_id: int,
+    batch_id: str,
+    poll_interval: float = 10.0,
+    max_wait_time: float = 3600.0,
+) -> dict:
+    """
+    Polling для Fireworks Batch API transcription.
+
+    Этот task создается после submit_batch_transcription() и ждет завершения batch job.
+    Использует polling для проверки статуса каждые poll_interval секунд.
+
+    Args:
+        recording_id: ID записи
+        user_id: ID пользователя
+        batch_id: ID batch job от Fireworks
+        poll_interval: Интервал проверки статуса (секунды)
+        max_wait_time: Максимальное время ожидания (секунды)
+
+    Returns:
+        Результат транскрибации
+    """
+    try:
+        logger.info(
+            f"[Task {self.request.id}] Batch transcription polling | recording={recording_id} | user={user_id} | batch_id={batch_id}"
+        )
+
+        self.update_state(
+            state='PROCESSING',
+            meta={'progress': 10, 'status': 'Waiting for batch transcription...', 'step': 'batch_transcribe'}
+        )
+
+        result = asyncio.run(
+            _async_poll_batch_transcription(
+                self,
+                recording_id,
+                user_id,
+                batch_id,
+                poll_interval,
+                max_wait_time,
+            )
+        )
+
+        return {
+            "task_id": self.request.id,
+            "status": "completed",
+            "recording_id": recording_id,
+            "batch_id": batch_id,
+            "result": result,
+        }
+
+    except TimeoutError as exc:
+        logger.error(
+            f"[Task {self.request.id}] Batch transcription timeout | batch_id={batch_id} | max_wait={max_wait_time}s"
+        )
+        raise self.retry(countdown=600, exc=exc)
+
+    except SoftTimeLimitExceeded:
+        logger.error(f"[Task {self.request.id}] Soft time limit exceeded")
+        raise self.retry(countdown=900, exc=SoftTimeLimitExceeded())
+
+    except Exception as exc:
+        logger.error(f"[Task {self.request.id}] Error in batch transcription: {exc!r}", exc_info=True)
+        raise self.retry(exc=exc)
+
+
+async def _async_poll_batch_transcription(
+    task_self,
+    recording_id: int,
+    user_id: int,
+    batch_id: str,
+    poll_interval: float,
+    max_wait_time: float,
+) -> dict:
+    """Async функция для polling batch transcription."""
+    import time
+
+    from fireworks_module import FireworksConfig, FireworksTranscriptionService
+    from transcription_module.manager import TranscriptionManager
+
+    db_config = DatabaseConfig.from_env()
+    db_manager = DatabaseManager(db_config)
+    session = await db_manager.async_session()
+
+    try:
+        recording_repo = RecordingAsyncRepository(session)
+        recording_db = await recording_repo.find_by_id(recording_id, user_id)
+
+        if not recording_db:
+            raise ValueError(f"Recording {recording_id} not found for user {user_id}")
+
+        recording = MeetingRecording.from_db_model(recording_db)
+
+        # Инициализируем Fireworks service
+        fireworks_config = FireworksConfig.from_file("config/fireworks_creds.json")
+        fireworks_service = FireworksTranscriptionService(fireworks_config)
+
+        # Polling loop
+        start_time = time.time()
+        attempt = 0
+
+        while True:
+            attempt += 1
+            elapsed = time.time() - start_time
+
+            if elapsed > max_wait_time:
+                raise TimeoutError(
+                    f"Batch transcription {batch_id} не завершился за {max_wait_time}s (попыток: {attempt})"
+                )
+
+            # Проверяем статус
+            status_response = await fireworks_service.check_batch_status(batch_id)
+            status = status_response.get("status", "unknown")
+
+            # Обновляем progress (примерно)
+            progress = min(20 + int((elapsed / max_wait_time) * 60), 80)
+            task_self.update_state(
+                state='PROCESSING',
+                meta={
+                    'progress': progress,
+                    'status': f'Batch transcribing... ({status}, {elapsed:.0f}s)',
+                    'step': 'batch_transcribe',
+                    'batch_id': batch_id,
+                    'attempt': attempt,
+                }
+            )
+
+            if status == "completed":
+                logger.info(
+                    f"[Batch Transcription] Completed ✅ | batch_id={batch_id} | elapsed={elapsed:.1f}s | attempts={attempt}"
+                )
+
+                task_self.update_state(
+                    state='PROCESSING',
+                    meta={'progress': 85, 'status': 'Parsing batch result...', 'step': 'batch_transcribe'}
+                )
+
+                # Получаем результат
+                transcription_result = await fireworks_service.get_batch_result(batch_id)
+
+                # Сохраняем транскрипцию (как обычно)
+                transcription_manager = TranscriptionManager()
+
+                task_self.update_state(
+                    state='PROCESSING',
+                    meta={'progress': 90, 'status': 'Saving transcription...', 'step': 'batch_transcribe'}
+                )
+
+                # Сохраняем master.json
+                words = transcription_result.get("words", [])
+                segments = transcription_result.get("segments", [])
+                language = transcription_result.get("language", "ru")
+
+                master_data = {
+                    "text": transcription_result.get("text", ""),
+                    "segments": segments,
+                    "words": words,
+                    "language": language,
+                }
+
+                transcription_manager.save_master(
+                    recording_id=recording_id,
+                    master_data=master_data,
+                    user_id=user_id,
+                )
+
+                # Обновляем запись в БД
+                recording.transcription_path = transcription_manager.get_dir(recording_id, user_id=user_id)
+                recording.mark_stage_completed(
+                    ProcessingStageType.TRANSCRIBE,
+                    meta={
+                        "batch_id": batch_id,
+                        "language": language,
+                        "words_count": len(words),
+                        "segments_count": len(segments),
+                        "elapsed_seconds": elapsed,
+                    },
+                )
+
+                # Обновляем агрегированный статус
+                from api.helpers.status_manager import update_aggregate_status
+                update_aggregate_status(recording)
+
+                await recording_repo.update(recording)
+                await session.commit()
+
+                return {
+                    "success": True,
+                    "batch_id": batch_id,
+                    "language": language,
+                    "elapsed_seconds": elapsed,
+                    "attempts": attempt,
+                }
+
+            logger.debug(
+                f"[Batch Transcription] Polling | batch_id={batch_id} | status={status} | attempt={attempt} | elapsed={elapsed:.1f}s"
+            )
+
+            await asyncio.sleep(poll_interval)
+
+    finally:
+        await session.close()

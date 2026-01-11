@@ -1,8 +1,12 @@
 """Схемы ответов для аутентификации."""
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, EmailStr, Field
+
+if TYPE_CHECKING:
+    pass
 
 
 class TokenResponse(BaseModel):
@@ -30,8 +34,18 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
-class MeResponse(BaseModel):
-    """Ответ с информацией о текущем пользователе."""
+class UserMeResponse(BaseModel):
+    """Ответ с базовой информацией о текущем пользователе."""
 
-    user: UserResponse = Field(..., description="Информация о пользователе")
-    quotas: dict | None = Field(None, description="Квоты пользователя")
+    id: int = Field(..., description="ID пользователя")
+    email: EmailStr = Field(..., description="Email")
+    full_name: str | None = Field(None, description="Полное имя")
+    timezone: str = Field(..., description="Часовой пояс")
+    role: str = Field(..., description="Роль пользователя")
+    is_active: bool = Field(..., description="Активен ли аккаунт")
+    is_verified: bool = Field(..., description="Подтвержден ли email")
+    created_at: datetime = Field(..., description="Дата создания")
+    last_login_at: datetime | None = Field(None, description="Последний вход")
+
+    class Config:
+        from_attributes = True

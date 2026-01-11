@@ -42,7 +42,7 @@ async def get_allow_skipped_flag(
     # 2. Проверяем template (если указан)
     if template_id is not None:
         template_repo = RecordingTemplateRepository(session)
-        template = await template_repo.get_by_id(template_id, user_id)
+        template = await template_repo.find_by_id(template_id, user_id)
         if template and template.processing_config:
             allow_skipped = template.processing_config.get("allow_skipped")
             if allow_skipped is not None:
@@ -51,9 +51,9 @@ async def get_allow_skipped_flag(
     # 3. Проверяем user config
     try:
         user_config_repo = UserConfigRepository(session)
-        user_config = await user_config_repo.get_user_config(user_id)
-        if user_config:
-            processing_config = user_config.get("processing", {})
+        user_config_model = await user_config_repo.get_by_user_id(user_id)
+        if user_config_model:
+            processing_config = user_config_model.config_data.get("processing", {})
             allow_skipped = processing_config.get("allow_skipped")
             if allow_skipped is not None:
                 return bool(allow_skipped)
@@ -81,9 +81,9 @@ async def get_user_processing_config(
     """
     try:
         user_config_repo = UserConfigRepository(session)
-        user_config = await user_config_repo.get_user_config(user_id)
-        if user_config:
-            return user_config.get("processing", {})
+        user_config_model = await user_config_repo.get_by_user_id(user_id)
+        if user_config_model:
+            return user_config_model.config_data.get("processing", {})
     except Exception:
         pass
 

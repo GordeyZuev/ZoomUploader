@@ -63,7 +63,7 @@ async def create_vk_uploader_from_db(
     vk_config: VKUploadConfig | None = None,
 ) -> VKUploader:
     """
-    Create VKUploader instance using credentials from database.
+    Create VKUploader instance using credentials from database with credential_provider pattern.
 
     Args:
         credential_id: Database credential ID
@@ -73,31 +73,22 @@ async def create_vk_uploader_from_db(
     Returns:
         VKUploader instance configured with database credentials
     """
-    # Load credential from DB
+    # Create credential provider
     encryption = get_encryption()
     repo = UserCredentialRepository(session)
 
-    credential = await repo.get(credential_id)
-    if not credential or not credential.encrypted_data:
-        raise ValueError(f"Credential {credential_id} not found or empty")
-
-    decrypted = encryption.decrypt_credentials(credential.encrypted_data)
-    access_token = decrypted.get("access_token", "")
-
-    if not access_token:
-        raise ValueError(f"No access_token found in credential {credential_id}")
+    credential_provider = DatabaseCredentialProvider(
+        credential_id=credential_id,
+        encryption_service=encryption,
+        credential_repository=repo,
+    )
 
     # Create default config if not provided
     if not vk_config:
-        vk_config = VKUploadConfig(
-            enabled=True,
-            access_token=access_token,
-        )
-    else:
-        # Override access_token with one from DB
-        vk_config.access_token = access_token
+        vk_config = VKUploadConfig(enabled=True)
 
-    uploader = VKUploader(config=vk_config)
+    # Create uploader with credential provider
+    uploader = VKUploader(config=vk_config, credential_provider=credential_provider)
 
     logger.info(f"Created VKUploader with DB credential ID: {credential_id}")
     return uploader

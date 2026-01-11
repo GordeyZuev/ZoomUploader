@@ -1,6 +1,7 @@
 '"""Сервис транскрибации аудио через Fireworks Audio Inference API"""'
 
 import asyncio
+import json
 import os
 import re
 import time
@@ -14,6 +15,14 @@ except ImportError as exc:  # pragma: no cover - среда без зависи�
         "Не установлен пакет 'fireworks-ai'. Установите его командой "
         "`pip install fireworks-ai` или добавьте в requirements, "
         "чтобы использовать Fireworks транскрибацию."
+    ) from exc
+
+try:
+    import httpx
+except ImportError as exc:  # pragma: no cover - среда без зависимости
+    raise ImportError(
+        "Не установлен пакет 'httpx'. Установите его командой "
+        "`pip install httpx` для использования Batch API."
     ) from exc
 
 from logger import get_logger
@@ -802,3 +811,237 @@ class FireworksTranscriptionService:
             "language": language,
             "srt_content": srt_content,  # Сохраняем оригинальный SRT контент
         }
+
+    # ==================== Batch API Methods ====================
+
+    async def submit_batch_transcription(
+        self,
+        audio_path: str,
+        language: str | None = None,
+        prompt: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Отправляет аудио на транскрибацию через Fireworks Batch API.
+
+        Batch API дешевле синхронного, но требует polling для получения результата.
+        Документация: https://docs.fireworks.ai/api-reference/create-batch-request
+
+        Args:
+            audio_path: Путь к аудио-файлу
+            language: Язык аудио
+            prompt: Промпт для улучшения качества
+
+        Returns:
+            Dict с batch_id и метаданными:
+            {
+                "batch_id": "...",
+                "status": "submitted",
+                "account_id": "...",
+                "endpoint_id": "...",
+                "message": "..."
+            }
+
+        Raises:
+            ValueError: Если account_id не настроен
+            FileNotFoundError: Если файл не найден
+        """
+        if not self.config.account_id:
+            raise ValueError(
+                "account_id не настроен. Добавьте account_id в config/fireworks_creds.json "
+                "для использования Batch API (найти в Fireworks dashboard)."
+            )
+
+        if not os.path.exists(audio_path):
+            raise FileNotFoundError(f"Аудио файл не найден: {audio_path}")
+
+        # Определяем endpoint_id на основе модели
+        endpoint_id = "audio-turbo" if self.config.model == "whisper-v3-turbo" else "audio-prod"
+
+        # Формируем параметры запроса (аналогично синхронному API)
+        params = self.config.to_request_params()
+        if language:
+            params["language"] = language
+        if prompt:
+            params["prompt"] = prompt
+
+        # Batch API URL
+        url = f"{self.config.batch_base_url}/v1/audio/transcriptions"
+
+        logger.info(
+            f"Fireworks Batch | Submitting | endpoint={endpoint_id} | file={os.path.basename(audio_path)} | model={self.config.model}"
+        )
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            with open(audio_path, "rb") as audio_file:
+                files = {"file": (os.path.basename(audio_path), audio_file, "audio/mpeg")}
+
+                # Batch API требует параметры в формате multipart/form-data
+                # Документация требует JSON-сериализацию параметров
+                data = {key: json.dumps(value) if not isinstance(value, str) else value for key, value in params.items()}
+
+                response = await client.post(
+                    url,
+                    params={"endpoint_id": endpoint_id},
+                    headers={"Authorization": self.config.api_key},
+                    files=files,
+                    data=data,
+                )
+
+                if response.status_code != 200:
+                    error_text = response.text
+                    logger.error(
+                        f"Fireworks Batch | Submit Error | status={response.status_code} | error={error_text[:500]}"
+                    )
+                    raise RuntimeError(
+                        f"Ошибка отправки в Batch API: {response.status_code} - {error_text[:200]}"
+                    )
+
+                result = response.json()
+                logger.info(
+                    f"Fireworks Batch | Submitted ✅ | batch_id={result.get('batch_id')} | status={result.get('status')}"
+                )
+                return result
+
+    async def check_batch_status(self, batch_id: str) -> dict[str, Any]:
+        """
+        Проверяет статус batch job.
+
+        Документация: https://docs.fireworks.ai/api-reference/get-batch-status
+
+        Args:
+            batch_id: ID batch job (из submit_batch_transcription)
+
+        Returns:
+            Dict со статусом:
+            {
+                "status": "processing" | "completed",
+                "batch_id": "...",
+                "message": None,
+                "content_type": "application/json",  # если completed
+                "body": "..."  # если completed
+            }
+        """
+        if not self.config.account_id:
+            raise ValueError("account_id не настроен для Batch API")
+
+        url = f"{self.config.batch_base_url}/v1/accounts/{self.config.account_id}/batch_job/{batch_id}"
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                url,
+                headers={"Authorization": self.config.api_key},
+            )
+
+            if response.status_code != 200:
+                error_text = response.text
+                logger.error(
+                    f"Fireworks Batch | Status Check Error | batch_id={batch_id} | status={response.status_code} | error={error_text[:500]}"
+                )
+                raise RuntimeError(
+                    f"Ошибка проверки статуса Batch API: {response.status_code} - {error_text[:200]}"
+                )
+
+            result = response.json()
+            status = result.get("status", "unknown")
+            logger.debug(f"Fireworks Batch | Status Check | batch_id={batch_id} | status={status}")
+            return result
+
+    async def get_batch_result(self, batch_id: str) -> dict[str, Any]:
+        """
+        Получает результат batch job (только для completed jobs).
+
+        Args:
+            batch_id: ID batch job
+
+        Returns:
+            Normalized результат (аналогично transcribe_audio)
+
+        Raises:
+            RuntimeError: Если job еще не завершен
+        """
+        status_response = await self.check_batch_status(batch_id)
+
+        if status_response.get("status") != "completed":
+            raise RuntimeError(
+                f"Batch job {batch_id} еще не завершен. Статус: {status_response.get('status')}"
+            )
+
+        # Парсим body (содержит результат транскрибации)
+        body_str = status_response.get("body")
+        if not body_str:
+            raise RuntimeError(f"Batch job {batch_id} не содержит результата (body пустой)")
+
+        content_type = status_response.get("content_type", "application/json")
+
+        # Парсим результат в зависимости от content_type
+        if "json" in content_type:
+            result = json.loads(body_str)
+            # Normalize как обычный response
+            return self._normalize_response(result)
+        elif "srt" in content_type or "vtt" in content_type:
+            # SRT/VTT формат
+            return self._normalize_srt_response(body_str)
+        else:
+            # Fallback - пробуем JSON
+            try:
+                result = json.loads(body_str)
+                return self._normalize_response(result)
+            except json.JSONDecodeError:
+                # Пробуем как текст
+                return {
+                    "text": body_str,
+                    "segments": [],
+                    "words": [],
+                    "language": self.config.language,
+                }
+
+    async def wait_for_batch_completion(
+        self,
+        batch_id: str,
+        poll_interval: float = 10.0,
+        max_wait_time: float = 3600.0,
+    ) -> dict[str, Any]:
+        """
+        Ожидает завершения batch job с polling.
+
+        Args:
+            batch_id: ID batch job
+            poll_interval: Интервал проверки в секундах
+            max_wait_time: Максимальное время ожидания в секундах
+
+        Returns:
+            Результат транскрибации (normalized)
+
+        Raises:
+            TimeoutError: Если превышено max_wait_time
+        """
+        start_time = time.time()
+        attempt = 0
+
+        logger.info(
+            f"Fireworks Batch | Waiting for completion | batch_id={batch_id} | poll_interval={poll_interval}s"
+        )
+
+        while True:
+            attempt += 1
+            elapsed = time.time() - start_time
+
+            if elapsed > max_wait_time:
+                raise TimeoutError(
+                    f"Batch job {batch_id} не завершился за {max_wait_time}s (попыток: {attempt})"
+                )
+
+            status_response = await self.check_batch_status(batch_id)
+            status = status_response.get("status", "unknown")
+
+            if status == "completed":
+                logger.info(
+                    f"Fireworks Batch | Completed ✅ | batch_id={batch_id} | elapsed={elapsed:.1f}s | attempts={attempt}"
+                )
+                return await self.get_batch_result(batch_id)
+
+            logger.debug(
+                f"Fireworks Batch | Polling | batch_id={batch_id} | status={status} | attempt={attempt} | elapsed={elapsed:.1f}s"
+            )
+
+            await asyncio.sleep(poll_interval)

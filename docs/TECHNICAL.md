@@ -486,7 +486,19 @@ CELERY_RESULT_BACKEND=redis://localhost:6379/0
 | Категория | Количество |
 |-----------|-----------|
 | **Authentication** | 5 |
-| **User Management** | 3 |
+| **User Management** | 6 |
+| **Admin Stats** | 3 |
+| **Recordings** | 15 |
+| **Templates** | 8 |
+| **Credentials** | 6 |
+| **OAuth** | 6 |
+| **Automation** | 6 |
+| **Tasks** | 2 |
+| **Input Sources** | 6 |
+| **Output Presets** | 5 |
+| **Thumbnails** | 4 |
+| **Health** | 1 |
+| **TOTAL** | **84** |
 | **Credentials** | 5 |
 | **Recordings** | 10 |
 | **Input Sources** | 6 |

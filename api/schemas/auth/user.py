@@ -35,6 +35,7 @@ class UserUpdate(BaseModel):
 
     email: EmailStr | None = None
     full_name: str | None = None
+    timezone: str | None = None
     is_active: bool | None = None
     is_verified: bool | None = None
     is_superuser: bool | None = None
@@ -51,6 +52,7 @@ class UserInDB(UserBase):
 
     id: int
     hashed_password: str
+    timezone: str = "UTC"
     is_active: bool = True
     is_verified: bool = False
     is_superuser: bool = False
@@ -76,6 +78,7 @@ class UserResponse(BaseModel):
     id: int
     email: EmailStr
     full_name: str | None
+    timezone: str
     is_active: bool
     is_verified: bool
     is_superuser: bool

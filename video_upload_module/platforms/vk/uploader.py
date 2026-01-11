@@ -15,9 +15,10 @@ logger = get_logger()
 class VKUploader(BaseUploader):
     """Загрузчик видео на VK."""
 
-    def __init__(self, config: VKConfig):
+    def __init__(self, config: VKConfig, credential_provider=None):
         super().__init__(config)
         self.config = config
+        self.credential_provider = credential_provider
         self.base_url = "https://api.vk.com/method"
         self._authenticated = False
 
@@ -25,6 +26,73 @@ class VKUploader(BaseUploader):
 
     async def authenticate(self) -> bool:
         """Аутентификация в VK API."""
+        # If using credential_provider (DB mode), load and refresh if needed
+        if self.credential_provider:
+            return await self._authenticate_with_provider()
+
+        # Legacy file mode or direct config mode
+        return await self._authenticate_legacy()
+
+    async def _authenticate_with_provider(self) -> bool:
+        """Authenticate using credential provider (DB mode)."""
+        try:
+            # Check if provider has VK-specific methods
+            if hasattr(self.credential_provider, "get_vk_credentials"):
+                creds = await self.credential_provider.get_vk_credentials()
+            else:
+                # Fallback to generic load
+                creds = await self.credential_provider.load_credentials()
+
+            if not creds:
+                self.logger.error("No VK credentials found in database")
+                return False
+
+            # Check if token is expired
+            access_token = creds.get("access_token")
+            expiry_str = creds.get("expiry")
+
+            if not access_token:
+                self.logger.error("No access_token in VK credentials")
+                return False
+
+            # Check expiry
+            needs_refresh = False
+            if expiry_str:
+                try:
+                    from datetime import datetime
+                    expiry = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
+                    now = datetime.utcnow()
+                    # Refresh if expired or expires in less than 5 minutes
+                    if expiry <= now or (expiry - now).total_seconds() < 300:
+                        needs_refresh = True
+                        self.logger.info("VK token expired or expiring soon, refreshing...")
+                except Exception as e:
+                    self.logger.warning(f"Failed to parse expiry: {e}")
+
+            # Refresh token if needed
+            if needs_refresh and creds.get("refresh_token"):
+                if hasattr(self.credential_provider, "refresh_vk_token"):
+                    refreshed = await self.credential_provider.refresh_vk_token()
+                    if refreshed:
+                        access_token = refreshed.get("access_token")
+                        self.logger.info("VK token refreshed successfully")
+                    else:
+                        self.logger.error("Failed to refresh VK token, using existing (may fail)")
+                else:
+                    self.logger.warning("Credential provider doesn't support VK refresh")
+
+            # Update config with token
+            self.config.access_token = access_token
+
+            # Validate token
+            return await self._validate_token()
+
+        except Exception as e:
+            self.logger.error(f"Error authenticating with credential provider: {e}")
+            return False
+
+    async def _authenticate_legacy(self) -> bool:
+        """Legacy authentication mode (file-based or interactive)."""
         if not self.config.access_token:
             try:
                 from setup_vk import VKTokenSetup
@@ -41,6 +109,10 @@ class VKUploader(BaseUploader):
                 self.logger.error(f"Не удалось запустить интерактивную настройку VK: {e}")
                 return False
 
+        return await self._validate_token()
+
+    async def _validate_token(self) -> bool:
+        """Validate VK access token."""
         try:
             async with aiohttp.ClientSession() as session:
                 params = {"access_token": self.config.access_token, "v": "5.131"}
@@ -49,29 +121,7 @@ class VKUploader(BaseUploader):
                         data = await response.json()
                         if "error" in data:
                             self.logger.error(f"VK API Error: {data['error']}")
-                            try:
-                                from setup_vk import VKTokenSetup
-
-                                self.logger.info("Пробую переавторизоваться через setup_vk...")
-                                setup = VKTokenSetup(app_id=getattr(self.config, "app_id", "54249533"))
-                                token = await setup.get_token_interactive(
-                                    getattr(self.config, "scope", "video,groups,wall")
-                                )
-                                if token:
-                                    self.config.access_token = token
-                                    params = {"access_token": self.config.access_token, "v": "5.131"}
-                                    async with session.post(f"{self.base_url}/users.get", data=params) as recheck:
-                                        if recheck.status == 200:
-                                            again = await recheck.json()
-                                            if "error" not in again:
-                                                self._authenticated = True
-                                                self.logger.info("Аутентификация VK успешна после переавторизации")
-                                                return True
-                                self.logger.error("Переавторизация VK не удалась")
-                                return False
-                            except Exception as e:
-                                self.logger.error(f"Сбой переавторизации VK: {e}")
-                                return False
+                            return False
                         self._authenticated = True
                         self.logger.info("Аутентификация VK успешна")
                         return True
@@ -79,7 +129,7 @@ class VKUploader(BaseUploader):
                         self.logger.error(f"HTTP Error: {response.status}")
                         return False
         except Exception as e:
-            self.logger.error(f"Ошибка аутентификации VK: {e}")
+            self.logger.error(f"Ошибка валидации VK токена: {e}")
             return False
 
     async def upload_video(
@@ -93,7 +143,17 @@ class VKUploader(BaseUploader):
         task_id=None,
         **kwargs,
     ) -> UploadResult | None:
-        """Загрузка видео на VK."""
+        """
+        Загрузка видео на VK.
+
+        Supported kwargs:
+            - group_id: int - Group ID for uploading to group
+            - privacy_view: int - Privacy settings for viewing (0-3)
+            - privacy_comment: int - Privacy settings for comments (0-3)
+            - no_comments: bool - Disable comments
+            - repeat: bool - Enable repeat
+            - wallpost: bool - Publish to wall after upload
+        """
 
         if not self._authenticated:
             if not await self.authenticate():
@@ -102,7 +162,7 @@ class VKUploader(BaseUploader):
         try:
             self.logger.info(f"Загрузка видео на VK: {title}")
 
-            upload_url = await self._get_upload_url(title, description, album_id)
+            upload_url = await self._get_upload_url(title, description, album_id, **kwargs)
             if not upload_url:
                 self.logger.error("Не удалось получить URL для загрузки")
                 return None
@@ -193,23 +253,32 @@ class VKUploader(BaseUploader):
             self.logger.error(f"Ошибка удаления видео: {video_id}")
             return False
 
-    async def _get_upload_url(self, name: str, description: str = "", album_id: str | None = None) -> str:
+    async def _get_upload_url(self, name: str, description: str = "", album_id: str | None = None, **kwargs) -> str:
         """Получение URL для загрузки видео."""
+        # Start with config defaults
         params = {
             "name": name,
             "description": description,
-            "privacy_view": self.config.privacy_view,
-            "privacy_comment": self.config.privacy_comment,
-            "no_comments": int(self.config.no_comments),
-            "repeat": int(self.config.repeat),
+            "privacy_view": kwargs.get("privacy_view", self.config.privacy_view),
+            "privacy_comment": kwargs.get("privacy_comment", self.config.privacy_comment),
+            "no_comments": int(kwargs.get("no_comments", self.config.no_comments)),
+            "repeat": int(kwargs.get("repeat", self.config.repeat)),
         }
 
-        if self.config.group_id:
-            params["group_id"] = self.config.group_id
+        # Group ID from kwargs or config
+        group_id = kwargs.get("group_id", self.config.group_id)
+        if group_id:
+            params["group_id"] = group_id
 
-        target_album_id = album_id or self.config.album_id
+        # Album ID
+        target_album_id = album_id or kwargs.get("album_id", self.config.album_id)
         if target_album_id:
             params["album_id"] = target_album_id
+
+        # Wallpost parameter
+        if "wallpost" in kwargs:
+            params["wallpost"] = int(kwargs["wallpost"])
+            self.logger.debug(f"Wallpost enabled: {kwargs['wallpost']}")
 
         response = await self._make_request("video.save", params)
 

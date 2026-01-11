@@ -2,12 +2,11 @@
 
 import asyncio
 import json
-from datetime import datetime, timedelta
 from pathlib import Path
 
 from api.auth.encryption import get_encryption
 from api.auth.security import PasswordHelper
-from database.auth_models import UserCredentialModel, UserModel, UserQuotaModel
+from database.auth_models import SubscriptionPlanModel, UserCredentialModel, UserModel, UserSubscriptionModel
 from database.config import DatabaseConfig
 from database.config_models import UserConfigModel
 from database.manager import DatabaseManager
@@ -73,16 +72,24 @@ async def create_test_user():
             session.add(user)
             await session.flush()
 
-            # Создаем квоты
-            quota = UserQuotaModel(
-                user_id=user.id,
-                max_recordings_per_month=1000,
-                max_storage_gb=500,
-                max_concurrent_tasks=10,
-                quota_reset_at=datetime.utcnow() + timedelta(days=30),
-            )
-            session.add(quota)
-            await session.flush()
+            # Получаем Free plan или создаем подписку
+            from sqlalchemy import select
+
+            result = await session.execute(select(SubscriptionPlanModel).where(SubscriptionPlanModel.name == "free"))
+            free_plan = result.scalars().first()
+
+            if free_plan:
+                # Создаем подписку с кастомными квотами для тестового пользователя
+                subscription = UserSubscriptionModel(
+                    user_id=user.id,
+                    plan_id=free_plan.id,
+                    custom_max_recordings_per_month=1000,
+                    custom_max_storage_gb=500,
+                    custom_max_concurrent_tasks=10,
+                    notes="Test user with extended quotas",
+                )
+                session.add(subscription)
+                await session.flush()
 
             # Создаем config
             config_path = Path(__file__).parent.parent / "config" / "default_user_config.json"

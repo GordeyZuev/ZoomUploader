@@ -24,6 +24,7 @@ class OAuthPlatformConfig:
     redirect_uri: str
     response_type: str = "code"
     access_type: str | None = None
+    use_pkce: bool = False  # Whether this platform requires PKCE
 
 
 def load_oauth_config(config_path: str) -> dict:
@@ -79,7 +80,7 @@ def create_youtube_config() -> OAuthPlatformConfig:
 
 
 def create_vk_config() -> OAuthPlatformConfig:
-    """Create VK OAuth configuration."""
+    """Create VK OAuth configuration with support for both old OAuth and new VK ID API."""
     config_path = os.getenv("VK_OAUTH_CONFIG", "config/oauth_vk.json")
 
     try:
@@ -91,16 +92,75 @@ def create_vk_config() -> OAuthPlatformConfig:
     base_url = os.getenv("OAUTH_REDIRECT_BASE_URL", "http://localhost:8000")
     redirect_uri = config.get("redirect_uri", f"{base_url}/api/v1/oauth/vk/callback")
 
+    # Check if we should use new VK ID or old VK OAuth
+    use_vk_id = config.get("use_vk_id", False)
+
+    if use_vk_id:
+        # New VK ID OAuth 2.1 with PKCE and refresh tokens
+        # Documentation: https://id.vk.com/about/business/go/docs/ru/vkid/latest/vk-id/connection/start-integration/how-auth-works/auth-flow-web
+        logger.info("Using VK ID OAuth 2.1 (with PKCE)")
+        return OAuthPlatformConfig(
+            name="VK",
+            platform_id="vk_video",
+            authorization_url="https://id.vk.ru/authorize",
+            token_url="https://id.vk.ru/oauth2/auth",  # Correct VK ID token endpoint
+            client_id=config.get("app_id", ""),
+            client_secret=config.get("client_secret"),
+            scopes=["vkid.personal_info", "video", "groups", "wall"],
+            redirect_uri=redirect_uri,
+            response_type="code",
+            access_type=None,
+            use_pkce=True,
+        )
+    else:
+        # Old VK OAuth (stable, but no refresh tokens)
+        logger.info("Using legacy VK OAuth (without PKCE)")
     return OAuthPlatformConfig(
         name="VK",
         platform_id="vk_video",
         authorization_url="https://oauth.vk.com/authorize",
-        token_url=None,  # VK uses implicit flow or code in URL
+            token_url="https://oauth.vk.com/access_token",
         client_id=config.get("app_id", ""),
         client_secret=config.get("client_secret"),
         scopes=["video", "groups", "wall"],
         redirect_uri=redirect_uri,
         response_type="code",
+            access_type=None,
+            use_pkce=False,
+    )
+
+
+def create_zoom_config() -> OAuthPlatformConfig:
+    """Create Zoom OAuth configuration."""
+    config_path = os.getenv("ZOOM_OAUTH_CONFIG", "config/oauth_zoom.json")
+
+    try:
+        config = load_oauth_config(config_path)
+    except FileNotFoundError:
+        logger.warning(f"Zoom OAuth config not found at {config_path}, using defaults")
+        config = {}
+
+    base_url = os.getenv("OAUTH_REDIRECT_BASE_URL", "http://localhost:8000")
+    redirect_uri = config.get("redirect_uri", f"{base_url}/api/v1/oauth/zoom/callback")
+
+    return OAuthPlatformConfig(
+        name="Zoom",
+        platform_id="zoom",
+        authorization_url="https://zoom.us/oauth/authorize",
+        token_url="https://zoom.us/oauth/token",
+        client_id=config.get("client_id", ""),
+        client_secret=config.get("client_secret", ""),
+        scopes=[
+            # User-level scopes (not admin) for user-managed app
+            "cloud_recording:read:list_user_recordings",  # List user's recordings
+            "cloud_recording:read:recording",             # Read recording details
+            "recording:write:recording",                  # Delete recordings
+            "user:read:user",                             # User info
+        ],
+        redirect_uri=redirect_uri,
+        response_type="code",
+        access_type=None,
+        use_pkce=False,  # Zoom supports standard OAuth 2.0
     )
 
 
@@ -110,6 +170,8 @@ def get_platform_config(platform: str) -> OAuthPlatformConfig:
         return create_youtube_config()
     elif platform in ("vk", "vk_video"):
         return create_vk_config()
+    elif platform == "zoom":
+        return create_zoom_config()
     else:
         raise ValueError(f"Unsupported OAuth platform: {platform}")
 
@@ -118,9 +180,11 @@ def get_platform_config(platform: str) -> OAuthPlatformConfig:
 try:
     YOUTUBE_CONFIG = create_youtube_config()
     VK_CONFIG = create_vk_config()
+    ZOOM_CONFIG = create_zoom_config()
     logger.info("OAuth platform configurations loaded successfully")
 except Exception as e:
     logger.warning(f"Failed to load OAuth configurations: {e}")
     YOUTUBE_CONFIG = None
     VK_CONFIG = None
+    ZOOM_CONFIG = None
 

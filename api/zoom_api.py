@@ -51,12 +51,18 @@ class ZoomAPI:
         """
         Получение токена доступа с кэшированием и синхронизацией.
 
-        Использует TokenManager для централизованного управления токенами,
-        предотвращая race conditions при параллельных запросах.
+        Поддерживает два режима:
+        1. OAuth 2.0 - использует access_token напрямую
+        2. Server-to-Server - получает токен через TokenManager
 
         Returns:
             Access token или None в случае неудачи
         """
+        # Если используется OAuth 2.0, возвращаем access_token напрямую
+        if self.config.is_oauth:
+            return self.config.access_token
+
+        # Иначе используем Server-to-Server через TokenManager
         token_manager = await TokenManager.get_instance(self.config.account)
         return await token_manager.get_token(self.config)
 

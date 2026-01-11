@@ -28,7 +28,7 @@ celery_app = Celery(
     "zoom_publishing",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["api.tasks.processing", "api.tasks.upload", "api.tasks.automation"],
+    include=["api.tasks.processing", "api.tasks.upload", "api.tasks.automation", "api.tasks.maintenance", "api.tasks.sync_tasks"],
 )
 
 # Конфигурация Celery
@@ -54,6 +54,8 @@ celery_app.conf.task_routes = {
     "api.tasks.processing.*": {"queue": "processing"},
     "api.tasks.upload.*": {"queue": "upload"},
     "api.tasks.automation.*": {"queue": "automation"},
+    "api.tasks.maintenance.*": {"queue": "maintenance"},
+    "api.tasks.sync.*": {"queue": "processing"},  # Sync tasks use processing queue
 }
 
 # Приоритеты очередей
@@ -61,6 +63,16 @@ celery_app.conf.broker_transport_options = {
     "priority_steps": list(range(10)),  # 0-9, где 9 - наивысший приоритет
     "sep": ":",
     "queue_order_strategy": "priority",
+}
+
+# Celery Beat Schedule для периодических задач
+from celery.schedules import crontab  # noqa: E402
+
+celery_app.conf.beat_schedule = {
+    "cleanup-expired-tokens": {
+        "task": "maintenance.cleanup_expired_tokens",
+        "schedule": crontab(hour=3, minute=0),  # Каждый день в 3:00 UTC
+    },
 }
 
 

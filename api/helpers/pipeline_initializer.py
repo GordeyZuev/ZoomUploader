@@ -47,14 +47,14 @@ async def initialize_processing_stages_from_config(
     transcription_config = processing_config.get("transcription", {})
 
     if transcription_config.get("enable_transcription", False):
-        # Создаем этап транскрипции
+        # Создаем этап транскрипции (provider всегда fireworks)
         stages_to_create.append(
             ProcessingStageModel(
                 recording_id=recording.id,
                 user_id=recording.user_id,
                 stage_type=ProcessingStageType.TRANSCRIBE,
                 status=ProcessingStageStatus.PENDING,
-                stage_meta={"provider": transcription_config.get("provider", "fireworks")},
+                stage_meta={"provider": "fireworks"},
             )
         )
 
@@ -110,25 +110,34 @@ async def initialize_output_targets_from_config(
 
     Example output_config:
         {
-            "preset_ids": {
-                "youtube": 1,
-                "vk": 2
-            }
+            "preset_ids": [1, 2, 3]
         }
     """
+    from sqlalchemy import select
+    from database.template_models import OutputPresetModel
+
     targets_to_create = []
 
-    # Получаем preset_ids
-    preset_ids = output_config.get("preset_ids", {})
+    # Получаем preset_ids (теперь это список)
+    preset_ids = output_config.get("preset_ids", [])
 
     if not preset_ids:
         return []
 
+    # Загружаем все presets из БД одним запросом
+    query = select(OutputPresetModel).where(
+        OutputPresetModel.id.in_(preset_ids),
+        OutputPresetModel.user_id == recording.user_id,
+        OutputPresetModel.is_active == True
+    )
+    result = await session.execute(query)
+    presets = result.scalars().all()
+
     # Создаем target для каждого preset
-    for platform_str, preset_id in preset_ids.items():
-        # Преобразуем строку платформы в TargetType
+    for preset in presets:
+        # Берем платформу из preset (single source of truth)
         try:
-            target_type = TargetType[platform_str.upper()]
+            target_type = TargetType[preset.platform.upper()]
         except KeyError:
             # Если платформа не найдена, пропускаем
             continue
@@ -137,7 +146,7 @@ async def initialize_output_targets_from_config(
             OutputTargetModel(
                 recording_id=recording.id,
                 user_id=recording.user_id,
-                preset_id=preset_id,
+                preset_id=preset.id,
                 target_type=target_type,
                 status=TargetStatus.NOT_UPLOADED,
                 target_meta={},
@@ -181,7 +190,7 @@ async def ensure_processing_stages(
         required_stages.append(
             (
                 ProcessingStageType.TRANSCRIBE,
-                {"provider": transcription_config.get("provider", "fireworks")},
+                {"provider": "fireworks"},  # Provider always fireworks
             )
         )
 
@@ -232,16 +241,31 @@ async def ensure_output_targets(
     Returns:
         Список всех output_targets (существующие + созданные)
     """
+    from sqlalchemy import select
+    from database.template_models import OutputPresetModel
+
     # Получаем существующие target types
     existing_target_types = {target.target_type for target in recording.outputs}
 
-    # Определяем какие targets нужны
-    preset_ids = output_config.get("preset_ids", {})
+    # Определяем какие targets нужны (теперь это список)
+    preset_ids = output_config.get("preset_ids", [])
     new_targets = []
 
-    for platform_str, preset_id in preset_ids.items():
+    if not preset_ids:
+        return list(recording.outputs)
+
+    # Загружаем все presets из БД одним запросом
+    query = select(OutputPresetModel).where(
+        OutputPresetModel.id.in_(preset_ids),
+        OutputPresetModel.user_id == recording.user_id,
+        OutputPresetModel.is_active == True
+    )
+    result = await session.execute(query)
+    presets = result.scalars().all()
+
+    for preset in presets:
         try:
-            target_type = TargetType[platform_str.upper()]
+            target_type = TargetType[preset.platform.upper()]
         except KeyError:
             continue
 
@@ -250,7 +274,7 @@ async def ensure_output_targets(
             new_target = OutputTargetModel(
                 recording_id=recording.id,
                 user_id=recording.user_id,
-                preset_id=preset_id,
+                preset_id=preset.id,
                 target_type=target_type,
                 status=TargetStatus.NOT_UPLOADED,
                 target_meta={},

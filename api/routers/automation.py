@@ -13,7 +13,7 @@ from api.schemas.automation import (
 from api.services.automation_service import AutomationService
 from api.tasks.automation import dry_run_automation_job_task, run_automation_job_task
 
-router = APIRouter(prefix="/automation/jobs", tags=["Automation"])
+router = APIRouter(prefix="/api/v1/automation/jobs", tags=["Automation"])
 
 
 @router.get("", response_model=list[AutomationJobResponse])

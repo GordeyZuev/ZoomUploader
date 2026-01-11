@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.security import JWTHelper
 from api.dependencies import get_db_session
-from api.repositories.auth_repos import UserQuotaRepository, UserRepository
-from api.schemas.auth import UserInDB, UserQuotaCreate
+from api.repositories.auth_repos import UserRepository
+from api.schemas.auth import UserInDB
 from logger import get_logger
 
 logger = get_logger()
@@ -119,7 +119,7 @@ async def check_user_quotas(
     session: AsyncSession = Depends(get_db_session),
 ) -> UserInDB:
     """
-    Проверить квоты пользователя.
+    Проверить квоты пользователя (новая система подписок).
 
     Args:
         current_user: Текущий пользователь
@@ -131,28 +131,24 @@ async def check_user_quotas(
     Raises:
         HTTPException: Если квоты исчерпаны
     """
-    quota_repo = UserQuotaRepository(session)
-    quota = await quota_repo.get_by_user_id(current_user.id)
+    from api.services.quota_service import QuotaService
 
-    if not quota:
-        quota_create = UserQuotaCreate(
-            user_id=current_user.id,
-            max_recordings_per_month=100,
-            max_storage_gb=50,
-            max_concurrent_tasks=3,
-        )
-        quota = await quota_repo.create(quota_data=quota_create)
+    quota_service = QuotaService(session)
 
-    if quota.current_recordings_count >= quota.max_recordings_per_month:
+    # Check recordings quota
+    allowed, error = await quota_service.check_recordings_quota(current_user.id)
+    if not allowed:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Monthly recording limit exceeded ({quota.max_recordings_per_month})",
+            detail=error,
         )
 
-    if quota.current_tasks_count >= quota.max_concurrent_tasks:
+    # Check concurrent tasks quota
+    allowed, error = await quota_service.check_concurrent_tasks_quota(current_user.id)
+    if not allowed:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Concurrent tasks limit exceeded ({quota.max_concurrent_tasks})",
+            detail=error,
         )
 
     return current_user

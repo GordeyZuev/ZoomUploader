@@ -9,7 +9,7 @@
 
 **LEAP** — это production-ready multi-tenant платформа с полным `REST API` для автоматизации end-to-end обработки образовательного видеоконтента — от загрузки до публикации с AI-транскрибацией, интеллектуальным структурированием и профессиональным оформлением.
 
-**Версия:** `v0.9.1` (Dev Status)  
+**Версия:** `v0.9.2` (Dev Status)  
 **Tech:** `Python 3.11+` • `FastAPI` • `PostgreSQL` • `Redis` • `Celery` • `AI` (Whisper, DeepSeek)
 
 ---
@@ -141,7 +141,7 @@
 
 ### Enterprise-Ready Features
 
-**⚡ 64 REST API Endpoints**
+**⚡ 84 REST API Endpoints**
 - Полноценный `CRUD` для всех сущностей
 - `JWT` аутентификация + `RBAC`
 - `OpenAPI` документация (`Swagger`, `ReDoc`)
@@ -176,8 +176,8 @@
 ## 📈 Key Metrics
 
 ```
-📊 API Endpoints:        64
-🗄️  Database Migrations:  14
+📊 API Endpoints:        84
+🗄️  Database Migrations:  17
 🔌 Platform Integrations: 3 (Zoom, YouTube, VK)
 🤖 AI Models:            2 (Whisper, DeepSeek)
 🔒 Security Features:    JWT + OAuth2 + RBAC + Encryption
@@ -225,7 +225,7 @@
 - Audit logs и usage tracking
 
 **Production-Ready**
-- 64 REST API endpoints с `OpenAPI` docs
+- 84 REST API endpoints с `OpenAPI` docs
 - Health checks и monitoring (`Flower`)
 - Automatic retry mechanisms
 - Error handling и graceful degradation
@@ -322,7 +322,7 @@ make api
 
 ---
 
-## 🌐 REST API (64 endpoints)
+## 🌐 REST API (84 endpoints)
 
 Production-ready `REST API` с полной `OpenAPI` документацией:
 
@@ -330,7 +330,7 @@ Production-ready `REST API` с полной `OpenAPI` документацией
 
 | Группа | Endpoints | Описание |
 |--------|-----------|----------|
-| 🔐 **Authentication** | 5 | Register, Login, Refresh, Logout, Profile |
+| 🔐 **Authentication** | 6 | Register, Login, Refresh, Logout, Logout-All, Profile |
 | 👤 **User Management** | 6 | Profile, Config, Password, Account deletion |
 | 🎥 **Recordings** | 15+ | CRUD, Processing pipeline, Batch operations |
 | 🔑 **Credentials** | 4 | Encrypted storage для API keys |
@@ -445,7 +445,7 @@ TRANSCRIBED → UPLOADING → READY
 
 ---
 
-## 🆕 Latest Release: v0.9.1
+## 🆕 Latest Release: v0.9.2
 
 **Major Features:**
 
@@ -471,10 +471,10 @@ TRANSCRIBED → UPLOADING → READY
 
 **Statistics:**
 ```
-API Endpoints:  49 → 64 (+15)
-DB Migrations:  8 → 14 (+6)
-New Models:     AutomationJobModel, FSM fields
-New Statuses:   PREPARING, READY
+API Endpoints:  84 (full production coverage)
+DB Migrations:  17 (auto-init on first run)
+Architecture:   Template-driven pipeline
+OAuth:          YouTube, VK, Zoom (all platforms)
 ```
 
 📜 Полная история: [WHAT_WAS_DONE.md](docs/WHAT_WAS_DONE.md)
@@ -495,4 +495,4 @@ New Statuses:   PREPARING, READY
 
 ---
 
-**Версия:** `v0.9.1` • **Статус:** Dev Status
+**Версия:** `v0.9.2` • **Статус:** Dev Status

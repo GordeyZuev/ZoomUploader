@@ -25,7 +25,7 @@ from models.recording import (
 
 if TYPE_CHECKING:
     from database.auth_models import UserModel
-    from database.template_models import InputSourceModel, OutputPresetModel
+    from database.template_models import InputSourceModel, OutputPresetModel, RecordingTemplateModel
 
 
 class Base(DeclarativeBase):
@@ -43,6 +43,9 @@ class RecordingModel(Base):
     )
     input_source_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("input_sources.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    template_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("recording_templates.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
     display_name: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -75,6 +78,11 @@ class RecordingModel(Base):
     input_source: Mapped["InputSourceModel"] = relationship(
         "InputSourceModel",
         foreign_keys=[input_source_id],
+        lazy="selectin",
+    )
+    template: Mapped["RecordingTemplateModel | None"] = relationship(
+        "RecordingTemplateModel",
+        foreign_keys=[template_id],
         lazy="selectin",
     )
     source: Mapped["SourceMetadataModel"] = relationship(

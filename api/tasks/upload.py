@@ -10,7 +10,7 @@ from api.core.context import ServiceContext
 from database.config import DatabaseConfig
 from database.manager import DatabaseManager
 from logger import get_logger
-from video_upload_module.factory import UploaderFactory
+from video_upload_module.uploader_factory import create_uploader_from_db
 
 logger = get_logger()
 
@@ -68,14 +68,8 @@ def upload_recording_to_platform(
             f"for user {user_id} to {platform}"
         )
 
-        # Создаем async event loop
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
         # Выполняем async загрузку
-        result = loop.run_until_complete(
+        result = asyncio.run(
             _async_upload_recording(
                 recording_id=recording_id,
                 user_id=user_id,
@@ -98,7 +92,7 @@ def upload_recording_to_platform(
         raise self.retry(countdown=900, exc=SoftTimeLimitExceeded())
 
     except Exception as exc:
-        logger.error(f"[Task {self.request.id}] Error uploading: {exc}", exc_info=True)
+        logger.error(f"[Task {self.request.id}] Error uploading: {type(exc).__name__}: {str(exc)}", exc_info=True)
         raise self.retry(exc=exc)
 
 
@@ -124,6 +118,7 @@ async def _async_upload_recording(
     """
     from pathlib import Path
 
+    from api.helpers.template_renderer import TemplateRenderer
     from api.repositories.recording_repos import RecordingAsyncRepository
 
     db_config = DatabaseConfig.from_env()
@@ -138,6 +133,13 @@ async def _async_upload_recording(
         if not recording:
             raise ValueError(f"Recording {recording_id} not found for user {user_id}")
 
+        # DEBUG: Check what data is loaded from DB
+        logger.info(f"[Upload] Recording {recording_id} loaded from DB")
+        logger.info(f"[Upload] Recording has main_topics: {hasattr(recording, 'main_topics')} = {getattr(recording, 'main_topics', None)}")
+        logger.info(f"[Upload] Recording has topic_timestamps: {hasattr(recording, 'topic_timestamps')} = {type(getattr(recording, 'topic_timestamps', None))}")
+        if hasattr(recording, 'topic_timestamps') and recording.topic_timestamps:
+            logger.info(f"[Upload] topic_timestamps is list: {isinstance(recording.topic_timestamps, list)}, length: {len(recording.topic_timestamps) if isinstance(recording.topic_timestamps, list) else 'N/A'}")
+
         if not recording.processed_video_path:
             raise ValueError(f"Recording {recording_id} has no processed video")
 
@@ -145,76 +147,216 @@ async def _async_upload_recording(
         if not Path(video_path).exists():
             raise ValueError(f"Video file not found: {video_path}")
 
-        # Создаем uploader
+        # Создать или получить output_target и пометить как UPLOADING
+        target_type_map = {
+            "youtube": "YOUTUBE",
+            "vk": "VK",
+        }
+        target_type = target_type_map.get(platform.lower(), platform.upper())
+
+        output_target = await recording_repo.get_or_create_output_target(
+            recording=recording,
+            target_type=target_type,
+            preset_id=preset_id,
+        )
+
+        await recording_repo.mark_output_uploading(output_target)
+
+        # Initialize preset metadata
+        preset_metadata = {}
+        preset = None
+
+        # Создаем uploader с новым factory
         if preset_id:
-            uploader = await UploaderFactory.create_uploader_by_preset_id(
+            # Get preset to extract platform and credential_id
+            from api.repositories.template_repos import OutputPresetRepository
+
+            preset_repo = OutputPresetRepository(ctx.session)
+            preset = await preset_repo.find_by_id(preset_id, user_id)
+
+            if not preset:
+                raise ValueError(f"Output preset {preset_id} not found for user {user_id}")
+
+            if not preset.credential_id:
+                raise ValueError(f"Output preset {preset_id} has no credential configured")
+
+            # Extract preset metadata
+            preset_metadata = preset.preset_metadata or {}
+            logger.info(f"Using preset {preset.name} with metadata: {list(preset_metadata.keys())}")
+
+            # Map platform names
+            platform_map = {"YOUTUBE": "youtube", "VK": "vk_video", "VK_VIDEO": "vk_video"}
+            mapped_platform = platform_map.get(preset.platform.upper(), preset.platform.lower())
+
+            uploader = await create_uploader_from_db(
+                platform=mapped_platform,
+                credential_id=preset.credential_id,
                 session=ctx.session,
-                user_id=user_id,
-                preset_id=preset_id,
             )
         elif credential_id:
-            uploader = await UploaderFactory.create_uploader(
-                session=ctx.session,
-                user_id=user_id,
+            # Use specified credential
+            uploader = await create_uploader_from_db(
                 platform=platform,
                 credential_id=credential_id,
+                session=ctx.session,
             )
         else:
-            uploader = await UploaderFactory.create_uploader(
-                session=ctx.session,
-                user_id=user_id,
+            # No credential specified - need to find default
+            from api.repositories.auth_repos import UserCredentialRepository
+
+            cred_repo = UserCredentialRepository(ctx.session)
+            credentials = await cred_repo.list_by_platform(user_id, platform)
+
+            if not credentials:
+                raise ValueError(f"No credentials found for platform {platform}")
+
+            # Use first available credential
+            uploader = await create_uploader_from_db(
                 platform=platform,
+                credential_id=credentials[0].id,
+                session=ctx.session,
             )
+
+        # Prepare template context from recording with topics_display config
+        topics_display = preset_metadata.get("topics_display") if preset_metadata else None
+        template_context = TemplateRenderer.prepare_recording_context(recording, topics_display)
+
+        # DEBUG: Log context and preset metadata
+        logger.info(f"[Upload {platform}] Preset metadata keys: {list(preset_metadata.keys()) if preset_metadata else 'None'}")
+        logger.info(f"[Upload {platform}] Template context keys: {list(template_context.keys())}")
+        logger.info(f"[Upload {platform}] Has topic_timestamps: {hasattr(recording, 'topic_timestamps') and recording.topic_timestamps is not None}")
+        if hasattr(recording, 'topic_timestamps') and recording.topic_timestamps:
+            logger.info(f"[Upload {platform}] topic_timestamps count: {len(recording.topic_timestamps)}")
+        logger.info(f"[Upload {platform}] Has main_topics: {hasattr(recording, 'main_topics') and recording.main_topics is not None}")
+        if hasattr(recording, 'main_topics') and recording.main_topics:
+            logger.info(f"[Upload {platform}] main_topics: {recording.main_topics}")
 
         # Аутентификация
         auth_success = await uploader.authenticate()
         if not auth_success:
             raise Exception(f"Failed to authenticate with {platform}")
 
-        # Получить параметры из recording
-        title = recording.display_name
-        description = f"Uploaded on {recording.start_time.strftime('%Y-%m-%d')}"
+        # Prepare title and description from templates or defaults
+        title_template = preset_metadata.get("title_template", "{display_name}")
+        description_template = preset_metadata.get(
+            "description_template",
+            "Uploaded on {start_time}"
+        )
 
-        if recording.main_topics:
-            topics_str = ", ".join(recording.main_topics[:5])
-            description += f"\n\nТемы: {topics_str}"
+        logger.info(f"[Upload {platform}] title_template: {title_template[:100]}...")
+        logger.info(f"[Upload {platform}] description_template: {description_template[:200]}...")
+
+        title = TemplateRenderer.render(title_template, template_context, topics_display)
+        description = TemplateRenderer.render(description_template, template_context, topics_display)
+
+        logger.info(f"[Upload {platform}] Rendered title: {title[:100] if title else 'EMPTY'}")
+        logger.info(f"[Upload {platform}] Rendered description length: {len(description)} chars")
+        logger.info(f"[Upload {platform}] Rendered description preview: {description[:200] if description else 'EMPTY'}")
+
+        # Fallback if templates produced empty strings
+        if not title:
+            logger.warning(f"[Upload {platform}] Title is empty, using fallback")
+            title = recording.display_name or "Recording"
+        if not description:
+            logger.warning(f"[Upload {platform}] Description is empty, using fallback")
+            description = f"Uploaded on {recording.start_time.strftime('%Y-%m-%d')}"
+            if recording.main_topics:
+                # Use topics_display for fallback if configured
+                if topics_display and topics_display.get("enabled", True):
+                    topics_str = TemplateRenderer._format_topics_list(recording.main_topics, topics_display)
+                else:
+                    topics_str = ", ".join(recording.main_topics[:5])
+                description += f"\n\n{topics_str}"
+
+        logger.info(f"[Upload {platform}] Final title: {title[:50]}...")
+        logger.info(f"[Upload {platform}] Final description length: {len(description)}")
+
+        # Prepare upload parameters from preset_metadata
+        upload_params = {
+            "video_path": video_path,
+            "title": title,
+            "description": description,
+        }
+
+        # Add platform-specific parameters from preset
+        if platform.lower() in ["youtube"]:
+            # YouTube-specific parameters
+            if "tags" in preset_metadata:
+                upload_params["tags"] = preset_metadata["tags"]
+
+            if "category_id" in preset_metadata:
+                upload_params["category_id"] = preset_metadata["category_id"]
+
+            if "privacy" in preset_metadata:
+                upload_params["privacy_status"] = preset_metadata["privacy"]
+
+            if "playlist_id" in preset_metadata:
+                upload_params["playlist_id"] = preset_metadata["playlist_id"]
+
+            if "publish_at" in preset_metadata:
+                upload_params["publish_at"] = preset_metadata["publish_at"]
+
+            if "thumbnail_path" in preset_metadata and preset_metadata["thumbnail_path"]:
+                thumbnail_path = Path(preset_metadata["thumbnail_path"])
+                if thumbnail_path.exists():
+                    upload_params["thumbnail_path"] = str(thumbnail_path)
+                else:
+                    logger.warning(f"Thumbnail not found: {thumbnail_path}")
+
+            # Additional YouTube params
+            for key in ["made_for_kids", "embeddable", "license", "public_stats_viewable"]:
+                if key in preset_metadata:
+                    upload_params[key] = preset_metadata[key]
+
+        elif platform.lower() in ["vk", "vk_video"]:
+            # VK-specific parameters
+            if "album_id" in preset_metadata:
+                upload_params["album_id"] = str(preset_metadata["album_id"])
+
+            if "thumbnail_path" in preset_metadata and preset_metadata["thumbnail_path"]:
+                thumbnail_path = Path(preset_metadata["thumbnail_path"])
+                if thumbnail_path.exists():
+                    upload_params["thumbnail_path"] = str(thumbnail_path)
+
+            # VK privacy and other settings (including group_id for group uploads)
+            for key in ["group_id", "privacy_view", "privacy_comment", "no_comments", "repeat", "wallpost"]:
+                if key in preset_metadata:
+                    upload_params[key] = preset_metadata[key]
 
         # Загрузка
-        upload_result = await uploader.upload_video(
-            video_path=video_path,
-            title=title,
-            description=description,
-        )
+        try:
+            upload_result = await uploader.upload_video(**upload_params)
 
-        if not upload_result or not upload_result.success:
-            raise Exception(
-                f"Upload failed: {upload_result.error if upload_result else 'Unknown error'}"
+            if not upload_result or upload_result.error_message:
+                error_message = upload_result.error_message if upload_result else 'Unknown error'
+                await recording_repo.mark_output_failed(output_target, f"Upload failed: {error_message}")
+                await session.commit()
+                raise Exception(f"Upload failed: {error_message}")
+
+            # Сохранить результаты в БД (обновит статус на UPLOADED)
+            await recording_repo.save_upload_result(
+                recording=recording,
+                target_type=target_type,
+                preset_id=preset_id,
+                video_id=upload_result.video_id,
+                video_url=upload_result.video_url,
+                target_meta={"platform": platform, "uploaded_by_task": True},
             )
 
-        # Сохранить результаты в БД
-        target_type_map = {
-            "youtube": "YOUTUBE",
-            "vk": "VK",
-        }
+            await session.commit()
 
-        target_type = target_type_map.get(platform.lower(), platform.upper())
+            return {
+                "success": True,
+                "video_id": upload_result.video_id,
+                "video_url": upload_result.video_url,
+            }
 
-        await recording_repo.save_upload_result(
-            recording=recording,
-            target_type=target_type,
-            preset_id=preset_id,
-            video_id=upload_result.video_id,
-            video_url=upload_result.video_url,
-            target_meta={"platform": platform, "uploaded_by_task": True},
-        )
-
-        await session.commit()
-
-        return {
-            "success": True,
-            "video_id": upload_result.video_id,
-            "video_url": upload_result.video_url,
-        }
+        except Exception as e:
+            # Mark as failed if not already marked
+            if output_target.status != "FAILED":
+                await recording_repo.mark_output_failed(output_target, str(e))
+                await session.commit()
+            raise
 
 
 @celery_app.task(

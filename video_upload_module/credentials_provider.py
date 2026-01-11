@@ -117,7 +117,7 @@ class DatabaseCredentialProvider(CredentialProvider):
     async def load_credentials(self) -> dict[str, Any] | None:
         """Load credentials from database."""
         try:
-            credential = await self.repo.get(self.credential_id)
+            credential = await self.repo.get_by_id(self.credential_id)
             if not credential or not credential.encrypted_data:
                 logger.warning(f"Credential {self.credential_id} not found or empty")
                 return None
@@ -185,6 +185,104 @@ class DatabaseCredentialProvider(CredentialProvider):
         except Exception as e:
             logger.error(f"Failed to update Google credentials in DB: {e}")
             return False
+
+    async def get_vk_credentials(self) -> dict[str, Any] | None:
+        """Get VK credentials from database."""
+        data = await self.load_credentials()
+        if not data:
+            return None
+
+        try:
+            # VK credentials structure: access_token, refresh_token, user_id, expires_in, expiry
+            return {
+                "client_id": data.get("client_id"),
+                "client_secret": data.get("client_secret"),
+                "access_token": data.get("access_token"),
+                "refresh_token": data.get("refresh_token"),
+                "user_id": data.get("user_id"),
+                "expires_in": data.get("expires_in"),
+                "expiry": data.get("expiry"),
+            }
+        except Exception as e:
+            logger.error(f"Failed to parse VK credentials from DB: {e}")
+            return None
+
+    async def update_vk_credentials(self, access_token: str, expires_in: int, refresh_token: str | None = None) -> bool:
+        """Update VK credentials in database after refresh."""
+        try:
+            from datetime import datetime, timedelta
+
+            # Load existing data
+            data = await self.load_credentials()
+            if not data:
+                logger.error("Cannot update - no existing VK credentials found")
+                return False
+
+            # Update token fields
+            data["access_token"] = access_token
+            data["expires_in"] = expires_in
+
+            # Update refresh token if provided (VK ID may rotate refresh tokens)
+            if refresh_token:
+                data["refresh_token"] = refresh_token
+
+            # Update expiry
+            expiry = datetime.utcnow() + timedelta(seconds=expires_in)
+            data["expiry"] = expiry.isoformat() + "Z"
+
+            # Save back to database
+            return await self.save_credentials(data)
+        except Exception as e:
+            logger.error(f"Failed to update VK credentials in DB: {e}")
+            return False
+
+    async def refresh_vk_token(self) -> dict[str, Any] | None:
+        """Refresh VK token using VK ID API."""
+        try:
+            import aiohttp
+
+            # Load credentials
+            creds = await self.get_vk_credentials()
+            if not creds or not creds.get("refresh_token"):
+                logger.error("No VK refresh token available")
+                return None
+
+            # Prepare refresh request
+            data = {
+                "refresh_token": creds["refresh_token"],
+                "client_id": creds.get("client_id"),
+                "client_secret": creds.get("client_secret"),
+                "grant_type": "refresh_token",
+            }
+
+            # Call VK OAuth token endpoint
+            url = "https://oauth.vk.com/access_token"
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, data=data) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"VK token refresh failed: status={response.status} error={error_text}")
+                        return None
+
+                    token_data = await response.json()
+
+                    if "error" in token_data:
+                        logger.error(f"VK token refresh error: {token_data['error']}")
+                        return None
+
+                    # Update credentials in DB
+                    await self.update_vk_credentials(
+                        access_token=token_data["access_token"],
+                        expires_in=token_data.get("expires_in", 86400),
+                        refresh_token=token_data.get("refresh_token"),  # May be rotated
+                    )
+
+                    logger.info("VK token refreshed and updated in database")
+                    return token_data
+
+        except Exception as e:
+            logger.error(f"Failed to refresh VK token: {e}")
+            return None
 
 
 def create_credential_provider(

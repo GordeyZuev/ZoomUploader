@@ -4,9 +4,8 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.helpers.schedule_converter import get_next_run_time, schedule_to_cron, validate_min_interval
-from api.repositories.auth_repos import UserQuotaRepository
 from api.repositories.automation_repos import AutomationJobRepository
-from database.auth_models import UserQuotaModel
+from api.services.quota_service import QuotaService
 
 
 class AutomationService:
@@ -16,36 +15,44 @@ class AutomationService:
         self.session = session
         self.user_id = user_id
         self.job_repo = AutomationJobRepository(session)
-        self.quota_repo = UserQuotaRepository(session)
+        self.quota_service = QuotaService(session)
 
-    async def get_user_quota(self) -> UserQuotaModel:
-        """Get user quota or raise error."""
-        quota = await self.quota_repo.get(self.user_id)
-        if not quota:
-            raise HTTPException(status_code=404, detail="User quota not found")
-        return quota
+    async def get_user_quotas(self) -> dict[str, int | None]:
+        """Get user effective quotas."""
+        return await self.quota_service.get_effective_quotas(self.user_id)
 
-    async def validate_quota(self) -> UserQuotaModel:
+    async def validate_quota(self) -> dict[str, int | None]:
         """Validate that user hasn't exceeded automation job limit."""
-        quota = await self.get_user_quota()
+        quotas = await self.get_user_quotas()
+        max_jobs = quotas["max_automation_jobs"]
+
+        # NULL = unlimited
+        if max_jobs is None:
+            return quotas
+
         current_count = await self.job_repo.count_user_jobs(self.user_id)
 
-        if current_count >= quota.max_automation_jobs:
+        if current_count >= max_jobs:
             raise HTTPException(
                 status_code=400,
-                detail=f"Automation job limit reached ({quota.max_automation_jobs} jobs maximum)"
+                detail=f"Automation job limit reached ({max_jobs} jobs maximum)"
             )
 
-        return quota
+        return quotas
 
-    async def validate_schedule(self, schedule: dict, quota: UserQuotaModel) -> None:
+    async def validate_schedule(self, schedule: dict, quotas: dict[str, int | None]) -> None:
         """Validate that schedule meets minimum interval requirement."""
         cron_expr, _ = schedule_to_cron(schedule)
+        min_interval = quotas["min_automation_interval_hours"]
 
-        if not validate_min_interval(cron_expr, quota.min_automation_interval_hours):
+        # NULL = no minimum interval
+        if min_interval is None:
+            return
+
+        if not validate_min_interval(cron_expr, min_interval):
             raise HTTPException(
                 status_code=400,
-                detail=f"Schedule interval must be at least {quota.min_automation_interval_hours} hour(s)"
+                detail=f"Schedule interval must be at least {min_interval} hour(s)"
             )
 
     async def prepare_job_data(self, job_data: dict) -> dict:

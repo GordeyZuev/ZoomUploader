@@ -41,6 +41,16 @@ class FireworksConfig(BaseSettings):
         description="Base URL для API (зависит от модели)",
     )
 
+    # Batch API параметры (опционально, для экономии)
+    account_id: str | None = Field(
+        default=None,
+        description="Account ID для Batch API (из Fireworks dashboard)",
+    )
+    batch_base_url: str = Field(
+        default="https://audio-batch.api.fireworks.ai",
+        description="Base URL для Batch API",
+    )
+
     # Параметры транскрибации из документации
     language: str | None = Field(
         default="ru",

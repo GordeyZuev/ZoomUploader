@@ -1,6 +1,6 @@
 """Endpoints для управления профилем пользователя."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,17 +9,16 @@ from api.auth.security import PasswordHelper
 from api.dependencies import get_db_session
 from api.repositories.auth_repos import (
     RefreshTokenRepository,
-    UserQuotaRepository,
     UserRepository,
 )
-from api.schemas.auth import UserInDB, UserResponse, UserUpdate
-from api.schemas.auth.response import MeResponse
+from api.schemas.auth import QuotaStatusResponse, QuotaUsageResponse, UserInDB, UserResponse, UserUpdate
+from api.schemas.auth.response import UserMeResponse
 from api.schemas.user import ChangePasswordRequest, DeleteAccountRequest, UserProfileUpdate
+from api.services.quota_service import QuotaService
 from database.auth_models import (
     RefreshTokenModel,
     UserCredentialModel,
     UserModel,
-    UserQuotaModel,
 )
 from database.config_models import UserConfigModel
 from database.models import (
@@ -40,13 +39,50 @@ logger = get_logger()
 router = APIRouter(prefix="/api/v1/users", tags=["User Management"])
 
 
-@router.get("/me", response_model=MeResponse)
+@router.get("/me", response_model=UserMeResponse)
 async def get_me(
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """
+    Получить базовую информацию о текущем пользователе.
+
+    Для получения информации о квотах используйте GET /api/v1/users/me/quota
+
+    Требует аутентификации через JWT токен.
+
+    Args:
+        current_user: Текущий пользователь (из JWT токена)
+
+    Returns:
+        Базовая информация о пользователе
+    """
+    return UserMeResponse(
+        id=current_user.id,
+        email=current_user.email,
+        full_name=current_user.full_name,
+        timezone=current_user.timezone,
+        role=current_user.role,
+        is_active=current_user.is_active,
+        is_verified=current_user.is_verified,
+        created_at=current_user.created_at,
+        last_login_at=current_user.last_login_at,
+    )
+
+
+@router.get("/me/quota", response_model=QuotaStatusResponse)
+async def get_my_quota(
     current_user: UserInDB = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
     """
-    Получить информацию о текущем пользователе.
+    Получить текущий статус квот пользователя.
+
+    Включает:
+    - Информацию о подписке и плане
+    - Эффективные квоты (с учетом custom overrides)
+    - Текущее использование за период
+    - Доступные ресурсы (available/limit)
+    - Pay-as-you-go статус и overage cost
 
     Требует аутентификации через JWT токен.
 
@@ -55,27 +91,88 @@ async def get_me(
         session: Database session
 
     Returns:
-        Информация о пользователе и его квотах
+        QuotaStatusResponse: Полный статус квот
+
+    Raises:
+        HTTPException: Если подписка не найдена
     """
-    quota_repo = UserQuotaRepository(session)
+    quota_service = QuotaService(session)
 
-    quota = await quota_repo.get_by_user_id(current_user.id)
-    quotas_dict = None
-    if quota:
-        quotas_dict = {
-            "max_recordings_per_month": quota.max_recordings_per_month,
-            "max_storage_gb": quota.max_storage_gb,
-            "max_concurrent_tasks": quota.max_concurrent_tasks,
-            "current_recordings_count": quota.current_recordings_count,
-            "current_storage_gb": quota.current_storage_gb,
-            "current_tasks_count": quota.current_tasks_count,
-            "quota_reset_at": quota.quota_reset_at.isoformat(),
-        }
+    try:
+        quota_status = await quota_service.get_quota_status(current_user.id)
+        return quota_status
+    except ValueError as e:
+        logger.error(f"Error getting quota status for user {current_user.id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
 
-    return MeResponse(
-        user=UserResponse.model_validate(current_user),
-        quotas=quotas_dict,
-    )
+
+@router.get("/me/quota/history", response_model=list[QuotaUsageResponse])
+async def get_my_quota_history(
+    current_user: UserInDB = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+    limit: int = Query(12, ge=1, le=24, description="Количество периодов (макс 24)"),
+    period: int | None = Query(
+        None,
+        description="Конкретный период (YYYYMM), если None - последние N периодов",
+    ),
+):
+    """
+    Получить историю использования квот.
+
+    По умолчанию возвращает последние 12 периодов.
+    Можно запросить конкретный период или задать лимит.
+
+    Args:
+        current_user: Текущий пользователь (из JWT токена)
+        session: Database session
+        limit: Количество периодов для возврата (по умолчанию 12, макс 24)
+        period: Конкретный период (YYYYMM), опционально
+
+    Returns:
+        list[QuotaUsageResponse]: История использования квот
+
+    Examples:
+        - GET /api/v1/users/me/quota/history - последние 12 месяцев
+        - GET /api/v1/users/me/quota/history?limit=6 - последние 6 месяцев
+        - GET /api/v1/users/me/quota/history?period=202601 - только январь 2026
+    """
+    quota_service = QuotaService(session)
+
+    # Если указан конкретный период
+    if period:
+        usage = await quota_service.usage_repo.get_by_user_and_period(current_user.id, period)
+        if not usage:
+            # Вернуть пустой список, если период не найден
+            return []
+
+        return [
+            QuotaUsageResponse(
+                period=usage.period,
+                recordings_count=usage.recordings_count,
+                storage_gb=usage.storage_bytes / (1024**3),
+                concurrent_tasks_count=usage.concurrent_tasks_count,
+                overage_recordings_count=usage.overage_recordings_count,
+                overage_cost=usage.overage_cost,
+            )
+        ]
+
+    # Иначе возвращаем историю
+    usages = await quota_service.usage_repo.get_history(current_user.id, limit=limit)
+
+    return [
+        QuotaUsageResponse(
+            period=usage.period,
+            recordings_count=usage.recordings_count,
+            storage_gb=usage.storage_bytes / (1024**3),
+            concurrent_tasks_count=usage.concurrent_tasks_count,
+            overage_recordings_count=usage.overage_recordings_count,
+            overage_cost=usage.overage_cost,
+        )
+        for usage in usages
+    ]
 
 
 @router.patch("/me", response_model=UserResponse)
@@ -296,13 +393,7 @@ async def delete_account(
     for token in tokens:
         await session.delete(token)
 
-    # 11. Quotas
-    result = await session.execute(select(UserQuotaModel).where(UserQuotaModel.user_id == user_id))
-    quota = result.scalars().first()
-    if quota:
-        await session.delete(quota)
-
-    # 12. User (последним!)
+    # 11. User (последним!) - subscriptions and quotas will be deleted via CASCADE
     result = await session.execute(select(UserModel).where(UserModel.id == user_id))
     db_user = result.scalars().first()
     if not db_user:

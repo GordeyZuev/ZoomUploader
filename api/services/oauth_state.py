@@ -23,6 +23,7 @@ class OAuthStateManager:
         user_id: int,
         platform: str,
         ip_address: str | None = None,
+        code_verifier: str | None = None,
     ) -> str:
         """
         Generate and store state token.
@@ -31,6 +32,7 @@ class OAuthStateManager:
             user_id: User ID for multi-tenancy
             platform: Platform name (youtube, vk_video)
             ip_address: Optional IP address for additional security
+            code_verifier: PKCE code_verifier for platforms that require it (VK ID)
 
         Returns:
             State token (UUID)
@@ -46,6 +48,9 @@ class OAuthStateManager:
 
         if ip_address:
             metadata["ip_address"] = ip_address
+
+        if code_verifier:
+            metadata["code_verifier"] = code_verifier
 
         await self.redis.setex(key, self.ttl, json.dumps(metadata))
 

@@ -23,8 +23,11 @@ def run_automation_job_task(self, job_id: int, user_id: int):
     """
 
     async def _run():
-        db_manager = DatabaseManager()
-        async with db_manager.get_session() as session:
+        from database.config import DatabaseConfig
+        
+        db_config = DatabaseConfig.from_env()
+        db_manager = DatabaseManager(db_config)
+        async with db_manager.async_session() as session:
             job_repo = AutomationJobRepository(session)
             job = await job_repo.get_by_id(job_id, user_id)
 
@@ -89,13 +92,17 @@ def run_automation_job_task(self, job_id: int, user_id: int):
                 if processing_config.get("auto_process", True):
                     from api.tasks.processing import full_pipeline_task
 
-                    # Process all INITIALIZED recordings
-                    # Template matching will happen inside full_pipeline_task
+                    # Process all INITIALIZED recordings (template-driven)
+                    auto_upload = processing_config.get("auto_upload", True)
+                    manual_override = {
+                        "upload": {"auto_upload": auto_upload}
+                    } if auto_upload else None
+                    
                     for recording in new_recordings:
                         task = full_pipeline_task.delay(
                             recording_id=recording.id,
                             user_id=user_id,
-                            auto_upload=processing_config.get("auto_upload", True)
+                            manual_override=manual_override,
                         )
 
                         processed_recordings.append({
@@ -140,8 +147,11 @@ def dry_run_automation_job_task(job_id: int, user_id: int):
     """
 
     async def _run():
-        db_manager = DatabaseManager()
-        async with db_manager.get_session() as session:
+        from database.config import DatabaseConfig
+        
+        db_config = DatabaseConfig.from_env()
+        db_manager = DatabaseManager(db_config)
+        async with db_manager.async_session() as session:
             job_repo = AutomationJobRepository(session)
             job = await job_repo.get_by_id(job_id, user_id)
 

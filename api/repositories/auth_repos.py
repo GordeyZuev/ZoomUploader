@@ -13,12 +13,9 @@ from api.schemas.auth import (
     UserCredentialInDB,
     UserCredentialUpdate,
     UserInDB,
-    UserQuotaCreate,
-    UserQuotaInDB,
-    UserQuotaUpdate,
     UserUpdate,
 )
-from database.auth_models import RefreshTokenModel, UserCredentialModel, UserModel, UserQuotaModel
+from database.auth_models import RefreshTokenModel, UserCredentialModel, UserModel
 
 
 class UserRepository:
@@ -90,11 +87,16 @@ class RefreshTokenRepository:
         return RefreshTokenInDB.model_validate(refresh_token)
 
     async def get_by_token(self, token: str) -> RefreshTokenInDB | None:
-        """Получить refresh токен."""
+        """Получить refresh токен (с проверкой срока действия)."""
         result = await self.session.execute(select(RefreshTokenModel).where(RefreshTokenModel.token == token))
         db_token = result.scalars().first()
         if not db_token:
             return None
+
+        # Проверяем срок действия
+        if db_token.expires_at < datetime.utcnow():
+            return None
+
         return RefreshTokenInDB.model_validate(db_token)
 
     async def revoke(self, token: str) -> RefreshTokenInDB | None:
@@ -108,51 +110,27 @@ class RefreshTokenRepository:
             return RefreshTokenInDB.model_validate(db_token)
         return None
 
+    async def revoke_all_by_user(self, user_id: int) -> int:
+        """Отозвать все refresh токены пользователя."""
+        from sqlalchemy import update
 
-class UserQuotaRepository:
-    """Repository для работы с квотами пользователей."""
-
-    def __init__(self, session: AsyncSession):
-        self.session = session
-
-    async def create(self, quota_data: UserQuotaCreate) -> UserQuotaInDB:
-        """Создать квоты для пользователя."""
-        from datetime import timedelta
-
-        quota = UserQuotaModel(
-            user_id=quota_data.user_id,
-            max_recordings_per_month=quota_data.max_recordings_per_month,
-            max_storage_gb=quota_data.max_storage_gb,
-            max_concurrent_tasks=quota_data.max_concurrent_tasks,
-            quota_reset_at=datetime.utcnow() + timedelta(days=30),
+        result = await self.session.execute(
+            update(RefreshTokenModel)
+            .where(RefreshTokenModel.user_id == user_id, not RefreshTokenModel.is_revoked)
+            .values(is_revoked=True)
         )
-        self.session.add(quota)
         await self.session.commit()
-        await self.session.refresh(quota)
-        return UserQuotaInDB.model_validate(quota)
+        return result.rowcount
 
-    async def get_by_user_id(self, user_id: int) -> UserQuotaInDB | None:
-        """Получить квоты пользователя."""
-        result = await self.session.execute(select(UserQuotaModel).where(UserQuotaModel.user_id == user_id))
-        db_quota = result.scalars().first()
-        if not db_quota:
-            return None
-        return UserQuotaInDB.model_validate(db_quota)
+    async def delete_expired(self) -> int:
+        """Удалить все истекшие токены."""
+        from sqlalchemy import delete
 
-    async def update(self, user_id: int, quota_data: UserQuotaUpdate) -> UserQuotaInDB | None:
-        """Обновить квоты пользователя."""
-        result = await self.session.execute(select(UserQuotaModel).where(UserQuotaModel.user_id == user_id))
-        db_quota = result.scalars().first()
-        if not db_quota:
-            return None
-
-        update_dict = quota_data.model_dump(exclude_unset=True)
-        for key, value in update_dict.items():
-            setattr(db_quota, key, value)
-
+        result = await self.session.execute(
+            delete(RefreshTokenModel).where(RefreshTokenModel.expires_at < datetime.utcnow())
+        )
         await self.session.commit()
-        await self.session.refresh(db_quota)
-        return UserQuotaInDB.model_validate(db_quota)
+        return result.rowcount
 
 
 class UserCredentialRepository:

@@ -282,7 +282,7 @@ class RecordingTemplateRepository:
         return result.scalar_one_or_none()
 
     async def find_active_by_user(self, user_id: int) -> list[RecordingTemplateModel]:
-        """Получение активных шаблонов пользователя, отсортированных по приоритету."""
+        """Получение активных шаблонов пользователя, отсортированных по created_at ASC (first-match strategy)."""
         result = await self.session.execute(
             select(RecordingTemplateModel)
             .where(
@@ -290,7 +290,7 @@ class RecordingTemplateRepository:
                 RecordingTemplateModel.is_active,
                 ~RecordingTemplateModel.is_draft
             )
-            .order_by(RecordingTemplateModel.priority.desc())
+            .order_by(RecordingTemplateModel.created_at.asc())
         )
         return list(result.scalars().all())
 
@@ -300,10 +300,8 @@ class RecordingTemplateRepository:
         name: str,
         matching_rules: dict[str, Any] | None = None,
         processing_config: dict[str, Any] | None = None,
-        metadata_config: dict[str, Any] | None = None,
         output_config: dict[str, Any] | None = None,
         description: str | None = None,
-        priority: int = 0,
         is_draft: bool = False,
     ) -> RecordingTemplateModel:
         """Создание нового шаблона."""
@@ -312,9 +310,7 @@ class RecordingTemplateRepository:
             name=name,
             description=description,
             matching_rules=matching_rules,
-            priority=priority,
             processing_config=processing_config,
-            metadata_config=metadata_config,
             output_config=output_config,
             is_draft=is_draft,
         )

@@ -1,0 +1,130 @@
+{
+  "youtube_examples": {
+    "basic_lecture": {
+      "name": "YouTube Лекции (Public)",
+      "description": "Публичные лекции с плейлистом и форматированными темами",
+      "platform": "youtube",
+      "credential_id": 1,
+      "preset_metadata": {
+        "title_template": "(Л) {display_name}",
+        "description_template": "Лекция по курсу\n\n{summary}\n\n{topics_list}\n\nЗаписано: {date}",
+        "topics_display": {
+          "enabled": true,
+          "format": "numbered_list",
+          "max_count": 10,
+          "min_length": 5,
+          "prefix": "Темы лекции:",
+          "separator": "\n"
+        },
+        "tags": ["лекция", "образование", "ml", "ai"],
+        "category_id": 27,
+        "privacy": "public",
+        "playlist_id": "PLxxx...",
+        "made_for_kids": false,
+        "embeddable": true,
+        "license": "youtube"
+      }
+    },
+    "scheduled_webinar": {
+      "name": "YouTube Вебинары (Scheduled)",
+      "description": "Отложенная публикация вебинаров",
+      "platform": "youtube",
+      "credential_id": 1,
+      "preset_metadata": {
+        "title_template": "[Вебинар] {display_name} - {start_time}",
+        "description_template": "{summary}\n\nТемы:\n{topics}",
+        "tags": ["вебинар", "онлайн-обучение"],
+        "category_id": 27,
+        "privacy": "private",
+        "publish_at": "2026-01-20T12:00:00Z",
+        "made_for_kids": false
+      }
+    },
+    "unlisted_with_thumbnail": {
+      "name": "YouTube Unlisted + Thumbnail",
+      "description": "Скрытые записи с кастомной миниатюрой",
+      "platform": "youtube",
+      "credential_id": 1,
+      "preset_metadata": {
+        "title_template": "{display_name}",
+        "description_template": "{summary}",
+        "tags": ["запись"],
+        "category_id": 27,
+        "privacy": "unlisted",
+        "thumbnail_path": "/data/thumbnails/default_youtube.jpg",
+        "embeddable": true
+      }
+    },
+    "minimal": {
+      "name": "YouTube Минимальный",
+      "description": "Минимальные настройки",
+      "platform": "youtube",
+      "credential_id": 1,
+      "preset_metadata": {
+        "title_template": "{display_name}",
+        "description_template": "{summary}",
+        "privacy": "unlisted"
+      }
+    }
+  },
+  "vk_examples": {
+    "public_group_with_wall": {
+      "name": "VK Группа + Wall Post",
+      "description": "Публикация в группу с постом на стене и маркированным списком тем",
+      "platform": "vk",
+      "credential_id": 2,
+      "preset_metadata": {
+        "title_template": "{display_name}",
+        "description_template": "Новая лекция! 🎓\n\n{summary}\n\n{topics_list}\n\nЗаписано: {date}",
+        "topics_display": {
+          "enabled": true,
+          "format": "bullet_list",
+          "max_count": 5,
+          "prefix": "📚 Темы:",
+          "separator": "\n"
+        },
+        "group_id": 123456,
+        "privacy_view": 0,
+        "privacy_comment": 0,
+        "no_comments": false,
+        "repeat": false,
+        "wallpost": true
+      }
+    },
+    "private_album": {
+      "name": "VK Приватный альбом",
+      "description": "Закрытая публикация в альбом",
+      "platform": "vk",
+      "credential_id": 2,
+      "preset_metadata": {
+        "title_template": "{display_name} - {start_time}",
+        "description_template": "{summary}",
+        "group_id": 123456,
+        "album_id": 67890,
+        "privacy_view": 3,
+        "privacy_comment": 3,
+        "no_comments": true,
+        "wallpost": false
+      }
+    },
+    "minimal": {
+      "name": "VK Минимальный",
+      "description": "Минимальные настройки для VK",
+      "platform": "vk",
+      "credential_id": 2,
+      "preset_metadata": {
+        "title_template": "{display_name}",
+        "description_template": "{summary}",
+        "privacy_view": 0,
+        "privacy_comment": 0
+      }
+    }
+  },
+  "curl_examples": {
+    "create_youtube_preset": "curl -X POST 'http://localhost:8000/api/v1/output-presets/' \\\n  -H 'Authorization: Bearer YOUR_TOKEN' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\n    \"name\": \"YouTube Лекции\",\n    \"description\": \"Публичные лекции\",\n    \"platform\": \"youtube\",\n    \"credential_id\": 1,\n    \"preset_metadata\": {\n      \"title_template\": \"(Л) {display_name}\",\n      \"description_template\": \"{summary}\",\n      \"tags\": [\"лекция\", \"образование\"],\n      \"category_id\": 27,\n      \"privacy\": \"public\"\n    }\n  }'",
+    "create_vk_preset": "curl -X POST 'http://localhost:8000/api/v1/output-presets/' \\\n  -H 'Authorization: Bearer YOUR_TOKEN' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\n    \"name\": \"VK Группа\",\n    \"description\": \"Публикация в VK группу\",\n    \"platform\": \"vk\",\n    \"credential_id\": 2,\n    \"preset_metadata\": {\n      \"title_template\": \"{display_name}\",\n      \"description_template\": \"{summary}\",\n      \"group_id\": 123456,\n      \"wallpost\": true\n    }\n  }'",
+    "update_preset_metadata": "curl -X PATCH 'http://localhost:8000/api/v1/output-presets/1' \\\n  -H 'Authorization: Bearer YOUR_TOKEN' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\n    \"preset_metadata\": {\n      \"publish_at\": \"2026-01-20T15:00:00Z\",\n      \"tags\": [\"новый-тег\"]\n    }\n  }'",
+    "upload_with_preset": "curl -X POST 'http://localhost:8000/api/v1/recordings/123/upload' \\\n  -H 'Authorization: Bearer YOUR_TOKEN' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\n    \"platform\": \"youtube\",\n    \"preset_id\": 1\n  }'"
+  }
+}
+

@@ -12,10 +12,13 @@ from api.config import get_settings
 from api.dependencies import get_db_session
 from api.repositories.auth_repos import (
     RefreshTokenRepository,
-    UserQuotaRepository,
     UserRepository,
 )
 from api.repositories.config_repos import UserConfigRepository
+from api.repositories.subscription_repos import (
+    SubscriptionPlanRepository,
+    UserSubscriptionRepository,
+)
 from api.schemas.auth import (
     LoginRequest,
     RefreshTokenCreate,
@@ -23,8 +26,8 @@ from api.schemas.auth import (
     RegisterRequest,
     TokenPair,
     UserCreate,
-    UserQuotaCreate,
     UserResponse,
+    UserSubscriptionCreate,
     UserUpdate,
 )
 from logger import get_logger
@@ -53,7 +56,8 @@ async def register(request: RegisterRequest, session: AsyncSession = Depends(get
         HTTPException: Если email уже существует
     """
     user_repo = UserRepository(session)
-    quota_repo = UserQuotaRepository(session)
+    subscription_repo = UserSubscriptionRepository(session)
+    plan_repo = SubscriptionPlanRepository(session)
     config_repo = UserConfigRepository(session)
 
     existing_user = await user_repo.get_by_email(request.email)
@@ -73,13 +77,16 @@ async def register(request: RegisterRequest, session: AsyncSession = Depends(get
 
     user = await user_repo.create(user_data=user_create, hashed_password=hashed_password)
 
-    quota_create = UserQuotaCreate(
-        user_id=user.id,
-        max_recordings_per_month=100,
-        max_storage_gb=50,
-        max_concurrent_tasks=3,
-    )
-    await quota_repo.create(quota_data=quota_create)
+    # Создать подписку на Free план
+    free_plan = await plan_repo.get_by_name("free")
+    if not free_plan:
+        logger.error("Free plan not found in database! User registered without subscription.")
+    else:
+        subscription_create = UserSubscriptionCreate(
+            user_id=user.id,
+            plan_id=free_plan.id,
+        )
+        await subscription_repo.create(subscription_create)
 
     existing_config = await config_repo.get_by_user_id(user.id)
     if not existing_config:
@@ -248,6 +255,47 @@ async def logout(request: RefreshTokenRequest, session: AsyncSession = Depends(g
     """
     token_repo = RefreshTokenRepository(session)
     await token_repo.revoke(request.refresh_token)
+    logger.info("User logged out")
     return {"message": "Successfully logged out"}
+
+
+@router.post("/logout-all")
+async def logout_all(request: RefreshTokenRequest, session: AsyncSession = Depends(get_db_session)):
+    """
+    Выход из всех устройств (отзыв всех refresh токенов пользователя).
+
+    Args:
+        request: Любой валидный refresh токен пользователя
+        session: Database session
+
+    Returns:
+        Количество отозванных токенов
+    """
+    token_repo = RefreshTokenRepository(session)
+
+    # Получаем user_id из токена
+    payload = JWTHelper.verify_token(request.refresh_token, token_type="refresh")
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
+
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+        )
+
+    # Отзываем все токены пользователя
+    count = await token_repo.revoke_all_by_user(user_id)
+
+    logger.info(f"User {user_id} logged out from all devices ({count} tokens revoked)")
+
+    return {
+        "message": "Successfully logged out from all devices",
+        "revoked_tokens": count
+    }
 
 

@@ -87,13 +87,34 @@ class UploadSettings(BaseSettings):
 
 
 class ZoomConfig:
-    """Конфигурация аккаунта Zoom"""
+    """Конфигурация аккаунта Zoom
 
-    def __init__(self, account: str, account_id: str, client_id: str, client_secret: str):
+    Поддерживает два типа авторизации:
+    1. Server-to-Server OAuth (legacy): account_id + client_id + client_secret
+    2. OAuth 2.0: access_token + refresh_token + client_id + client_secret
+    """
+
+    def __init__(
+        self,
+        account: str,
+        account_id: str,
+        client_id: str,
+        client_secret: str,
+        access_token: str | None = None,
+        refresh_token: str | None = None,
+    ):
         self.account = account
         self.account_id = account_id
         self.client_id = client_id
         self.client_secret = client_secret
+        # OAuth 2.0 tokens (опционально)
+        self.access_token = access_token
+        self.refresh_token = refresh_token
+
+    @property
+    def is_oauth(self) -> bool:
+        """Проверка, используются ли OAuth 2.0 credentials"""
+        return self.access_token is not None
 
 
 # Функции для работы с конфигурацией Zoom (совместимость)

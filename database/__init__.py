@@ -1,4 +1,12 @@
-from .auth_models import RefreshTokenModel, UserCredentialModel, UserModel, UserQuotaModel
+from .auth_models import (
+    QuotaChangeHistoryModel,
+    QuotaUsageModel,
+    RefreshTokenModel,
+    SubscriptionPlanModel,
+    UserCredentialModel,
+    UserModel,
+    UserSubscriptionModel,
+)
 from .config import DatabaseConfig
 from .config_models import UserConfigModel
 from .manager import DatabaseManager
@@ -26,8 +34,12 @@ __all__ = [
     # Auth models
     "UserModel",
     "UserCredentialModel",
-    "UserQuotaModel",
     "RefreshTokenModel",
+    # Subscription models
+    "SubscriptionPlanModel",
+    "UserSubscriptionModel",
+    "QuotaUsageModel",
+    "QuotaChangeHistoryModel",
     # Config models
     "UserConfigModel",
     # Template models

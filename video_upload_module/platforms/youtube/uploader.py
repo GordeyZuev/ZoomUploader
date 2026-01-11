@@ -116,7 +116,18 @@ class YouTubeUploader(BaseUploader):
         task_id=None,
         **kwargs,
     ) -> UploadResult | None:
-        """Загрузка видео на YouTube."""
+        """
+        Загрузка видео на YouTube.
+
+        Supported kwargs:
+            - tags: list[str] - Video tags
+            - category_id: str|int - YouTube category ID
+            - publish_at: str - ISO 8601 datetime for scheduled publishing
+            - made_for_kids: bool - Whether video is made for kids
+            - embeddable: bool - Whether video can be embedded
+            - license: str - "youtube" or "creativeCommon"
+            - public_stats_viewable: bool - Whether stats are publicly viewable
+        """
 
         if not self._authenticated:
             if not await self.authenticate():
@@ -126,17 +137,51 @@ class YouTubeUploader(BaseUploader):
             final_description = description if description else f"Загружено {self._get_timestamp()}"
             self.logger.debug(f"Длина описания для YouTube: {len(final_description)} символов")
 
+            # Build snippet with base fields
+            snippet = {
+                "title": title,
+                "description": final_description,
+                "defaultLanguage": self.config.default_language,
+                "defaultAudioLanguage": self.config.default_language,
+            }
+
+            # Add optional snippet fields from kwargs
+            if "tags" in kwargs and kwargs["tags"]:
+                snippet["tags"] = kwargs["tags"][:500]  # YouTube limit
+                self.logger.debug(f"Added {len(snippet['tags'])} tags")
+
+            if "category_id" in kwargs and kwargs["category_id"]:
+                snippet["categoryId"] = str(kwargs["category_id"])
+                self.logger.debug(f"Set category_id: {snippet['categoryId']}")
+
+            # Build status with privacy
+            status = {
+                "privacyStatus": privacy_status or self.config.default_privacy,
+                "selfDeclaredMadeForKids": kwargs.get("made_for_kids", False),
+            }
+
+            # Add publishAt for scheduled publishing
+            if "publish_at" in kwargs and kwargs["publish_at"]:
+                status["publishAt"] = kwargs["publish_at"]
+                # For scheduled videos, privacy must be "private"
+                if status["privacyStatus"] != "private":
+                    self.logger.warning("Setting privacy to 'private' for scheduled video")
+                    status["privacyStatus"] = "private"
+                self.logger.info(f"Video will be published at: {kwargs['publish_at']}")
+
+            # Add optional status fields
+            if "embeddable" in kwargs:
+                status["embeddable"] = bool(kwargs["embeddable"])
+
+            if "license" in kwargs and kwargs["license"] in ["youtube", "creativeCommon"]:
+                status["license"] = kwargs["license"]
+
+            if "public_stats_viewable" in kwargs:
+                status["publicStatsViewable"] = bool(kwargs["public_stats_viewable"])
+
             body = {
-                "snippet": {
-                    "title": title,
-                    "description": final_description,
-                    "defaultLanguage": self.config.default_language,
-                    "defaultAudioLanguage": self.config.default_language,
-                },
-                "status": {
-                    "privacyStatus": privacy_status or self.config.default_privacy,
-                    "selfDeclaredMadeForKids": False,
-                },
+                "snippet": snippet,
+                "status": status,
             }
 
             media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/*")

@@ -64,7 +64,9 @@ class VKTokenSetup:
 
                     if is_valid:
                         print("✅ Токен действителен!")
-                        self.save_token(token)
+                        # Get user_id from API
+                        user_id = await self.get_user_id(token)
+                        self.save_token(token, user_id)
                         return token
                     else:
                         attempts += 1
@@ -131,16 +133,39 @@ class VKTokenSetup:
         is_valid, _ = await self.test_token_with_error_type(token)
         return is_valid
 
-    def save_token(self, token: str):
-        """Сохранение токена"""
+    async def get_user_id(self, token: str) -> int | None:
+        """Получение user_id из VK API"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                params = {"access_token": token, "v": "5.131"}
+                async with session.get("https://api.vk.com/method/users.get", params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if "response" in data and len(data["response"]) > 0:
+                            return data["response"][0].get("id")
+        except Exception as e:
+            print(f"⚠️ Не удалось получить user_id: {e}")
+        return None
+
+    def save_token(self, token: str, user_id: int | None = None):
+        """Сохранение токена с полной структурой credentials"""
         config_path = "config/vk_creds.json"
         os.makedirs(os.path.dirname(config_path), exist_ok=True)
 
-        config = {"access_token": token}
+        config = {
+            "access_token": token,
+            "app_id": self.app_id,
+        }
+
+        if user_id:
+            config["user_id"] = user_id
+
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
 
-        print(f"✅ Токен сохранен в {config_path}")
+        print(f"✅ Credentials сохранены в {config_path}")
+        if user_id:
+            print(f"   User ID: {user_id}")
 
     async def check_existing_token(self) -> bool:
         """Проверка существующего токена"""

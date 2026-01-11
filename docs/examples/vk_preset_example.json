@@ -1,0 +1,88 @@
+{
+  "vk_group_preset_example": {
+    "description": "VK Output Preset for uploading to a VK Group/Public page",
+    "endpoint": "POST /api/v1/presets/output",
+    "example": {
+      "name": "VK Временные ряды",
+      "platform": "vk",
+      "credential_id": 14,
+      "preset_metadata": {
+        "group_id": "123456",
+        "album_id": "60",
+        "privacy_view": 0,
+        "privacy_comment": 0,
+        "no_comments": false,
+        "wallpost": false,
+        "thumbnail_path": "thumbnails/time_series.png",
+        "title_template": "Временные ряды | {topic} ({date})",
+        "description_template": "Лекция по курсу Анализ временных рядов\n\n{summary}\n\n{topics_list}\n\nЗаписано: {date}\n\nP.S. Сформировано автоматически, возможны неточности.",
+        "topics_display": {
+          "enabled": true,
+          "format": "numbered_list",
+          "prefix": "Темы лекции:",
+          "separator": "\n",
+          "max_count": 10,
+          "min_length": 5
+        }
+      }
+    },
+    "notes": [
+      "group_id: ID вашей группы/паблика (найти в URL: vk.com/public123456 → 123456)",
+      "album_id: ID альбома в группе (создать через VK → Видео → Создать альбом)",
+      "privacy_view: 0=все, 1=друзья, 2=друзья друзей, 3=только я",
+      "wallpost: true - публиковать на стене группы при загрузке"
+    ]
+  },
+  "vk_personal_preset_example": {
+    "description": "VK Output Preset for uploading to personal account (no group)",
+    "endpoint": "POST /api/v1/presets/output",
+    "example": {
+      "name": "VK Personal Uploads",
+      "platform": "vk",
+      "credential_id": 14,
+      "preset_metadata": {
+        "album_id": "60",
+        "privacy_view": 0,
+        "privacy_comment": 0,
+        "no_comments": false,
+        "title_template": "{display_name}",
+        "description_template": "Uploaded on {start_time}"
+      }
+    },
+    "notes": [
+      "NO group_id = upload to personal account",
+      "album_id: ID личного альбома (vk.com/video → Мои альбомы)"
+    ]
+  },
+  "how_to_find_group_id": {
+    "description": "How to find VK group_id and album_id",
+    "steps": [
+      "1. Group ID:",
+      "   - Go to your group page in VK",
+      "   - URL will be: vk.com/public123456 or vk.com/club123456",
+      "   - 123456 is your group_id",
+      "",
+      "2. Album ID:",
+      "   - Go to VK → Videos → Albums",
+      "   - Click on album",
+      "   - URL will be: vk.com/video?z=album-XXXXXX_YYYYYY",
+      "   - YYYYYY is your album_id",
+      "",
+      "3. For group albums:",
+      "   - Make sure you are admin/editor of the group",
+      "   - Create album in group: Group page → Videos → Create album",
+      "   - Get album_id from URL as above"
+    ]
+  },
+  "curl_examples": {
+    "update_preset_with_group_id": {
+      "description": "Update existing VK preset to add group_id",
+      "command": "curl -X 'PATCH' 'http://0.0.0.0:8000/api/v1/presets/output/2' -H 'Authorization: Bearer YOUR_TOKEN' -H 'Content-Type: application/json' -d '{\"preset_metadata\": {\"group_id\": \"123456\", \"album_id\": \"60\", \"privacy_view\": 0, \"privacy_comment\": 0, \"no_comments\": false, \"wallpost\": false}}'"
+    },
+    "create_new_vk_preset": {
+      "description": "Create new VK preset for group uploads",
+      "command": "curl -X 'POST' 'http://0.0.0.0:8000/api/v1/presets/output' -H 'Authorization: Bearer YOUR_TOKEN' -H 'Content-Type: application/json' -d '{\"name\": \"VK Group Uploads\", \"platform\": \"vk\", \"credential_id\": 14, \"preset_metadata\": {\"group_id\": \"123456\", \"album_id\": \"60\", \"privacy_view\": 0}}'"
+    }
+  }
+}
+

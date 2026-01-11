@@ -7,6 +7,7 @@ wheels/
 *.egg-info
 *.so
 *.egg
+*.bak
 
 # Virtual environments
 .venv
@@ -42,6 +43,7 @@ config/fireworks_creds.json
 config/*_creds.json
 config/oauth_google.json
 config/oauth_vk.json
+config/oauth_zoom.json
 .env
 .env.local
 .env.*.local
@@ -68,6 +70,11 @@ logs/
 *.temp
 temp/
 tmp/
+
+# Celery and Redis
+celerybeat-schedule
+celerybeat.pid
+dump.rdb
 
 # UV lock file (optional - you might want to keep it)
 # uv.lock

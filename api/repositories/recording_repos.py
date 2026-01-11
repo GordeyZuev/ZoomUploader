@@ -220,6 +220,100 @@ class RecordingAsyncRepository:
         logger.info(f"Saved transcription results for recording {recording.id}")
         return recording
 
+    async def get_or_create_output_target(
+        self,
+        recording: RecordingModel,
+        target_type: str,
+        preset_id: int | None = None,
+    ) -> OutputTargetModel:
+        """
+        Получить или создать output_target.
+
+        Args:
+            recording: Запись
+            target_type: Тип цели (YOUTUBE, VK)
+            preset_id: ID output preset
+
+        Returns:
+            OutputTargetModel
+        """
+        from models.recording import TargetStatus
+        from sqlalchemy import select
+
+        # Ищем существующий output_target через явный DB query
+        # (не полагаемся на recording.outputs - может быть не загружен)
+        stmt = select(OutputTargetModel).where(
+            OutputTargetModel.recording_id == recording.id,
+            OutputTargetModel.target_type == target_type,
+        )
+        result = await self.session.execute(stmt)
+        existing_output = result.scalar_one_or_none()
+
+        if existing_output:
+            logger.debug(f"Found existing output_target for recording {recording.id} to {target_type}")
+            return existing_output
+
+        # Создаем новый
+        output = OutputTargetModel(
+            recording_id=recording.id,
+            user_id=recording.user_id,
+            preset_id=preset_id,
+            target_type=target_type,
+            status=TargetStatus.NOT_UPLOADED,
+            target_meta={},
+        )
+
+        self.session.add(output)
+        await self.session.flush()
+
+        logger.info(f"Created output_target for recording {recording.id} to {target_type}")
+        return output
+
+    async def mark_output_uploading(
+        self,
+        output_target: OutputTargetModel,
+    ) -> None:
+        """
+        Пометить output_target как загружаемый.
+
+        Args:
+            output_target: Output target
+        """
+        from models.recording import TargetStatus
+
+        output_target.status = TargetStatus.UPLOADING
+        output_target.failed = False
+        output_target.updated_at = datetime.utcnow()
+        await self.session.flush()
+
+        logger.debug(f"Marked output_target {output_target.id} as UPLOADING")
+
+    async def mark_output_failed(
+        self,
+        output_target: OutputTargetModel,
+        error_message: str,
+    ) -> None:
+        """
+        Пометить output_target как failed.
+
+        Args:
+            output_target: Output target
+            error_message: Сообщение об ошибке
+        """
+        from models.recording import TargetStatus
+
+        output_target.status = TargetStatus.FAILED
+        output_target.failed = True
+        output_target.failed_at = datetime.utcnow()
+        output_target.failed_reason = error_message[:1000]  # Ограничение длины
+        output_target.retry_count += 1
+        output_target.updated_at = datetime.utcnow()
+        await self.session.flush()
+
+        logger.warning(
+            f"Marked output_target {output_target.id} as FAILED: {error_message[:100]}"
+        )
+
     async def save_upload_result(
         self,
         recording: RecordingModel,
@@ -244,13 +338,15 @@ class RecordingAsyncRepository:
             OutputTarget
         """
         from models.recording import TargetStatus
+        from sqlalchemy import select
 
-        # Проверяем, есть ли уже output для этого target_type
-        existing_output = None
-        for output in recording.outputs:
-            if output.target_type == target_type:
-                existing_output = output
-                break
+        # Проверяем, есть ли уже output для этого target_type (явный DB query)
+        stmt = select(OutputTargetModel).where(
+            OutputTargetModel.recording_id == recording.id,
+            OutputTargetModel.target_type == target_type,
+        )
+        result = await self.session.execute(stmt)
+        existing_output = result.scalar_one_or_none()
 
         if existing_output:
             # Обновляем существующий
@@ -263,6 +359,7 @@ class RecordingAsyncRepository:
                 **(target_meta or {}),
             }
             existing_output.uploaded_at = datetime.utcnow()
+            existing_output.failed = False
             existing_output.updated_at = datetime.utcnow()
             await self.session.flush()
 
@@ -402,6 +499,10 @@ class RecordingAsyncRepository:
                     if old_is_mapped != existing.is_mapped and existing.status in [ProcessingStatus.INITIALIZED, ProcessingStatus.SKIPPED]:
                         existing.status = ProcessingStatus.INITIALIZED if existing.is_mapped else ProcessingStatus.SKIPPED
 
+                # Обновляем template_id если передан
+                if "template_id" in kwargs:
+                    existing.template_id = kwargs["template_id"]
+
                 # Обновляем source metadata
                 if existing.source:
                     existing_meta = existing.source.meta or {}
@@ -431,6 +532,7 @@ class RecordingAsyncRepository:
             recording = RecordingModel(
                 user_id=user_id,
                 input_source_id=input_source_id,
+                template_id=kwargs.get("template_id"),
                 display_name=display_name,
                 start_time=start_time,
                 duration=duration,

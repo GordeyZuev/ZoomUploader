@@ -1,9 +1,21 @@
 """Схемы для шаблонов, конфигураций, источников и пресетов."""
 
 from .config import BaseConfigCreate, BaseConfigResponse, BaseConfigUpdate
-from .input_source import InputSourceCreate, InputSourceResponse, InputSourceUpdate
+from .input_source import (
+    BatchSyncRequest,
+    BatchSyncResponse,
+    InputSourceCreate,
+    InputSourceResponse,
+    InputSourceUpdate,
+    SourceSyncResult,
+)
 from .output_preset import OutputPresetCreate, OutputPresetResponse, OutputPresetUpdate
-from .template import RecordingTemplateCreate, RecordingTemplateResponse, RecordingTemplateUpdate
+from .template import (
+    RecordingTemplateCreate,
+    RecordingTemplateListResponse,
+    RecordingTemplateResponse,
+    RecordingTemplateUpdate,
+)
 
 __all__ = [
     # Base configs
@@ -14,6 +26,9 @@ __all__ = [
     "InputSourceCreate",
     "InputSourceUpdate",
     "InputSourceResponse",
+    "BatchSyncRequest",
+    "BatchSyncResponse",
+    "SourceSyncResult",
     # Output presets
     "OutputPresetCreate",
     "OutputPresetUpdate",
@@ -22,5 +37,6 @@ __all__ = [
     "RecordingTemplateCreate",
     "RecordingTemplateUpdate",
     "RecordingTemplateResponse",
+    "RecordingTemplateListResponse",
 ]
 

@@ -17,6 +17,7 @@ from api.middleware.error_handler import (
 from api.middleware.logging import LoggingMiddleware
 from api.middleware.rate_limit import RateLimitMiddleware
 from api.routers import (
+    admin,
     auth,
     automation,
     credentials,
@@ -122,6 +123,8 @@ app.include_router(output_presets.router)
 app.include_router(thumbnails.router)
 # Automation router
 app.include_router(automation.router)
+# Admin router
+app.include_router(admin.router)
 
 
 @app.get("/")
