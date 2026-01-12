@@ -1,22 +1,19 @@
 """OAuth endpoints for YouTube and VK authorization."""
 
-from datetime import datetime, timezone
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.dependencies import get_current_user
 from api.auth.encryption import get_encryption
 from api.dependencies import get_db_session, get_redis
 from api.repositories.auth_repos import UserCredentialRepository
-from api.schemas.auth import UserCredentialCreate, UserCredentialUpdate, UserInDB
+from api.schemas.auth import UserCredentialCreate, UserInDB
 from api.services.oauth_platforms import OAuthPlatformConfig, get_platform_config
 from api.services.oauth_service import OAuthService
 from api.services.oauth_state import OAuthStateManager
-from api.services.vk_token_service import VKTokenService
 from logger import get_logger
 
 logger = get_logger()

@@ -9,7 +9,7 @@ class ProcessingPreferences(BaseModel):
     enable_transcription: bool = Field(True, description="Включить транскрибацию")
     enable_subtitles: bool = Field(True, description="Включить генерацию субтитров")
     enable_topics: bool = Field(True, description="Включить извлечение тем")
-    topic_mode: str = Field("long", description="Режим извлечения тем (short/long)")
+    granularity: str = Field("long", description="Уровень детализации извлечения тем (short/long)")
     transcription_model: str = Field("fireworks", description="Модель для транскрибации")
     topic_model: str = Field("deepseek", description="Модель для извлечения тем")
 
@@ -19,7 +19,7 @@ class ProcessingPreferences(BaseModel):
                 "enable_transcription": True,
                 "enable_subtitles": True,
                 "enable_topics": True,
-                "topic_mode": "long",
+                "granularity": "long",
                 "transcription_model": "fireworks",
                 "topic_model": "deepseek",
             }

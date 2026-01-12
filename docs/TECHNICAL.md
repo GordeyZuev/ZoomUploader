@@ -2,6 +2,9 @@
 
 Полная техническая документация системы автоматизации обработки и публикации видеолекций.
 
+**Версия:** v0.9.2.1  
+**Статус:** Dev Status
+
 ---
 
 ## 📐 Архитектура системы
@@ -488,7 +491,7 @@ CELERY_RESULT_BACKEND=redis://localhost:6379/0
 | **Authentication** | 5 |
 | **User Management** | 6 |
 | **Admin Stats** | 3 |
-| **Recordings** | 15 |
+| **Recordings** | 16 |
 | **Templates** | 8 |
 | **Credentials** | 6 |
 | **OAuth** | 6 |
@@ -499,15 +502,6 @@ CELERY_RESULT_BACKEND=redis://localhost:6379/0
 | **Thumbnails** | 4 |
 | **Health** | 1 |
 | **TOTAL** | **84** |
-| **Credentials** | 5 |
-| **Recordings** | 10 |
-| **Input Sources** | 6 |
-| **Output Presets** | 5 |
-| **Templates** | 6 |
-| **Configs** | 5 |
-| **Tasks** | 3 |
-| **Health** | 1 |
-| **ИТОГО** | **49** |
 
 ---
 
@@ -645,15 +639,41 @@ thumbnails/
 └── *.png                       # Миниатюры для видео
 ```
 
-### База данных PostgreSQL
+### База данных PostgreSQL (12 таблиц)
+
+**Ключевые изменения (2026-01-12):**
+- Migration 019: `processed_audio_dir` → `processed_audio_path` (specific file paths)
+- Migration 018: Добавлен `blank_record` для фильтрации коротких записей
 
 ```sql
+# Authentication & Users (4 таблицы)
+users, refresh_tokens, user_credentials, user_configs
+
+# Subscription & Quotas (4 таблицы)  
+subscription_plans, user_subscriptions, quota_usage, quota_change_history
+
+# Processing (6 таблиц)
+recordings, recording_templates, input_sources, output_presets,
+source_metadata, output_targets
+
+# Automation (2 таблицы)
+automation_jobs, processing_stages
+
+# Основные модели:
+
 RecordingModel:
-  - Метаданные записи (topic, start_time, duration)
-  - Пути к файлам (local_video_path, processed_video_path)
+  - Метаданные записи (display_name, start_time, duration)
+  - Пути к файлам (local_video_path, processed_video_path, processed_audio_path)
   - Статусы обработки (status, timestamps)
   - Транскрипция (transcription_dir, topic_timestamps)
+  - template_id (FK), processing_preferences (JSON overrides)
+  - blank_record (bool, auto-detected)
   - Связи: source_metadata (1:1), output_targets (1:N)
+
+RecordingTemplateModel:
+  - matching_rules (JSON: exact_matches, keywords, patterns)
+  - processing_config, output_config, metadata_config (JSON)
+  - Auto-matching на sync, live config updates
 
 SourceMetadataModel:
   - source_type (zoom, local_file, yandex_disk_api)
@@ -668,13 +688,21 @@ OutputTargetModel:
 
 UserModel:
   - email, hashed_password, full_name
-  - role (admin/user), is_active
+  - role (admin/user), is_active, timezone
   - Связи: credentials, recordings, templates, sources, presets
 
 UserCredentialsModel:
   - platform, account_name
   - encrypted_data (Fernet encrypted)
   - is_active, last_used_at
+
+SubscriptionPlanModel:
+  - name, tier, price
+  - quotas (recordings, storage, tasks, automation_jobs)
+  
+UserSubscriptionModel:
+  - user_id, plan_id, custom_quotas (override)
+  - start_date, end_date
 ```
 
 ---

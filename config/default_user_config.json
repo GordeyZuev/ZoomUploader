@@ -17,6 +17,7 @@
     "enable_topics": true,
     "topic_mode": "long",
     "enable_subtitles": true,
+    "subtitle_formats": ["srt", "vtt"],
     "enable_translation": false,
     "translation_language": "en"
   },

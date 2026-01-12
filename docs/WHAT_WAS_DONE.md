@@ -1,8 +1,8 @@
 # 🎯 Production-Ready Multi-tenant платформа
 
-**Период:** 2-11 января 2026  
-**Версия:** v2.16  
-**Статус:** 🎉 **Production-Ready!**
+**Период:** 2-12 января 2026  
+**Версия:** v0.9.2.1  
+**Статус:** Dev Status
 
 ---
 
@@ -86,11 +86,11 @@
 **Users** (6): me, config, quota, quota/history, password, delete  
 **Admin** (3): stats/overview, stats/users, stats/quotas  
 
-**Recordings** (15):
+**Recordings** (16):
 - CRUD + details, process, transcribe, topics, subtitles, upload
 - retry-upload, batch-process, batch-transcribe, sync
 - config management (get, update, save-as-template)
-- unmapped recordings list
+- unmapped recordings list, **reset** (new!)
 
 **Templates** (8):
 - CRUD + from-recording
@@ -187,10 +187,13 @@ Strategy: **first_match** (по `created_at ASC`)
 
 ### 5. Preset Metadata System
 
-**Template Rendering:**
-- Variables: `{display_name}`, `{date}`, `{topic}`, `{topics}`, `{topics_list}`, `{summary}`
+**Template Rendering (новая система):**
+- Variables: `{display_name}`, `{duration}`, `{record_time}`, `{publish_time}`, `{themes}`, `{topics}`
+- Inline time formatting: `{record_time:DD.MM.YYYY}`, `{publish_time:date}`, `{record_time:DD-MM-YY hh:mm}`
+- Format tokens: DD, MM, YY, YYYY, hh, mm, ss, date, time, datetime
 - Topics display: 5 форматов (numbered_list, bullet_list, dash_list, comma_separated, inline)
 - Фильтрация: min_length, max_length, max_count (null = безлимит)
+- Architecture: preset (platform defaults) ← template (content-specific + overrides) ← manual override
 
 **YouTube:**
 - publishAt (scheduled publishing)
@@ -315,7 +318,7 @@ python utils/create_test_user.py
 
 ## 📈 Метрики
 
-**Endpoints:** 84  
+**Endpoints:** 85  
 **Таблицы БД:** 12  
 **Миграции:** 17  
 **Repositories:** 9  
@@ -328,6 +331,90 @@ python utils/create_test_user.py
 ---
 
 ## 🔄 Changelog (основные вехи)
+
+### 12 января 2026 - Template Config Live Update
+**Проблема:** Template changes не применялись к существующим recordings
+
+**Решение:** Изменен config resolution - template теперь всегда читается live, `processing_preferences` хранит только overrides
+- Template updates автоматически применяются ко всем recordings
+- User overrides сохраняются (приоритет выше)
+- Добавлен endpoint `DELETE /recordings/{id}/config` для reset to template
+- **Архитектура:** User Config → Template Config (live) → User Overrides
+- **Файлы:** `api/services/config_resolver.py`, `api/routers/recordings.py`
+
+### 12 января 2026 - Audio Path Fix
+**Проблема:** Recording #59 показывал wrong audio file (shared directory)
+
+**Решение:** Migration 019 - заменен `processed_audio_dir` на `processed_audio_path` (specific file path)
+- Каждая запись хранит specific audio file path
+- Исключена возможность cross-contamination между recordings
+- Migration script с smart matching (score-based)
+- Мигрировано: 6 recordings (user_6)
+- Clean architecture: no deprecated fields
+
+### 11 января 2026 (late night) - Topics Timestamps + Playlist Fix
+- ✅ **Временные метки в топиках:** добавлен формат `HH:MM:SS — Название темы`
+- ✅ `show_timestamps: true` в topics_display конфигурации
+- ✅ Поддержка topic_timestamps (list of dicts с topic, start, end)
+- ✅ Автоформатирование секунд в HH:MM:SS
+- 🐛 **FIX:** Playlist не добавлялся → исправлен поиск playlist_id в metadata_config.youtube
+- 🐛 **FIX:** Thumbnail не добавлялся → добавлена поддержка thumbnail_path из metadata_config
+- 🐛 **FIX:** Response endpoint показывал upload: false → теперь резолвит реальную конфигурацию
+- ✅ Обновлены presets: YouTube/VK с show_timestamps=true
+- ✅ Обновлен template 6 с footer "Видео выложено: {publish_time}" + "P.S. Сформировано автоматически"
+- 📝 Пример: `00:02:36 — Введение лектора и контекст индустрии`
+- ✅ Протестировано: YouTube загрузка успешна (video_id: f36_YylcsLQ) с временными метками
+- ⚠️ VK upload: ошибка форматирования строки (требует дополнительной отладки)
+
+### 11 января 2026 (midnight) - Error Handling & Reset Endpoint
+- 🐛 **FIX:** ResponseValidationError падал с 500 + logger KeyError → добавлен dedicated handler
+- 🐛 **FIX:** Logger использовал f-string с exception → исправлено на % formatting
+- ✅ Добавлен endpoint `POST /recordings/{id}/reset` для сброса в INITIALIZED
+- ✅ Reset удаляет файлы (видео, аудио, транскрипция), output_targets, processing_stages
+- ✅ Проверена корректность работы с topics: active_version правильно сохраняется в БД
+- 📝 Topics: файл содержит все версии (v1, v2, v3), в БД - активная версия с 19 темами
+
+### 11 января 2026 (late night) - Upload Metadata & Template Fixes
+- 🐛 **FIX:** Исправлен баг в response `upload: false` → правильное отображение флага upload
+- 🐛 **FIX:** Fallback template использовал `{start_time}` вместо `{record_time}` → исправлено
+- 🐛 **FIX:** VK preset validation error: `privacy_view` был строкой `'all'` вместо int `0`
+- ✅ Добавлены default metadata templates в output presets (title_template, description_template)
+- ✅ Добавлен metadata_config в template "НИС Современный ML" с кастомными title/description
+- ✅ Fallback description теперь использует TemplateRenderer для консистентности
+- 📝 Архитектура metadata: preset (defaults) ← template (content-specific) ← manual override
+- ✅ VK загружается успешно (video_id: 456240276)
+- ✅ YouTube загружается успешно (video_id: gGI3oz4Cms4)
+
+### 11 января 2026 (night) - Blank Records Filtering + Auto-Upload Fix
+- ✅ Добавлен флаг `blank_record` для коротких/маленьких записей
+- ✅ Критерии: duration < 20 мин ИЛИ size < 25 МБ
+- ✅ Автоопределение при sync из Zoom
+- ✅ Автоматический skip в pipeline обработки
+- ✅ Скрыты из обычных списков (по умолчанию `include_blank=false`)
+- ✅ Пропускаются в batch processing
+- ✅ Добавлены фильтры по датам: `from_date` / `to_date` в GET /recordings
+- ✅ Migration 018 с автоматическим backfill существующих записей
+- 🐛 **FIX:** auto_upload теперь читается из output_config (был баг: читал из full_config["upload"])
+- 🐛 **FIX:** Убран `.get()` в full_pipeline_task (Celery anti-pattern: "Never call result.get() within a task")
+
+### 11 января 2026 (late evening) - Template Variables Refactoring + Production Update
+- ✅ Убрали `{summary}` (не существует в БД)
+- ✅ Переименовали: `{main_topics}` → `{themes}` (краткие темы для title)
+- ✅ Переименовали: `{topics_list}` → `{topics}` (детальные темы для description)
+- ✅ Добавили `{record_time}` и `{publish_time}` с форматированием
+- ✅ Inline форматирование времени: `{publish_time:DD-MM-YY hh:mm}`
+- ✅ Поддержка форматов: DD, MM, YY, YYYY, hh, mm, ss, date, time
+- ✅ Regex парсинг параметров в placeholders: `{variable:format}`
+- ✅ Обновлены production preset'ы: YouTube Unlisted Default, VK Public Default
+- ✅ Обновлен production template "Анализ временных рядов" с новыми переменными
+
+### 11 января 2026 (evening) - Output Preset Refactoring
+- ✅ Separation of concerns: preset (platform defaults) vs template (content-specific)
+- ✅ Deep merge metadata hierarchy: preset → template → manual override
+- ✅ ConfigResolver.resolve_upload_metadata() method
+- ✅ Clean architecture без legacy багажа
+- ✅ DRY: один preset переиспользуется между templates
+- ✅ Практическое применение: разделили content-specific поля из presets в template.metadata_config
 
 ### 11 января 2026 - Template-driven Pipeline Complete
 - ✅ Template matching в sync (auto-assign template_id)
@@ -404,9 +491,58 @@ python utils/create_test_user.py
 - Нет WebSocket (polling работает)
 
 ### Separation of Concerns
-- **Template** = Matching rules + Processing config + Output preset refs
-- **Output Preset** = Credentials + Metadata + Platform settings
-- **Manual Override** = Processing config + Output config
+- **Output Preset** = Credentials + Platform defaults (privacy, embeddable, topics_display format)
+- **Template** = Matching rules + Processing config + Content-specific metadata (title_template, playlist_id, thumbnail) + Preset overrides
+- **Manual Override** = Per-recording processing_preferences (highest priority)
+- **Metadata Resolution** = Deep merge: preset → template → manual override
+
+---
+
+## 📝 Changelog
+
+### 2026-01-11 (поздняя ночь, часть 2) - VK Thumbnail & Album Fix
+**Проблема:** VK видео загружались без миниатюры и не добавлялись в альбом (playlist), хотя в Template 6 были настроены `vk.thumbnail_path` и `vk.album_id`.
+
+**Причина:** Код в `api/tasks/upload.py` проверял только top-level ключи (`thumbnail_path`, `album_id`), но не вложенный объект `vk` (в отличие от YouTube, где проверялся `youtube` объект).
+
+**Решение:** Обновлен VK upload код (строки 338-363):
+```python
+# Check both top-level and nested 'vk' key
+album_id = preset_metadata.get("album_id") or preset_metadata.get("vk", {}).get("album_id")
+thumbnail_path_str = (
+    preset_metadata.get("thumbnail_path") or
+    preset_metadata.get("vk", {}).get("thumbnail_path")
+)
+```
+
+**Результат:**
+- ✅ VK thumbnail устанавливается: `🖼️ Миниатюра установлена для видео 456239730`
+- ✅ VK album_id используется: `[Upload VK] Using album_id: 63`
+- ✅ Логирование для отладки: `logger.info(f"[Upload VK] Using thumbnail: {path}")`
+
+**Пример:** https://vk.com/video-227011779_456239730
+
+---
+
+### 2026-01-11 (поздняя ночь) - Celery PYTHONPATH Fix
+**Проблема:** После обновления кода в `api/tasks/upload.py` и `api/helpers/template_renderer.py` (timestamps, playlist, thumbnail) Celery продолжал использовать старый код.
+
+**Причина:** Celery запускался без `PYTHONPATH=/Users/gazuev/own_gazuev/ZoomUploader`, из-за чего модуль `transcription_module` не находился.
+
+**Решение:**
+```bash
+PYTHONPATH=/Users/gazuev/own_gazuev/ZoomUploader:$PYTHONPATH \
+  uv run celery -A api.celery_app worker --beat --loglevel=info \
+  --queues=processing,upload,automation --concurrency=4
+```
+
+**Результат:**
+- ✅ Timestamps в topics работают: `00:00:05 — Организационное начало`
+- ✅ Playlist добавляется: `PLmA-1xX7IuzAM3T8NxmmnEjT72rim0HYJ`
+- ✅ Thumbnail устанавливается: `media/user_6/thumbnails/nis.png`
+- ✅ Transcription module загружается корректно
+
+**Важно:** При любых изменениях в `api/tasks/` или `api/helpers/` необходимо перезапускать Celery worker!
 
 ---
 

@@ -12,7 +12,12 @@ class OutputPresetBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Название пресета")
     description: str | None = Field(None, max_length=1000, description="Описание пресета")
     platform: Literal["youtube", "vk", "rutube", "gdrive", "yandex_disk"] = Field(..., description="Платформа")
-    preset_metadata: dict[str, Any] | None = Field(None, description="Метаданные пресета")
+    preset_metadata: dict[str, Any] | None = Field(
+        None,
+        description="Platform defaults (privacy, embeddable, topics_display format). "
+        "Content-specific fields (title_template, playlist_id, thumbnail_path, tags) "
+        "должны быть в template.metadata_config для переиспользования пресета."
+    )
 
     @field_validator("name")
     @classmethod

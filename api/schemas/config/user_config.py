@@ -18,9 +18,8 @@ class TranscriptionConfig(BaseModel):
     language: str = "ru"
     prompt: str = ""
     temperature: float = 0.0
-    granularity: str = "long"
     enable_topics: bool = True
-    topic_mode: str = "long"
+    granularity: str = "long"  # "short" или "long" - уровень детализации извлечения тем
     enable_subtitles: bool = True
     enable_translation: bool = False
     translation_language: str = "en"

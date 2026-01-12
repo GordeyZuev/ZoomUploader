@@ -175,6 +175,20 @@ async def _sync_single_source(
                         "zoom_api_details": meeting_details if meeting_details else {},
                     }
 
+                    # Determine if this is a blank record (too short or too small)
+                    MIN_DURATION_MINUTES = 20
+                    MIN_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB
+
+                    video_file_size = video_file.get("file_size") if video_file else 0
+                    is_blank = (duration < MIN_DURATION_MINUTES) or (video_file_size < MIN_FILE_SIZE_BYTES)
+
+                    if is_blank:
+                        logger.info(
+                            f"Recording '{display_name}' marked as blank: "
+                            f"duration={duration}min (min={MIN_DURATION_MINUTES}), "
+                            f"size={video_file_size} bytes (min={MIN_FILE_SIZE_BYTES})"
+                        )
+
                     # Template matching
                     matched_template = _find_matching_template(display_name, source_id, templates)
 
@@ -191,6 +205,7 @@ async def _sync_single_source(
                         video_file_size=video_file.get("file_size") if video_file else None,
                         is_mapped=matched_template is not None,
                         template_id=matched_template.id if matched_template else None,
+                        blank_record=is_blank,
                     )
 
                     if is_new:

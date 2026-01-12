@@ -48,6 +48,7 @@ class RecordingResponse(BaseModel):
     duration: int
     status: ProcessingStatus
     is_mapped: bool
+    blank_record: bool = Field(False, description="Whether recording is too short/small to process")
     processing_preferences: dict[str, Any] | None = None
     source: SourceResponse | None = None
     outputs: list[OutputTargetResponse] = Field(default_factory=list)

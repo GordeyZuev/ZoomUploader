@@ -86,6 +86,15 @@ async def resolve_full_config(
         )
         full_config = config_resolver._merge_configs(full_config, manual_override)
 
+    # Flatten nested processing_config structure if exists
+    # Templates store: {"processing_config": {"transcription": {...}}}
+    # Tasks expect flat: {"transcription": {...}}
+    # NOTE: metadata_config and output_config should NOT be flattened!
+    if "processing_config" in full_config:
+        nested_config = full_config.pop("processing_config")
+        full_config = config_resolver._merge_configs(full_config, nested_config)
+        logger.debug(f"Flattened nested processing_config for recording {recording_id}")
+
     logger.info(
         f"Resolved config for recording {recording_id}: "
         f"template_id={recording.template_id}, "
@@ -97,6 +106,6 @@ async def resolve_full_config(
     if include_output_config:
         output_config = await config_resolver.resolve_output_config(recording, user_id)
         return full_config, output_config, recording
-    
+
     return full_config, recording
 

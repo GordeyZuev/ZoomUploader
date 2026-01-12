@@ -141,7 +141,7 @@ async def _add_video_command(source_path: str, display_name: str | None, set_exp
         },
         "local_video_path": str(dest_path),
         "processed_video_path": None,
-        "processed_audio_dir": None,
+        "processed_audio_path": None,
         "transcription_dir": None,
         "topic_timestamps": None,
         "main_topics": None,
@@ -280,11 +280,11 @@ def process(from_date, to_date, last, account, config_file, use_db, select_all, 
     help="Модель для извлечения тем: deepseek (по умолчанию) или fireworks_deepseek",
 )
 @click.option(
-    "--topic-mode",
+    "--granularity",
     type=click.Choice(["short", "long"]),
     default="long",
     show_default=True,
-    help="Режим извлечения тем: short (меньше тем, крупнее) или long (больше тем, детальнее)",
+    help="Уровень детализации извлечения тем: short (меньше тем, крупнее) или long (больше тем, детальнее)",
 )
 def transcribe(
     from_date,
@@ -296,7 +296,7 @@ def transcribe(
     select_all,
     recordings,
     topic_model,
-    topic_mode,
+    granularity,
 ):
     """Транскрибировать записи"""
     asyncio.run(
@@ -310,7 +310,7 @@ def transcribe(
             select_all,
             recordings,
             topic_model,
-            topic_mode,
+            granularity,
         )
     )
 
@@ -448,11 +448,11 @@ def upload(
     help="Модель для извлечения тем: deepseek (по умолчанию) или fireworks_deepseek",
 )
 @click.option(
-    "--topic-mode",
+    "--granularity",
     type=click.Choice(["short", "long"]),
     default="long",
     show_default=True,
-    help="Режим извлечения тем: short (меньше тем, крупнее) или long (больше тем, детальнее)",
+    help="Уровень детализации извлечения тем: short (меньше тем, крупнее) или long (больше тем, детальнее)",
 )
 def full_process(
     from_date,
@@ -469,7 +469,7 @@ def full_process(
     allow_skipped,
     no_transcription,
     topic_model,
-    topic_mode,
+    granularity,
 ):
     """Полный пайплайн: скачать + обработать + загрузить записи"""
     asyncio.run(
@@ -488,7 +488,7 @@ def full_process(
             allow_skipped,
             no_transcription,
             topic_model,
-            topic_mode,
+            granularity,
         )
     )
 
@@ -614,7 +614,7 @@ async def _get_target_recordings(
         allowed_statuses: Список разрешенных статусов
         min_duration: Минимальная длительность в минутах
         min_size_mb: Минимальный размер в МБ
-        require_file_path: Требуемый путь к файлу ('local_video_path', 'processed_audio_dir', 'processed_video_path')
+        require_file_path: Требуемый путь к файлу ('local_video_path', 'processed_audio_path', 'processed_video_path')
         filter_by_duration: Фильтровать ли по длительности
 
     Returns:
@@ -910,7 +910,7 @@ async def _transcribe_command(
     select_all,
     recordings,
     topic_model,
-    topic_mode,
+    granularity,
 ):
     """Команда transcribe - транскрибировать записи"""
     from_date, to_date = _parse_dates(from_date, to_date, last)
@@ -930,14 +930,14 @@ async def _transcribe_command(
             select_all=select_all,
             recordings=recordings,
             allowed_statuses=[ProcessingStatus.PROCESSED],
-            require_file_path="processed_audio_dir",
+            require_file_path="processed_audio_path",
         )
 
         if target_recordings:
             success_count = await pipeline.transcribe_recordings(
                 target_recordings,
                 transcription_model="fireworks",
-                topic_mode=topic_mode,
+                granularity=granularity,
                 topic_model=topic_model,
             )
             logger.info(f"✅ Транскрибация завершена: {success_count}/{len(target_recordings)}")
@@ -1240,7 +1240,7 @@ async def _full_process_command(
     allow_skipped,
     no_transcription,
     topic_model,
-    topic_mode,
+    granularity,
 ):
     """Команда full-process - полный пайплайн: скачать + обработать + загрузить"""
     from_date, to_date = _parse_dates(from_date, to_date, last)

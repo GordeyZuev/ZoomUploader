@@ -1,7 +1,8 @@
 """VK Token validation and management service."""
 
-import aiohttp
 from datetime import datetime, timedelta
+
+import aiohttp
 
 from logger import get_logger
 

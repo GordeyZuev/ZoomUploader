@@ -237,8 +237,9 @@ class RecordingAsyncRepository:
         Returns:
             OutputTargetModel
         """
-        from models.recording import TargetStatus
         from sqlalchemy import select
+
+        from models.recording import TargetStatus
 
         # Ищем существующий output_target через явный DB query
         # (не полагаемся на recording.outputs - может быть не загружен)
@@ -337,8 +338,9 @@ class RecordingAsyncRepository:
         Returns:
             OutputTarget
         """
-        from models.recording import TargetStatus
         from sqlalchemy import select
+
+        from models.recording import TargetStatus
 
         # Проверяем, есть ли уже output для этого target_type (явный DB query)
         stmt = select(OutputTargetModel).where(
@@ -503,6 +505,10 @@ class RecordingAsyncRepository:
                 if "template_id" in kwargs:
                     existing.template_id = kwargs["template_id"]
 
+                # Обновляем blank_record если передан
+                if "blank_record" in kwargs:
+                    existing.blank_record = kwargs["blank_record"]
+
                 # Обновляем source metadata
                 if existing.source:
                     existing_meta = existing.source.meta or {}
@@ -538,6 +544,7 @@ class RecordingAsyncRepository:
                 duration=duration,
                 status=status,
                 is_mapped=is_mapped,
+                blank_record=kwargs.get("blank_record", False),
                 video_file_size=kwargs.get("video_file_size"),
                 expire_at=kwargs.get("expire_at"),
                 local_video_path=kwargs.get("local_video_path"),

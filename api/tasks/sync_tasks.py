@@ -66,8 +66,13 @@ def sync_single_source_task(
             meta={'progress': 10, 'status': f'Syncing source {source_id}...', 'step': 'sync'}
         )
 
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
+            # Python 3.13+: get_event_loop() raises RuntimeError if no loop
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
@@ -116,8 +121,13 @@ def batch_sync_sources_task(
             meta={'progress': 5, 'status': f'Starting batch sync of {len(source_ids)} sources...', 'step': 'batch_sync'}
         )
 
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
+            # Python 3.13+: get_event_loop() raises RuntimeError if no loop
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
@@ -141,10 +151,10 @@ async def _async_sync_single_source(
 ) -> dict:
     """Async обертка для синхронизации одного источника."""
     from database.config import DatabaseConfig
-    
+
     db_config = DatabaseConfig.from_env()
     db_manager = DatabaseManager(db_config)
-    
+
     async with db_manager.async_session() as session:
         task.update_state(
             state='PROCESSING',
@@ -194,7 +204,7 @@ async def _async_batch_sync_sources(
 ) -> dict:
     """Async обертка для батчевой синхронизации источников."""
     from database.config import DatabaseConfig
-    
+
     db_config = DatabaseConfig.from_env()
     db_manager = DatabaseManager(db_config)
     results = []

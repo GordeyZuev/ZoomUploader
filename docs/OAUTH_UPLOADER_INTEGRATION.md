@@ -88,48 +88,91 @@ uploader = await create_uploader_from_db(
     session=session,
 )
 
-await uploader.authenticate()
+await uploader.authenticate()  # Auto-refresh для обеих платформ!
 ```
+
+### **Вариант 4: Ручное добавление credentials через API**
+
+```bash
+# YouTube credentials (manual)
+curl -X POST http://localhost:8000/api/v1/credentials \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "platform": "youtube",
+    "account_name": "my_channel",
+    "credentials": {
+      "client_secrets": {
+        "web": {
+          "client_id": "...",
+          "client_secret": "...",
+          "redirect_uris": ["..."]
+        }
+      },
+      "token": {
+        "token": "ya29...",
+        "refresh_token": "1//0c...",
+        "client_id": "...",
+        "client_secret": "...",
+        "scopes": ["https://www.googleapis.com/auth/youtube.upload"],
+        "expiry": "2026-01-08T12:00:00Z"
+      }
+    }
+  }'
+
+# VK credentials (manual, VK ID format)
+curl -X POST http://localhost:8000/api/v1/credentials \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "platform": "vk_video",
+    "account_name": "my_vk",
+    "credentials": {
+      "client_id": "...",
+      "client_secret": "...",
+      "access_token": "vk1...",
+      "refresh_token": "vk_refresh...",
+      "user_id": 123456,
+      "expires_in": 86400,
+      "expiry": "2026-01-08T12:00:00Z"
+    }
+  }'
+```
+
+**Validation:** Credentials автоматически валидируются через Pydantic схемы!
 
 ---
 
 ## 🔄 Интеграция с Celery задачами
 
-### **Пример: Обновить существующую задачу загрузки**
+### **Celery tasks уже обновлены!**
+
+Все Celery задачи в `api/tasks/upload.py` уже используют новый `uploader_factory`:
 
 ```python
-from celery import shared_task
-from api.dependencies import get_db_session
+# api/tasks/upload.py
 from video_upload_module.uploader_factory import create_uploader_from_db
 
-@shared_task
-async def upload_video_task(
-    user_id: int,
-    credential_id: int,
-    platform: str,
-    video_path: str,
-    title: str,
-):
-    async with get_db_session() as session:
-        # Create uploader from DB credentials
+async def _async_upload_recording(...):
+    # Автоматически использует DB credentials
         uploader = await create_uploader_from_db(
             platform=platform,
             credential_id=credential_id,
-            session=session,
+        session=ctx.session,
         )
         
-        # Authenticate (auto-refresh if needed)
-        if not await uploader.authenticate():
-            return {"status": "error", "message": "Authentication failed"}
+    # Auto-refresh для YouTube и VK!
+    auth_success = await uploader.authenticate()
         
         # Upload
-        result = await uploader.upload_video(
-            video_path=video_path,
-            title=title,
-        )
-        
-        return {"status": "success", "result": result}
+    result = await uploader.upload_video(...)
 ```
+
+**Что работает:**
+- ✅ Автоматический выбор credential из preset
+- ✅ Fallback на первый доступный credential
+- ✅ Автоматический refresh токенов (YouTube + VK ID)
+- ✅ Multi-tenancy (каждый пользователь со своими credentials)
 
 ---
 
@@ -142,7 +185,10 @@ CredentialProvider (ABC)
 ├── load_credentials() → dict
 ├── save_credentials(data: dict) → bool
 ├── get_google_credentials(scopes) → Credentials
-└── update_google_credentials(creds) → bool
+├── update_google_credentials(creds) → bool
+├── get_vk_credentials() → dict                    # ✨ NEW
+├── update_vk_credentials(token, expires) → bool   # ✨ NEW
+└── refresh_vk_token() → dict                      # ✨ NEW
 
 FileCredentialProvider
 ├── Читает/пишет в файлы
@@ -151,16 +197,30 @@ FileCredentialProvider
 DatabaseCredentialProvider
 ├── Читает/пишет в БД
 ├── Использует encryption
-└── Автоматический refresh
+├── Автоматический refresh (YouTube)
+└── Автоматический refresh (VK ID) ✨ NEW
 ```
 
 ### **Uploader Factory**
 
 ```python
 uploader_factory.py
-├── create_youtube_uploader_from_db()
-├── create_vk_uploader_from_db()
-└── create_uploader_from_db()  # Универсальная
+├── create_youtube_uploader_from_db()  # ✅ Credential provider
+├── create_vk_uploader_from_db()       # ✅ Credential provider (updated)
+└── create_uploader_from_db()          # ✅ Универсальная
+```
+
+### **VK ID OAuth Flow**
+
+```
+User → GET /oauth/vk/authorize
+     → VK ID Auth Page (https://id.vk.com/oauth2/auth)
+     → User grants access
+     → VK ID redirects → GET /oauth/vk/callback?code=...
+     → Backend: POST https://id.vk.com/oauth2/token
+     → Получаем: access_token + refresh_token ✨
+     → Save to DB (encrypted)
+     → VKUploader auto-refresh при expiry ✨
 ```
 
 ---
@@ -168,10 +228,12 @@ uploader_factory.py
 ## ✅ Преимущества
 
 1. **Обратная совместимость** - старый код работает без изменений
-2. **Автоматический refresh** - токены обновляются и сохраняются в БД
+2. **Автоматический refresh** - токены обновляются и сохраняются в БД (YouTube + VK ID)
 3. **Multi-tenancy** - каждый пользователь имеет свои credentials
 4. **Безопасность** - credentials зашифрованы в БД
 5. **Гибкость** - легко добавить новые платформы
+6. **Validation** - Pydantic схемы для всех платформ (YouTube, VK, Zoom)
+7. **VK ID support** - новый VK API с refresh token (вместо старого implicit flow)
 
 ---
 
@@ -193,13 +255,15 @@ await uploader.authenticate()
 
 ---
 
-## 📝 TODO для полной интеграции
+## ✅ Статус интеграции
 
-- [ ] Обновить `pipeline_manager.py` для использования DB credentials
-- [ ] Добавить выбор credential в API endpoints для загрузки
-- [ ] Обновить Celery задачи для поддержки `credential_id`
+- [x] **VK ID OAuth** - обновлено на новый API с refresh token support
+- [x] **VKUploader** - адаптирован под credential_provider паттерн
+- [x] **Celery задачи** - мигрированы на новый `uploader_factory`
+- [x] **Credential validation** - добавлены Pydantic схемы для YouTube/VK/Zoom
+- [x] **Автоматический refresh** - работает для YouTube и VK ID
 - [ ] Добавить UI для выбора credential при создании preset
-- [ ] Добавить мониторинг истечения токенов
+- [ ] Добавить мониторинг истечения токенов (Celery periodic task)
 
 ---
 

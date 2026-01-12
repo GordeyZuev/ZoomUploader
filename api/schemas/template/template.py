@@ -13,8 +13,19 @@ class RecordingTemplateBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Название шаблона")
     description: str | None = Field(None, max_length=1000, description="Описание шаблона")
     matching_rules: dict[str, Any] | None = Field(None, description="Правила сопоставления")
-    processing_config: dict[str, Any] | None = Field(None, description="Настройки обработки")
-    output_config: dict[str, Any] | None = Field(None, description="Конфигурация выгрузки")
+    processing_config: dict[str, Any] | None = Field(
+        None,
+        description="Processing settings (transcribe, extract_topics, etc)"
+    )
+    metadata_config: dict[str, Any] | None = Field(
+        None,
+        description="Content-specific metadata (title_template, playlist_id, thumbnail_path, tags). "
+        "Can also override preset defaults (e.g., privacy, topics_display format) via deep merge."
+    )
+    output_config: dict[str, Any] | None = Field(
+        None,
+        description="Output configuration (preset_ids list)"
+    )
 
     @field_validator("name")
     @classmethod
@@ -98,6 +109,7 @@ class RecordingTemplateUpdate(BaseModel):
     description: str | None = None
     matching_rules: dict[str, Any] | None = None
     processing_config: dict[str, Any] | None = None
+    metadata_config: dict[str, Any] | None = None
     output_config: dict[str, Any] | None = None
     is_draft: bool | None = None
     is_active: bool | None = None

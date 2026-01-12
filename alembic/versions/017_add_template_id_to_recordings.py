@@ -22,13 +22,13 @@ depends_on = None
 
 def upgrade():
     """Add template_id field to recordings table."""
-    
+
     # Add template_id column to recordings
     op.add_column(
         'recordings',
         sa.Column('template_id', sa.Integer(), nullable=True)
     )
-    
+
     # Create foreign key constraint
     op.create_foreign_key(
         'fk_recordings_template_id',
@@ -36,7 +36,7 @@ def upgrade():
         ['template_id'], ['id'],
         ondelete='SET NULL'
     )
-    
+
     # Create index for better query performance
     op.create_index(
         'ix_recordings_template_id',
@@ -47,13 +47,13 @@ def upgrade():
 
 def downgrade():
     """Remove template_id field from recordings table."""
-    
+
     # Drop index
     op.drop_index('ix_recordings_template_id', table_name='recordings')
-    
+
     # Drop foreign key
     op.drop_constraint('fk_recordings_template_id', 'recordings', type_='foreignkey')
-    
+
     # Drop column
     op.drop_column('recordings', 'template_id')
 

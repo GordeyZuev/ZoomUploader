@@ -7,6 +7,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 
 from api.celery_app import celery_app
 from api.core.context import ServiceContext
+from api.services.config_resolver import ConfigResolver
 from database.config import DatabaseConfig
 from database.manager import DatabaseManager
 from logger import get_logger
@@ -48,6 +49,7 @@ def upload_recording_to_platform(
     platform: str,
     preset_id: int | None = None,
     credential_id: int | None = None,
+    metadata_override: dict | None = None,
 ) -> dict:
     """
     Загрузка одной записи на платформу с user credentials.
@@ -58,6 +60,7 @@ def upload_recording_to_platform(
         platform: Платформа (youtube, vk)
         preset_id: ID output preset (опционально)
         credential_id: ID credential (опционально)
+        metadata_override: Override для preset metadata (playlist_id, album_id, etc.)
 
     Returns:
         Словарь с результатами загрузки
@@ -65,7 +68,7 @@ def upload_recording_to_platform(
     try:
         logger.info(
             f"[Task {self.request.id}] Uploading recording {recording_id} "
-            f"for user {user_id} to {platform}"
+            f"for user {user_id} to {platform}, metadata_override={bool(metadata_override)}"
         )
 
         # Выполняем async загрузку
@@ -76,6 +79,7 @@ def upload_recording_to_platform(
                 platform=platform,
                 preset_id=preset_id,
                 credential_id=credential_id,
+                metadata_override=metadata_override,
             )
         )
 
@@ -102,6 +106,7 @@ async def _async_upload_recording(
     platform: str,
     preset_id: int | None = None,
     credential_id: int | None = None,
+    metadata_override: dict | None = None,
 ) -> dict:
     """
     Async функция для загрузки записи.
@@ -180,9 +185,21 @@ async def _async_upload_recording(
             if not preset.credential_id:
                 raise ValueError(f"Output preset {preset_id} has no credential configured")
 
-            # Extract preset metadata
-            preset_metadata = preset.preset_metadata or {}
-            logger.info(f"Using preset {preset.name} with metadata: {list(preset_metadata.keys())}")
+            # Resolve upload metadata using ConfigResolver (preset + template + manual override)
+            config_resolver = ConfigResolver(ctx.session)
+            preset_metadata = await config_resolver.resolve_upload_metadata(
+                recording=recording,
+                user_id=user_id,
+                preset_id=preset.id
+            )
+            logger.info(f"Resolved metadata from preset '{preset.name}' + template: {list(preset_metadata.keys())}")
+
+            # Apply metadata_override if provided (only for platform-specific fields)
+            if metadata_override:
+                logger.info(f"Applying metadata_override for platform-specific fields: {metadata_override}")
+                # Deep merge to preserve existing preset_metadata fields
+                preset_metadata = config_resolver._merge_configs(preset_metadata, metadata_override)
+                logger.info(f"After override - preset_metadata has keys: {list(preset_metadata.keys())}")
 
             # Map platform names
             platform_map = {"YOUTUBE": "youtube", "VK": "vk_video", "VK_VIDEO": "vk_video"}
@@ -240,7 +257,7 @@ async def _async_upload_recording(
         title_template = preset_metadata.get("title_template", "{display_name}")
         description_template = preset_metadata.get(
             "description_template",
-            "Uploaded on {start_time}"
+            "Uploaded on {record_time:date}"
         )
 
         logger.info(f"[Upload {platform}] title_template: {title_template[:100]}...")
@@ -259,7 +276,13 @@ async def _async_upload_recording(
             title = recording.display_name or "Recording"
         if not description:
             logger.warning(f"[Upload {platform}] Description is empty, using fallback")
-            description = f"Uploaded on {recording.start_time.strftime('%Y-%m-%d')}"
+            # Use consistent formatting
+            fallback_desc = TemplateRenderer.render(
+                "Uploaded on {record_time:date}",
+                template_context,
+                topics_display
+            )
+            description = fallback_desc or "Uploaded"
             if recording.main_topics:
                 # Use topics_display for fallback if configured
                 if topics_display and topics_display.get("enabled", True):
@@ -290,18 +313,33 @@ async def _async_upload_recording(
             if "privacy" in preset_metadata:
                 upload_params["privacy_status"] = preset_metadata["privacy"]
 
-            if "playlist_id" in preset_metadata:
-                upload_params["playlist_id"] = preset_metadata["playlist_id"]
+            # Check both top-level and youtube-specific playlist_id
+            playlist_id = preset_metadata.get("playlist_id") or preset_metadata.get("youtube", {}).get("playlist_id")
+            logger.info(f"[Upload YouTube] Playlist lookup: top-level={preset_metadata.get('playlist_id')}, youtube={preset_metadata.get('youtube', {}).get('playlist_id')}")
+            if playlist_id:
+                upload_params["playlist_id"] = playlist_id
+                logger.info(f"[Upload YouTube] Using playlist_id: {playlist_id}")
+            else:
+                logger.warning("[Upload YouTube] No playlist_id found in metadata")
 
             if "publish_at" in preset_metadata:
                 upload_params["publish_at"] = preset_metadata["publish_at"]
 
-            if "thumbnail_path" in preset_metadata and preset_metadata["thumbnail_path"]:
-                thumbnail_path = Path(preset_metadata["thumbnail_path"])
+            # Check for thumbnail_path in multiple locations
+            thumbnail_path_str = (
+                preset_metadata.get("thumbnail_path") or
+                preset_metadata.get("youtube", {}).get("thumbnail_path")
+            )
+            logger.info(f"[Upload YouTube] Thumbnail lookup: top-level={preset_metadata.get('thumbnail_path')}, youtube={preset_metadata.get('youtube', {}).get('thumbnail_path')}")
+            if thumbnail_path_str:
+                thumbnail_path = Path(thumbnail_path_str)
                 if thumbnail_path.exists():
                     upload_params["thumbnail_path"] = str(thumbnail_path)
+                    logger.info(f"[Upload YouTube] Using thumbnail: {thumbnail_path}")
                 else:
-                    logger.warning(f"Thumbnail not found: {thumbnail_path}")
+                    logger.warning(f"[Upload YouTube] Thumbnail not found: {thumbnail_path}")
+            else:
+                logger.warning("[Upload YouTube] No thumbnail_path found in metadata")
 
             # Additional YouTube params
             for key in ["made_for_kids", "embeddable", "license", "public_stats_viewable"]:
@@ -309,14 +347,28 @@ async def _async_upload_recording(
                     upload_params[key] = preset_metadata[key]
 
         elif platform.lower() in ["vk", "vk_video"]:
-            # VK-specific parameters
-            if "album_id" in preset_metadata:
-                upload_params["album_id"] = str(preset_metadata["album_id"])
+            # VK-specific parameters - check both top-level and nested 'vk' key
+            album_id = preset_metadata.get("album_id") or preset_metadata.get("vk", {}).get("album_id")
+            if album_id:
+                upload_params["album_id"] = str(album_id)
+                logger.info(f"[Upload VK] Using album_id: {album_id}")
+            else:
+                logger.warning("[Upload VK] No album_id found in metadata")
 
-            if "thumbnail_path" in preset_metadata and preset_metadata["thumbnail_path"]:
-                thumbnail_path = Path(preset_metadata["thumbnail_path"])
+            # Thumbnail - check both top-level and nested 'vk' key
+            thumbnail_path_str = (
+                preset_metadata.get("thumbnail_path") or
+                preset_metadata.get("vk", {}).get("thumbnail_path")
+            )
+            if thumbnail_path_str:
+                thumbnail_path = Path(thumbnail_path_str)
                 if thumbnail_path.exists():
                     upload_params["thumbnail_path"] = str(thumbnail_path)
+                    logger.info(f"[Upload VK] Using thumbnail: {thumbnail_path}")
+                else:
+                    logger.warning(f"[Upload VK] Thumbnail not found: {thumbnail_path}")
+            else:
+                logger.warning("[Upload VK] No thumbnail_path found in metadata")
 
             # VK privacy and other settings (including group_id for group uploads)
             for key in ["group_id", "privacy_view", "privacy_comment", "no_comments", "repeat", "wallpost"]:

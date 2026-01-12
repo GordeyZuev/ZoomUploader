@@ -9,7 +9,7 @@
 
 **LEAP** — это production-ready multi-tenant платформа с полным `REST API` для автоматизации end-to-end обработки образовательного видеоконтента — от загрузки до публикации с AI-транскрибацией, интеллектуальным структурированием и профессиональным оформлением.
 
-**Версия:** `v0.9.2` (Dev Status)  
+**Версия:** `v0.9.2.1` (Dev Status)  
 **Tech:** `Python 3.11+` • `FastAPI` • `PostgreSQL` • `Redis` • `Celery` • `AI` (Whisper, DeepSeek)
 
 ---
@@ -176,12 +176,15 @@
 ## 📈 Key Metrics
 
 ```
-📊 API Endpoints:        84
-🗄️  Database Migrations:  17
+📊 API Endpoints:        84 (full production coverage)
+🗄️  Database Tables:      12 (multi-tenant architecture)
+🗃️  Database Migrations:  19 (auto-init on first run)
 🔌 Platform Integrations: 3 (Zoom, YouTube, VK)
 🤖 AI Models:            2 (Whisper, DeepSeek)
-🔒 Security Features:    JWT + OAuth2 + RBAC + Encryption
+🔒 Security Features:    JWT + OAuth2 + RBAC + Fernet Encryption
 ⚡ Processing Pipeline:  6 stages, fully automated
+📦 Subscription Plans:   4 (Free/Plus/Pro/Enterprise)
+👥 Multi-Tenancy:        Full data isolation
 ```
 
 ---
@@ -445,12 +448,12 @@ TRANSCRIBED → UPLOADING → READY
 
 ---
 
-## 🆕 Latest Release: v0.9.2
+## 🆕 Latest Release: v0.9.2.1
 
 **Major Features:**
 
 🔐 **OAuth 2.0 Integration**
-- Web-based flow для YouTube & VK
+- Web-based flow для YouTube, VK & Zoom
 - Auto-refresh tokens • CSRF protection
 - Multi-tenant credential management
 
@@ -459,22 +462,31 @@ TRANSCRIBED → UPLOADING → READY
 - Declarative config (time/cron/weekdays)
 - Dry-run mode • Quota management
 
-⭐ **Config-Driven Architecture**
-- Template-based automation
-- Deep merge updates • FSM state management
-- SKIPPED records handling
+⭐ **Template-Driven Architecture**
+- Template-based automation with live updates
+- Auto-matching recordings to templates
+- Deep merge config hierarchy
+- Blank records filtering
 
 📊 **Enhanced Processing**
 - Decoupled pipeline (transcribe → topics → subtitles)
-- Topic versioning • Cost tracking
+- Topic versioning with timestamps (HH:MM:SS)
+- Cost tracking • Progress monitoring
 - Multi-tenant thumbnails system
+
+💎 **Subscription System**
+- 4 plans: Free/Plus/Pro/Enterprise
+- Quota management (recordings, storage, tasks)
+- Pay-as-you-go ready
+- Usage tracking & history
 
 **Statistics:**
 ```
 API Endpoints:  84 (full production coverage)
-DB Migrations:  17 (auto-init on first run)
+Database:       12 tables, 19 migrations (auto-init)
 Architecture:   Template-driven pipeline
 OAuth:          YouTube, VK, Zoom (all platforms)
+Subscription:   4 plans with quotas
 ```
 
 📜 Полная история: [WHAT_WAS_DONE.md](docs/WHAT_WAS_DONE.md)
@@ -495,4 +507,4 @@ OAuth:          YouTube, VK, Zoom (all platforms)
 
 ---
 
-**Версия:** `v0.9.2` • **Статус:** Dev Status
+**Версия:** `v0.9.2.1` • **Статус:** Dev Status

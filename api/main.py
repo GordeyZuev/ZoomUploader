@@ -3,14 +3,22 @@
 import subprocess
 
 from fastapi import FastAPI
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import RequestValidationError, ResponseValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
+# Явно импортируем Celery задачи чтобы они зарегистрировались в API сервере
+import api.tasks.automation  # noqa: F401
+import api.tasks.maintenance  # noqa: F401
+import api.tasks.processing  # noqa: F401
+import api.tasks.sync_tasks  # noqa: F401
+import api.tasks.template  # noqa: F401
+import api.tasks.upload  # noqa: F401
 from api.config import get_settings
 from api.middleware.error_handler import (
     api_exception_handler,
     global_exception_handler,
+    response_validation_exception_handler,
     sqlalchemy_exception_handler,
     validation_exception_handler,
 )
@@ -104,6 +112,7 @@ app.add_middleware(LoggingMiddleware)
 # Exception handlers
 app.add_exception_handler(APIException, api_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(ResponseValidationError, response_validation_exception_handler)
 app.add_exception_handler(SQLAlchemyError, sqlalchemy_exception_handler)
 app.add_exception_handler(Exception, global_exception_handler)
 

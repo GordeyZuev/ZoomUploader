@@ -6,7 +6,6 @@ import logging
 from celery import Task
 
 from api.celery_app import celery_app
-from api.repositories.recording_repos import RecordingAsyncRepository
 from api.repositories.template_repos import RecordingTemplateRepository
 from database.config import DatabaseConfig
 from database.manager import DatabaseManager
@@ -66,8 +65,13 @@ def rematch_recordings_task(
             meta={"progress": 10, "status": "Loading template...", "step": "rematch"},
         )
 
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
+            # Python 3.13+: get_event_loop() raises RuntimeError if no loop
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
@@ -115,7 +119,6 @@ async def _async_rematch_recordings(
 
     async with db_manager.async_session() as session:
         template_repo = RecordingTemplateRepository(session)
-        recording_repo = RecordingAsyncRepository(session)
 
         task_self.update_state(
             state="PROCESSING",

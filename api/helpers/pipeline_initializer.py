@@ -66,7 +66,7 @@ async def initialize_processing_stages_from_config(
                     user_id=recording.user_id,
                     stage_type=ProcessingStageType.EXTRACT_TOPICS,
                     status=ProcessingStageStatus.PENDING,
-                    stage_meta={"mode": transcription_config.get("topic_mode", "long")},
+                    stage_meta={"mode": transcription_config.get("granularity", "long")},
                 )
             )
 
@@ -114,6 +114,7 @@ async def initialize_output_targets_from_config(
         }
     """
     from sqlalchemy import select
+
     from database.template_models import OutputPresetModel
 
     targets_to_create = []
@@ -128,7 +129,7 @@ async def initialize_output_targets_from_config(
     query = select(OutputPresetModel).where(
         OutputPresetModel.id.in_(preset_ids),
         OutputPresetModel.user_id == recording.user_id,
-        OutputPresetModel.is_active == True
+        OutputPresetModel.is_active
     )
     result = await session.execute(query)
     presets = result.scalars().all()
@@ -198,7 +199,7 @@ async def ensure_processing_stages(
             required_stages.append(
                 (
                     ProcessingStageType.EXTRACT_TOPICS,
-                    {"mode": transcription_config.get("topic_mode", "long")},
+                    {"mode": transcription_config.get("granularity", "long")},
                 )
             )
 
@@ -242,6 +243,7 @@ async def ensure_output_targets(
         Список всех output_targets (существующие + созданные)
     """
     from sqlalchemy import select
+
     from database.template_models import OutputPresetModel
 
     # Получаем существующие target types
@@ -258,7 +260,7 @@ async def ensure_output_targets(
     query = select(OutputPresetModel).where(
         OutputPresetModel.id.in_(preset_ids),
         OutputPresetModel.user_id == recording.user_id,
-        OutputPresetModel.is_active == True
+        OutputPresetModel.is_active
     )
     result = await session.execute(query)
     presets = result.scalars().all()

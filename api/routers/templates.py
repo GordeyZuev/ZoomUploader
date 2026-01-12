@@ -13,8 +13,11 @@ from api.schemas.template import (
     RecordingTemplateUpdate,
 )
 from database.auth_models import UserModel
+from logger import get_logger
+from models.recording import ProcessingStatus
 
 router = APIRouter(prefix="/api/v1/templates", tags=["Templates"])
+logger = get_logger()
 
 
 @router.get("", response_model=list[RecordingTemplateResponse])
@@ -91,10 +94,17 @@ async def create_template(
     )
 
     await session.commit()
+    await session.refresh(template)
 
     # Автоматический re-match если не draft и auto_rematch=True
+    logger.info(
+        f"Template {template.id} created: is_draft={template.is_draft}, "
+        f"is_active={template.is_active}, auto_rematch={auto_rematch}"
+    )
+
     if auto_rematch and not template.is_draft and template.is_active:
-        from api.tasks.template_tasks import rematch_recordings_task
+        # Import rematch task
+        from api.tasks.template import rematch_recordings_task
 
         task = rematch_recordings_task.delay(
             template_id=template.id,
@@ -104,6 +114,11 @@ async def create_template(
 
         logger.info(
             f"Queued auto re-match task {task.id} for template {template.id} '{template.name}'"
+        )
+    else:
+        logger.warning(
+            f"Skipping auto re-match for template {template.id}: "
+            f"auto_rematch={auto_rematch}, is_draft={template.is_draft}, is_active={template.is_active}"
         )
 
     return template
@@ -277,6 +292,7 @@ async def get_template_stats(
         Статистика template
     """
     from sqlalchemy import func, select
+
     from database.models import RecordingModel
 
     template_repo = RecordingTemplateRepository(session)
@@ -355,6 +371,7 @@ async def preview_template_match(
         Список потенциально matched recordings
     """
     from sqlalchemy import select
+
     from database.models import RecordingModel
 
     template_repo = RecordingTemplateRepository(session)
@@ -371,7 +388,7 @@ async def preview_template_match(
     query = (
         select(RecordingModel)
         .where(RecordingModel.user_id == current_user.id)
-        .where(RecordingModel.is_mapped == False)
+        .where(~RecordingModel.is_mapped)
     )
 
     if source_id:
@@ -465,7 +482,7 @@ async def rematch_template_recordings(
         )
 
     # Запускаем background task
-    from api.tasks.template_tasks import rematch_recordings_task
+    from api.tasks.template import rematch_recordings_task
 
     task = rematch_recordings_task.delay(
         template_id=template_id,

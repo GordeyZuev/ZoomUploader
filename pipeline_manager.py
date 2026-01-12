@@ -197,16 +197,22 @@ class PipelineManager:
                             f"Не удалось удалить файл: {recording.processed_video_path} | recording_id={recording_id} | error={e}"
                         )
 
-                if recording.processed_audio_dir and os.path.exists(recording.processed_audio_dir):
+                if recording.processed_audio_path and os.path.exists(recording.processed_audio_path):
                     try:
-                        shutil.rmtree(recording.processed_audio_dir)
-                        deleted_files.append(recording.processed_audio_dir)
+                        audio_file = Path(recording.processed_audio_path)
+                        audio_file.unlink()
+                        deleted_files.append(recording.processed_audio_path)
                         self.logger.debug(
-                            f"Удалена папка аудио: {recording.processed_audio_dir} | recording_id={recording_id}"
+                            f"Удален аудиофайл: {recording.processed_audio_path} | recording_id={recording_id}"
                         )
+                        # Удаляем директорию если она пустая
+                        audio_dir = audio_file.parent
+                        if audio_dir.exists() and not any(audio_dir.iterdir()):
+                            audio_dir.rmdir()
+                            self.logger.debug(f"Удалена пустая директория: {audio_dir}")
                     except Exception as e:
                         self.logger.warning(
-                            f"Не удалось удалить папку аудио: {recording.processed_audio_dir} | recording_id={recording_id} | error={e}"
+                            f"Не удалось удалить аудиофайл: {recording.processed_audio_path} | recording_id={recording_id} | error={e}"
                         )
 
                 if recording.transcription_dir and os.path.exists(recording.transcription_dir):
@@ -228,7 +234,7 @@ class PipelineManager:
 
                 recording.local_video_path = None
                 recording.processed_video_path = None
-                recording.processed_audio_dir = None
+                recording.processed_audio_path = None
                 recording.downloaded_at = None
 
                 recording.transcription_dir = None
@@ -306,7 +312,7 @@ class PipelineManager:
         self,
         recordings: list[MeetingRecording],
         transcription_model: str = "fireworks",
-        topic_mode: str = "long",
+        granularity: str = "long",
         topic_model: str = "deepseek",
         max_concurrent: int = 5,
     ) -> int:
@@ -316,7 +322,7 @@ class PipelineManager:
         Args:
             recordings: Список записей для транскрибации
             transcription_model: Модель для транскрибации
-            topic_mode: Режим извлечения тем
+            granularity: Уровень детализации извлечения тем (short/long)
             topic_model: Модель для извлечения тем
             max_concurrent: Максимальное количество параллельных транскрибаций
         """
@@ -342,7 +348,7 @@ class PipelineManager:
 
         self.logger.info(
             f"Запуск транскрибации: count={len(eligible)} | audio_model={transcription_model} | "
-            f"topic_model={topic_model} | topic_mode={topic_mode} | max_concurrent={max_concurrent}"
+            f"topic_model={topic_model} | granularity={granularity} | max_concurrent={max_concurrent}"
         )
 
         semaphore = asyncio.Semaphore(max_concurrent)
@@ -354,7 +360,7 @@ class PipelineManager:
                     return await self._transcribe_single_recording(
                         recording,
                         transcription_model=transcription_model,
-                        topic_mode=topic_mode,
+                        granularity=granularity,
                         topic_model=topic_model,
                     )
                 except Exception as e:
@@ -495,7 +501,7 @@ class PipelineManager:
         force_download: bool = False,
         no_transcription: bool = False,
         transcription_model: str = "fireworks",
-        topic_mode: str = "long",
+        granularity: str = "long",
         topic_model: str = "deepseek",
         progress=None,
         task_id=None,
@@ -633,14 +639,14 @@ class PipelineManager:
                     update_progress("Транскрибация", 60, "🎤", show_bar=False, status_color="yellow")
                     # Используем настройки из processing_preferences если они есть
                     effective_transcription_model = prefs.get("transcription_model", transcription_model)
-                    effective_topic_mode = prefs.get("topic_mode", topic_mode)
+                    effective_granularity = prefs.get("granularity", granularity)
                     effective_topic_model = prefs.get("topic_model", topic_model)
                     effective_enable_topics = prefs.get("enable_topics", True)
 
                     if await self._transcribe_single_recording(
                         recording,
                         transcription_model=effective_transcription_model,
-                        topic_mode=effective_topic_mode,
+                        granularity=effective_granularity,
                         topic_model=effective_topic_model,
                         enable_topics=effective_enable_topics,
                         progress=progress,
@@ -866,7 +872,7 @@ class PipelineManager:
         allow_skipped: bool = False,
         no_transcription: bool = False,
         transcription_model: str = "fireworks",
-        topic_mode: str = "long",
+        granularity: str = "long",
         topic_model: str = "deepseek",
     ) -> dict:
         """Запуск полного пайплайна обработки"""
@@ -961,7 +967,7 @@ class PipelineManager:
                     force_download=False,
                     no_transcription=no_transcription,
                     transcription_model=transcription_model,
-                    topic_mode=topic_mode,
+                    granularity=granularity,
                     topic_model=topic_model,
                     progress=progress,
                     task_id=task_id,
@@ -1049,20 +1055,24 @@ class PipelineManager:
                         f"Ошибка удаления файла: path={recording.processed_video_path} | recording_id={recording.db_id} | error={e}"
                     )
 
-            if recording.processed_audio_dir and os.path.exists(recording.processed_audio_dir):
+            if recording.processed_audio_path and os.path.exists(recording.processed_audio_path):
                 try:
-                    total_before = freed_space_mb
-                    for p in Path(recording.processed_audio_dir).rglob("*"):
-                        if p.is_file():
-                            freed_space_mb += p.stat().st_size / (1024 * 1024)
-                    shutil.rmtree(recording.processed_audio_dir)
+                    audio_file = Path(recording.processed_audio_path)
+                    file_size = audio_file.stat().st_size / (1024 * 1024)
+                    audio_file.unlink()
+                    freed_space_mb += file_size
                     file_deleted = True
                     self.logger.debug(
-                        f"Удалена папка аудио: path={recording.processed_audio_dir} | size={freed_space_mb - total_before:.1f}MB | recording_id={recording.db_id}"
+                        f"Удален аудиофайл: path={recording.processed_audio_path} | size={file_size:.1f}MB | recording_id={recording.db_id}"
                     )
+                    # Удаляем директорию если она пустая
+                    audio_dir = audio_file.parent
+                    if audio_dir.exists() and not any(audio_dir.iterdir()):
+                        audio_dir.rmdir()
+                        self.logger.debug(f"Удалена пустая директория: {audio_dir}")
                 except Exception as e:
                     self.logger.error(
-                        f"Ошибка удаления папки: path={recording.processed_audio_dir} | recording_id={recording.db_id} | error={e}"
+                        f"Ошибка удаления аудиофайла: path={recording.processed_audio_path} | recording_id={recording.db_id} | error={e}"
                     )
 
             if file_deleted:
@@ -1437,7 +1447,7 @@ class PipelineManager:
         self,
         recording: MeetingRecording,
         transcription_model: str = "fireworks",
-        topic_mode: str = "long",
+        granularity: str = "long",
         topic_model: str = "deepseek",
         enable_topics: bool = True,
         progress=None,
@@ -1537,7 +1547,7 @@ class PipelineManager:
                         recording_id=recording.db_id,
                         recording_topic=recording.display_name,
                         recording_start_time=recording.start_time,
-                        granularity="short" if topic_mode == "short" else "long",
+                        granularity=granularity,
                     )
 
                     recording.transcription_dir = result["transcription_dir"]

@@ -125,8 +125,8 @@ class RecordingService:
                 prefs["transcription_model"] = request.transcription_model
             if request.topic_model:
                 prefs["topic_model"] = request.topic_model
-            if request.topic_mode:
-                prefs["topic_mode"] = request.topic_mode
+            if request.granularity:
+                prefs["granularity"] = request.granularity
 
         # Обновляем модель
         recording.processing_preferences = prefs
@@ -142,7 +142,7 @@ class RecordingService:
                     "enable_subtitles": prefs.get("enable_subtitles", True),
                     "transcription_model": request.transcription_model,
                     "topic_model": request.topic_model,
-                    "topic_mode": request.topic_mode,
+                    "granularity": request.granularity,
                 },
                 priority=7,  # Высокий приоритет для одиночных задач
             )
@@ -161,7 +161,7 @@ class RecordingService:
                     platforms=request.platforms,
                     no_transcription=request.no_transcription,
                     transcription_model=request.transcription_model,
-                    topic_mode=request.topic_mode,
+                    granularity=request.granularity,
                     topic_model=request.topic_model,
                 )
                 success = True

@@ -24,7 +24,7 @@ def run_automation_job_task(self, job_id: int, user_id: int):
 
     async def _run():
         from database.config import DatabaseConfig
-        
+
         db_config = DatabaseConfig.from_env()
         db_manager = DatabaseManager(db_config)
         async with db_manager.async_session() as session:
@@ -97,7 +97,7 @@ def run_automation_job_task(self, job_id: int, user_id: int):
                     manual_override = {
                         "upload": {"auto_upload": auto_upload}
                     } if auto_upload else None
-                    
+
                     for recording in new_recordings:
                         task = full_pipeline_task.delay(
                             recording_id=recording.id,
@@ -148,7 +148,7 @@ def dry_run_automation_job_task(job_id: int, user_id: int):
 
     async def _run():
         from database.config import DatabaseConfig
-        
+
         db_config = DatabaseConfig.from_env()
         db_manager = DatabaseManager(db_config)
         async with db_manager.async_session() as session:

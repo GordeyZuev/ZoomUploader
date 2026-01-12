@@ -28,7 +28,7 @@ celery_app = Celery(
     "zoom_publishing",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["api.tasks.processing", "api.tasks.upload", "api.tasks.automation", "api.tasks.maintenance", "api.tasks.sync_tasks"],
+    include=["api.tasks.processing", "api.tasks.upload", "api.tasks.automation", "api.tasks.maintenance", "api.tasks.sync_tasks", "api.tasks.template"],
 )
 
 # Конфигурация Celery
@@ -56,6 +56,7 @@ celery_app.conf.task_routes = {
     "api.tasks.automation.*": {"queue": "automation"},
     "api.tasks.maintenance.*": {"queue": "maintenance"},
     "api.tasks.sync.*": {"queue": "processing"},  # Sync tasks use processing queue
+    "api.tasks.template.*": {"queue": "processing"},  # Template tasks use processing queue
 }
 
 # Приоритеты очередей

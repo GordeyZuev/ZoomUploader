@@ -27,15 +27,20 @@ def cleanup_expired_tokens_task():
             db_config = DatabaseConfig.from_env()
             db_manager = DatabaseManager(db_config)
 
-            async with db_manager.get_session() as session:
+            async with db_manager.async_session() as session:
                 token_repo = RefreshTokenRepository(session)
                 deleted_count = await token_repo.delete_expired()
 
             return deleted_count
 
         # Выполняем async функцию
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
+            # Python 3.13+: get_event_loop() raises RuntimeError if no loop
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 

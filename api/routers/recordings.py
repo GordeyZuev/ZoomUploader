@@ -1,7 +1,7 @@
 """API endpoints для recordings с multi-tenancy support."""
 
+from datetime import datetime, timezone
 from pathlib import Path
-
 from typing import Union
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -39,6 +39,8 @@ class RecordingResponse(BaseModel):
     failed_reason: str | None = None
     is_mapped: bool = False
     template_id: int | None = None
+    template_name: str | None = None
+    input_source: dict | None = None
 
     class Config:
         from_attributes = True
@@ -87,6 +89,18 @@ class FullPipelineRequest(BaseModel):
     process_config: ProcessVideoRequest = ProcessVideoRequest()
 
 
+class ConfigOverrideRequest(BaseModel):
+    """
+    Гибкий request для override конфигурации в full-pipeline.
+
+    Поддерживает любые поля из template config для переопределения.
+    """
+
+    processing_config: dict | None = None
+    metadata_config: dict | None = None
+    output_config: dict | None = None
+
+
 def _build_manual_override(config: FullPipelineRequest) -> dict:
     """Convert FullPipelineRequest to manual_override dict for full_pipeline_task."""
     return {
@@ -108,6 +122,26 @@ def _build_manual_override(config: FullPipelineRequest) -> dict:
     }
 
 
+def _build_override_from_flexible(config: ConfigOverrideRequest) -> dict:
+    """
+    Convert ConfigOverrideRequest to manual_override dict.
+
+    Returns a dict that will be merged with resolved config hierarchy.
+    """
+    override = {}
+
+    if config.processing_config:
+        override["processing_config"] = config.processing_config
+
+    if config.metadata_config:
+        override["metadata_config"] = config.metadata_config
+
+    if config.output_config:
+        override["output_config"] = config.output_config
+
+    return override
+
+
 # ============================================================================
 # CRUD Endpoints
 # ============================================================================
@@ -118,6 +152,9 @@ async def list_recordings(
     status_filter: str | None = Query(None, description="Фильтр по статусу"),
     failed: bool | None = Query(None, description="Только failed записи"),
     mapped: bool | None = Query(None, description="Фильтр по is_mapped (true/false/null=все)"),
+    include_blank: bool = Query(False, description="Include blank records (short/small)"),
+    from_date: str | None = Query(None, description="Фильтр: start_time >= from_date (YYYY-MM-DD)"),
+    to_date: str | None = Query(None, description="Фильтр: start_time <= to_date (YYYY-MM-DD)"),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     ctx: ServiceContext = Depends(get_service_context),
@@ -129,6 +166,9 @@ async def list_recordings(
         status_filter: Фильтр по статусу (INITIALIZED, DOWNLOADED, PROCESSED, etc.)
         failed: Только failed записи
         mapped: Фильтр по is_mapped (true - только mapped, false - только unmapped, null - все)
+        include_blank: Include blank records (default: False - скрывает blank records)
+        from_date: Фильтр по дате начала (YYYY-MM-DD)
+        to_date: Фильтр по дате окончания (YYYY-MM-DD)
         page: Номер страницы
         per_page: Количество записей на страницу
         ctx: Service context
@@ -150,6 +190,25 @@ async def list_recordings(
 
     if mapped is not None:
         recordings = [r for r in recordings if r.is_mapped == mapped]
+
+    # Фильтр blank_record (по умолчанию скрываем blank records)
+    if not include_blank:
+        recordings = [r for r in recordings if not r.blank_record]
+
+    # Фильтры по дате
+    if from_date:
+        from utils.date_utils import parse_date
+        from_dt_str = parse_date(from_date)
+        from_dt = datetime.strptime(from_dt_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        recordings = [r for r in recordings if r.start_time >= from_dt]
+
+    if to_date:
+        from utils.date_utils import parse_date
+        to_dt_str = parse_date(to_date)
+        to_dt = datetime.strptime(to_dt_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        # End of day
+        to_dt = to_dt.replace(hour=23, minute=59, second=59)
+        recordings = [r for r in recordings if r.start_time <= to_dt]
 
     # Пагинация
     total = len(recordings)
@@ -175,6 +234,12 @@ async def list_recordings(
                 failed_reason=r.failed_reason,
                 is_mapped=r.is_mapped,
                 template_id=r.template_id,
+                template_name=r.template.name if r.template else None,
+                input_source={
+                    "id": r.input_source.id,
+                    "name": r.input_source.name,
+                    "type": r.input_source.source_type,
+                } if r.input_source else None,
             )
             for r in paginated_recordings
         ],
@@ -226,13 +291,19 @@ async def get_recording(
             failed_reason=recording.failed_reason,
             is_mapped=recording.is_mapped,
             template_id=recording.template_id,
+            template_name=recording.template.name if recording.template else None,
+            input_source={
+                "id": recording.input_source.id,
+                "name": recording.input_source.name,
+                "type": recording.input_source.source_type,
+            } if recording.input_source else None,
         )
 
     # Детальная информация
     from transcription_module.manager import get_transcription_manager
 
     transcription_manager = get_transcription_manager()
-    
+
     # Базовая информация (общие поля)
     base_data = {
         "id": recording.id,
@@ -249,6 +320,12 @@ async def get_recording(
         "failed_reason": recording.failed_reason,
         "is_mapped": recording.is_mapped,
         "template_id": recording.template_id,
+        "template_name": recording.template.name if recording.template else None,
+        "input_source": {
+            "id": recording.input_source.id,
+            "name": recording.input_source.name,
+            "type": recording.input_source.source_type,
+        } if recording.input_source else None,
     }
 
     # Видео файлы
@@ -270,30 +347,17 @@ async def get_recording(
 
     # Аудио файлы
     audio_info = {}
-    if recording.processed_audio_dir:
-        audio_dir = Path(recording.processed_audio_dir)
-        if audio_dir.exists():
-            # Найти первый аудио файл в директории
-            audio_files = []
-            for ext in ("*.mp3", "*.wav", "*.m4a"):
-                audio_files.extend(sorted(audio_dir.glob(ext)))
-
-            if audio_files:
-                primary_audio = audio_files[0]
-                audio_info = {
-                    "path": str(primary_audio),
-                    "size_mb": round(primary_audio.stat().st_size / (1024 * 1024), 2),
-                    "exists": True,
-                }
-            else:
-                audio_info = {
-                    "path": str(audio_dir),
-                    "exists": True,
-                    "size_mb": None,
-                }
+    if recording.processed_audio_path:
+        audio_path = Path(recording.processed_audio_path)
+        if audio_path.exists():
+            audio_info = {
+                "path": str(audio_path),
+                "size_mb": round(audio_path.stat().st_size / (1024 * 1024), 2),
+                "exists": True,
+            }
         else:
             audio_info = {
-                "path": str(audio_dir),
+                "path": str(audio_path),
                 "exists": False,
                 "size_mb": None,
             }
@@ -346,7 +410,7 @@ async def get_recording(
 
     # Субтитры
     subtitles = {}
-    cache_dir = transcription_manager.get_dir(recording_id) / "cache"
+    cache_dir = transcription_manager.get_dir(recording_id, user_id=ctx.user_id) / "cache"
     for fmt in ["srt", "vtt"]:
         subtitle_path = cache_dir / f"subtitles.{fmt}"
         subtitles[fmt] = {
@@ -371,14 +435,28 @@ async def get_recording(
 
     # Загрузка на платформы
     uploads = {}
-    if hasattr(recording, "output_targets") and recording.output_targets:
-        for target in recording.output_targets:
+    if hasattr(recording, "outputs") and recording.outputs:
+        for target in recording.outputs:
             platform = target.target_type.value if hasattr(target.target_type, "value") else str(target.target_type)
-            uploads[platform] = {
+
+            # Базовая информация
+            upload_info = {
                 "status": target.status.value if hasattr(target.status, "value") else str(target.status),
-                "url": target.get_link() if hasattr(target, "get_link") else None,
-                "uploaded_at": target.uploaded_at.isoformat() if hasattr(target, "uploaded_at") and target.uploaded_at else None,
+                "url": target.target_meta.get("video_url") or target.target_meta.get("target_link") if target.target_meta else None,
+                "video_id": target.target_meta.get("video_id") if target.target_meta else None,
+                "uploaded_at": target.uploaded_at.isoformat() if target.uploaded_at else None,
+                "failed": target.failed,
+                "retry_count": target.retry_count,
             }
+
+            # Добавляем информацию о preset если есть
+            if target.preset:
+                upload_info["preset"] = {
+                    "id": target.preset.id,
+                    "name": target.preset.name,
+                }
+
+            uploads[platform] = upload_info
 
     # Создаем DetailedRecordingResponse
     return DetailedRecordingResponse(
@@ -445,8 +523,6 @@ async def add_local_recording(
 
         # Создаем запись в БД
         recording_repo = RecordingAsyncRepository(ctx.session)
-
-        from datetime import datetime
 
         from models.recording import SourceType
 
@@ -713,6 +789,16 @@ async def batch_process_recordings(
                 })
                 continue
 
+            # Skip blank records
+            if recording.blank_record:
+                tasks.append({
+                    "recording_id": recording_id,
+                    "status": "skipped",
+                    "error": "Blank record (too short or too small)",
+                    "task_id": None,
+                })
+                continue
+
             # Запускаем задачу для этой записи (template-driven)
             manual_override = _build_manual_override(config)
             task = full_pipeline_task.delay(
@@ -753,19 +839,37 @@ async def batch_process_recordings(
 @router.post("/{recording_id}/full-pipeline")
 async def full_pipeline_processing(
     recording_id: int,
-    config: FullPipelineRequest = FullPipelineRequest(),
+    config: ConfigOverrideRequest = ConfigOverrideRequest(),
     ctx: ServiceContext = Depends(get_service_context),
 ):
     """
     Полный пайплайн обработки (асинхронная задача): download → process → transcribe → upload.
 
+    Supports flexible config overrides:
+    - processing_config: Override processing settings (transcription, silence detection, etc.)
+    - metadata_config: Override metadata (title, description, playlists, albums, etc.)
+    - output_config: Override output settings (preset_ids, auto_upload, etc.)
+
     Args:
         recording_id: ID записи
-        config: Конфигурация пайплайна
+        config: Гибкие overrides для конфигурации (опционально)
         ctx: Service context
 
     Returns:
         Task ID для проверки статуса
+
+    Example:
+        ```json
+        {
+          "processing_config": {
+            "transcription": {"granularity": "short"}
+          },
+          "metadata_config": {
+            "vk": {"album_id": "63"},
+            "youtube": {"playlist_id": "PLxxx"}
+          }
+        }
+        ```
 
     Note:
         Это асинхронная операция, выполняющая все шаги последовательно.
@@ -782,15 +886,27 @@ async def full_pipeline_processing(
             detail=f"Recording {recording_id} not found or you don't have access",
         )
 
-    # Запускаем полный пайплайн как одну задачу (template-driven)
-    manual_override = _build_manual_override(config)
+    # Resolve actual config to show in response
+    from api.services.config_resolver import ConfigResolver
+    config_resolver = ConfigResolver(ctx.session)
+    output_config = await config_resolver.resolve_output_config(recording, ctx.user_id)
+
+    # Determine actual upload flag from resolved config
+    actual_upload = output_config.get("upload", False) or output_config.get("auto_upload", False)
+
+    # Build manual override from flexible config
+    manual_override = _build_override_from_flexible(config)
+
     task = full_pipeline_task.delay(
         recording_id=recording_id,
         user_id=ctx.user_id,
         manual_override=manual_override,
     )
 
-    logger.info(f"Full pipeline task {task.id} created for recording {recording_id}, user {ctx.user_id}")
+    logger.info(
+        f"Full pipeline task {task.id} created for recording {recording_id}, user {ctx.user_id}, "
+        f"overrides: {list(manual_override.keys())}"
+    )
 
     return {
         "success": True,
@@ -799,12 +915,7 @@ async def full_pipeline_processing(
         "status": "queued",
         "message": "Full pipeline task has been queued",
         "check_status_url": f"/api/v1/tasks/{task.id}",
-        "steps": {
-            "download": config.download,
-            "process": config.process,
-            "transcribe": config.transcribe,
-            "upload": config.upload and len(config.platforms) > 0,
-        },
+        "config_overrides": manual_override if manual_override else None,
     }
 
 
@@ -830,13 +941,13 @@ async def transcribe_recording(
 
     Note:
         Использует АДМИНСКИЕ креды для транскрибации через Fireworks API.
-        
+
         Batch API (use_batch_api=true):
         - Дешевле ~50% чем синхронный API
         - Требует polling для получения результата
         - Время ожидания: обычно несколько минут
         - Документация: https://docs.fireworks.ai/api-reference/create-batch-request
-        
+
         Это асинхронная операция. Используйте GET /api/v1/tasks/{task_id}
         для проверки статуса выполнения и получения результатов.
     """
@@ -1259,6 +1370,16 @@ async def batch_transcribe_recordings(
                 })
                 continue
 
+            # Skip blank records
+            if recording.blank_record:
+                tasks.append({
+                    "recording_id": recording_id,
+                    "status": "skipped",
+                    "error": "Blank record (too short or too small)",
+                    "task_id": None,
+                })
+                continue
+
             # Проверяем наличие файла
             if not recording.processed_video_path and not recording.local_video_path:
                 tasks.append({
@@ -1442,14 +1563,14 @@ async def update_recording_config(
     ctx: ServiceContext = Depends(get_service_context),
 ):
     """
-    Сохранить manual config в recording.processing_preferences.
+    Сохранить user overrides в recording.processing_preferences.
 
     Логика:
-    1. Получить current resolved config (base)
+    1. Получить current resolved config (base from template)
     2. Применить изменения из request
-    3. Сохранить в recording.processing_preferences (persistent)
+    3. Сохранить только overrides в recording.processing_preferences
 
-    Теперь этот recording будет использовать manual config, игнорируя template.
+    Теперь этот recording будет использовать template config + user overrides.
 
     NOTE: Metadata (title, description, tags) настраивается в output_preset.preset_metadata,
     а не здесь.
@@ -1472,36 +1593,88 @@ async def update_recording_config(
     if not recording:
         raise HTTPException(status_code=404, detail=f"Recording {recording_id} not found")
 
-    # Get base config
+    # Get config resolver
     config_resolver = ConfigResolver(ctx.session)
-    current_config = await config_resolver.get_base_config_for_edit(recording, ctx.user_id)
 
-    # Merge changes
-    new_preferences = {}
+    # Save only user overrides (not full config)
+    new_preferences = recording.processing_preferences or {}
 
     if processing_config is not None:
-        base = current_config.get("processing_config", {})
-        new_preferences["processing_config"] = config_resolver._merge_configs(base, processing_config)
-    else:
-        new_preferences["processing_config"] = current_config.get("processing_config", {})
+        if "processing_config" not in new_preferences:
+            new_preferences["processing_config"] = {}
+        new_preferences["processing_config"] = config_resolver._merge_configs(
+            new_preferences.get("processing_config", {}),
+            processing_config
+        )
 
     if output_config is not None:
-        base = current_config.get("output_config", {})
-        new_preferences["output_config"] = config_resolver._merge_configs(base, output_config)
-    else:
-        new_preferences["output_config"] = current_config.get("output_config", {})
+        if "output_config" not in new_preferences:
+            new_preferences["output_config"] = {}
+        new_preferences["output_config"] = config_resolver._merge_configs(
+            new_preferences.get("output_config", {}),
+            output_config
+        )
 
-    # Save to recording.processing_preferences
-    recording.processing_preferences = new_preferences
+    # Save overrides to recording.processing_preferences
+    recording.processing_preferences = new_preferences if new_preferences else None
     await ctx.session.commit()
 
     logger.info(f"Updated manual config for recording {recording_id}")
 
+    # Get effective config after update
+    effective_config = await config_resolver.resolve_processing_config(recording, ctx.user_id)
+
     return {
         "recording_id": recording_id,
         "message": "Configuration saved",
-        "has_manual_override": True,
-        "config": new_preferences,
+        "has_manual_override": bool(new_preferences),
+        "overrides": new_preferences,
+        "effective_config": effective_config,
+    }
+
+
+@router.delete("/{recording_id}/config")
+async def reset_to_template(
+    recording_id: int,
+    ctx: ServiceContext = Depends(get_service_context),
+):
+    """
+    Сбросить пользовательские настройки и вернуться к шаблону.
+
+    Очищает recording.processing_preferences, после чего запись будет
+    использовать только конфигурацию из шаблона.
+
+    Args:
+        recording_id: ID записи
+        ctx: Service context
+
+    Returns:
+        Обновленная конфигурация
+    """
+    from api.services.config_resolver import ConfigResolver
+
+    recording_repo = RecordingAsyncRepository(ctx.session)
+
+    # Получить запись
+    recording = await recording_repo.get_by_id(recording_id, ctx.user_id)
+    if not recording:
+        raise HTTPException(status_code=404, detail=f"Recording {recording_id} not found")
+
+    # Очистить overrides
+    recording.processing_preferences = None
+    await ctx.session.commit()
+
+    # Get effective config (from template)
+    config_resolver = ConfigResolver(ctx.session)
+    effective_config = await config_resolver.resolve_processing_config(recording, ctx.user_id)
+
+    logger.info(f"Reset recording {recording_id} to template configuration")
+
+    return {
+        "recording_id": recording_id,
+        "message": "Reset to template configuration",
+        "has_manual_override": False,
+        "effective_config": effective_config,
     }
 
 
@@ -1597,6 +1770,137 @@ async def save_config_as_template(
     }
 
 
+@router.post("/{recording_id}/reset")
+async def reset_recording(
+    recording_id: int,
+    delete_files: bool = Query(True, description="Удалить все файлы (видео, аудио, транскрипция)"),
+    ctx: ServiceContext = Depends(get_service_context),
+):
+    """
+    Сбросить запись к начальному состоянию.
+
+    Что делает:
+    - Удаляет все обработанные файлы (видео, аудио, транскрипция, субтитры)
+    - Очищает метаданные (topics, transcription_info)
+    - Удаляет output_targets
+    - Удаляет processing_stages
+    - Возвращает статус в INITIALIZED
+    - Очищает failed флаг и failed_reason
+
+    Опционально сохраняет:
+    - local_video_path (скачанное видео) - если delete_files=False
+    - template_id, is_mapped
+    - processing_preferences (manual config)
+
+    Args:
+        recording_id: ID записи
+        delete_files: Удалить все файлы (default: True)
+        ctx: Service context
+
+    Returns:
+        Результат reset операции
+    """
+    from pathlib import Path
+
+    from sqlalchemy import delete
+
+    from database.models import OutputTargetModel, ProcessingStageModel
+
+    recording_repo = RecordingAsyncRepository(ctx.session)
+    recording = await recording_repo.get_by_id(recording_id, ctx.user_id)
+
+    if not recording:
+        raise HTTPException(status_code=404, detail=f"Recording {recording_id} not found")
+
+    deleted_files = []
+    errors = []
+
+    # Delete files if requested
+    if delete_files:
+        files_to_delete = []
+
+        # Local video
+        if recording.local_video_path:
+            files_to_delete.append(("local_video", recording.local_video_path))
+
+        # Processed video
+        if recording.processed_video_path:
+            files_to_delete.append(("processed_video", recording.processed_video_path))
+
+        # Processed audio file
+        if recording.processed_audio_path:
+            audio_file = Path(recording.processed_audio_path)
+            if audio_file.exists():
+                # Удаляем файл и его родительскую директорию если она пустая
+                files_to_delete.append(("processed_audio_file", str(audio_file)))
+                audio_dir = audio_file.parent
+                if audio_dir.exists() and not any(audio_dir.iterdir()):
+                    files_to_delete.append(("empty_audio_dir", str(audio_dir)))
+
+        # Transcription directory
+        if recording.transcription_dir:
+            files_to_delete.append(("transcription_dir", recording.transcription_dir))
+
+        # Delete files
+        for file_type, file_path in files_to_delete:
+            try:
+                path = Path(file_path)
+                if path.exists():
+                    if path.is_dir():
+                        import shutil
+                        shutil.rmtree(path)
+                        deleted_files.append({"type": file_type, "path": str(path), "is_dir": True})
+                    else:
+                        path.unlink()
+                        deleted_files.append({"type": file_type, "path": str(path), "is_dir": False})
+            except Exception as e:
+                errors.append({"type": file_type, "path": file_path, "error": str(e)})
+                logger.error(f"Failed to delete {file_type} at {file_path}: {e}")
+
+    # Clear recording metadata
+    recording.local_video_path = None
+    recording.processed_video_path = None
+    recording.processed_audio_path = None
+    recording.transcription_dir = None
+    recording.topic_timestamps = None
+    recording.main_topics = None
+    recording.transcription_info = None
+    recording.failed = False
+    recording.failed_reason = None
+    recording.status = ProcessingStatus.INITIALIZED
+
+    # Delete output_targets
+    await ctx.session.execute(
+        delete(OutputTargetModel).where(OutputTargetModel.recording_id == recording_id)
+    )
+
+    # Delete processing_stages
+    await ctx.session.execute(
+        delete(ProcessingStageModel).where(ProcessingStageModel.recording_id == recording_id)
+    )
+
+    await ctx.session.commit()
+
+    logger.info(
+        f"Reset recording {recording_id}: deleted {len(deleted_files)} files, "
+        f"{len(errors)} errors, status -> INITIALIZED"
+    )
+
+    return {
+        "success": True,
+        "recording_id": recording_id,
+        "message": "Recording reset to initial state",
+        "deleted_files": deleted_files,
+        "errors": errors,
+        "status": "INITIALIZED",
+        "preserved": {
+            "template_id": recording.template_id,
+            "is_mapped": recording.is_mapped,
+            "processing_preferences": bool(recording.processing_preferences),
+        }
+    }
+
+
 @router.post("/batch/process-mapped")
 async def batch_process_mapped_recordings(
     template_id: int | None = None,
@@ -1624,6 +1928,7 @@ async def batch_process_mapped_recordings(
         Информация о запущенных задачах
     """
     from sqlalchemy import select
+
     from api.tasks.processing import full_pipeline_task
     from database.models import RecordingModel
 
@@ -1631,7 +1936,8 @@ async def batch_process_mapped_recordings(
     query = (
         select(RecordingModel)
         .where(RecordingModel.user_id == ctx.user_id)
-        .where(RecordingModel.is_mapped == True)
+        .where(RecordingModel.is_mapped)
+        .where(~RecordingModel.blank_record)  # Skip blank records
     )
 
     # Apply filters

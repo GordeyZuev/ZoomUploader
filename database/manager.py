@@ -270,7 +270,7 @@ class DatabaseManager:
 
         existing.local_video_path = recording.local_video_path
         existing.processed_video_path = recording.processed_video_path
-        existing.processed_audio_dir = recording.processed_audio_dir
+        existing.processed_audio_path = recording.processed_audio_path
         existing.transcription_dir = recording.transcription_dir
         existing.transcription_info = recording.transcription_info
         existing.topic_timestamps = recording.topic_timestamps
@@ -371,7 +371,7 @@ class DatabaseManager:
             expire_at=recording.expire_at,
             local_video_path=recording.local_video_path,
             processed_video_path=recording.processed_video_path,
-            processed_audio_dir=recording.processed_audio_dir,
+            processed_audio_path=recording.processed_audio_path,
             transcription_dir=recording.transcription_dir,
             video_file_size=recording.video_file_size,
             transcription_info=recording.transcription_info,
@@ -614,7 +614,7 @@ class DatabaseManager:
             "source_metadata": source_meta,
             "local_video_path": db_recording.local_video_path,
             "processed_video_path": db_recording.processed_video_path,
-            "processed_audio_dir": db_recording.processed_audio_dir,
+            "processed_audio_path": db_recording.processed_audio_path,
             "transcription_dir": db_recording.transcription_dir,
             "video_file_size": db_recording.video_file_size,
             "transcription_info": db_recording.transcription_info,
@@ -708,15 +708,15 @@ class DatabaseManager:
                                 f"Не удалось удалить файл: path={db_recording.processed_video_path} | recording_id={db_recording.id} | error={e}"
                             )
 
-                    if db_recording.processed_audio_dir and os.path.exists(db_recording.processed_audio_dir):
+                    if db_recording.processed_audio_path and os.path.exists(db_recording.processed_audio_path):
                         try:
-                            shutil.rmtree(db_recording.processed_audio_dir)
+                            os.remove(db_recording.processed_audio_path)
                             logger.debug(
-                                f"Удалена папка аудио: path={db_recording.processed_audio_dir} | recording_id={db_recording.id}"
+                                f"Удален аудио файл: path={db_recording.processed_audio_path} | recording_id={db_recording.id}"
                             )
                         except Exception as e:
                             logger.warning(
-                                f"Не удалось удалить аудио директорию: path={db_recording.processed_audio_dir} | recording_id={db_recording.id} | error={e}"
+                                f"Не удалось удалить аудио файл: path={db_recording.processed_audio_path} | recording_id={db_recording.id} | error={e}"
                             )
 
                     if db_recording.transcription_dir and os.path.exists(db_recording.transcription_dir):
@@ -744,7 +744,7 @@ class DatabaseManager:
 
                     db_recording.local_video_path = None
                     db_recording.processed_video_path = None
-                    db_recording.processed_audio_dir = None
+                    db_recording.processed_audio_path = None
                     db_recording.downloaded_at = None
 
                     # Сбрасываем транскрипцию и темы

@@ -226,7 +226,7 @@
 
 ```
 Глобальный базовый конфиг (base_configs WHERE user_id IS NULL)
-  └─ Системные настройки (video_codec, model, topic_model)
+  └─ Системные настройки (video_codec, model, topic_model, granularity)
   └─ Дефолтные пользовательские настройки
 
 Пользовательский базовый конфиг (base_configs WHERE user_id = X)
@@ -761,7 +761,7 @@ CREATE TABLE base_configs (
     --   "prompt": "",
     --   "temperature": 0.0,
     --   "enable_topics": true,
-    --   "topic_mode": "long",
+    --   "granularity": "long",
     --   "enable_subtitles": true,
     --   "enable_translation": false,
     --   "translation_language": "en"
@@ -977,7 +977,7 @@ CREATE TABLE recording_templates (
     --   "prompt": "",
     --   "temperature": 0.0,
     --   "enable_topics": true,
-    --   "topic_mode": "long",
+    --   "granularity": "long",
     --   "enable_subtitles": true,
     --   "enable_translation": false,
     --   "translation_language": "en"
@@ -4092,7 +4092,7 @@ Authorization: Bearer {JWT_TOKEN}
     "enable_transcription": true,
     "language": "ru",
     "enable_topics": true,
-    "topic_mode": "long"
+    "granularity": "long"
   },
   "metadata_config": {
     "title_template": "(Л) Машинное обучение | {topic} ({date})",
@@ -5026,7 +5026,7 @@ class RecordingRepository:
   "prompt": "Это лекция по машинному обучению. Используй технические термины.",
   "temperature": 0.0,
   "enable_topics": true,
-  "topic_mode": "long",
+  "granularity": "long",
   "enable_subtitles": true,
   "enable_translation": false,
   "translation_language": "en"

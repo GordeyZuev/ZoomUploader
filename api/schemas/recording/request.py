@@ -12,7 +12,7 @@ class ProcessRecordingRequest(BaseModel):
     """Запрос на обработку записи."""
 
     transcription_model: str = Field("fireworks", description="Модель для транскрибации")
-    topic_mode: str = Field("long", description="Режим извлечения тем (short/long)")
+    granularity: str = Field("long", description="Уровень детализации извлечения тем (short/long)")
     topic_model: str = Field("deepseek", description="Модель для извлечения тем")
     platforms: list[str] = Field(default_factory=list, description="Платформы для загрузки")
     no_transcription: bool = Field(False, description="Пропустить транскрибацию")
@@ -21,7 +21,7 @@ class ProcessRecordingRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "transcription_model": "fireworks",
-                "topic_mode": "long",
+                "granularity": "long",
                 "topic_model": "deepseek",
                 "platforms": ["youtube"],
                 "no_transcription": False,

@@ -526,7 +526,7 @@ def run_automation_job(self, job_id: int, user_id: int):
     """
     async def _run():
         db_manager = DatabaseManager()
-        async with db_manager.get_session() as session:
+        async with db_manager.async_session() as session:
             job_repo = AutomationJobRepository(session)
             job = await job_repo.get_by_id(job_id, user_id)
             

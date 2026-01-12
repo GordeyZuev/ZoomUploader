@@ -1,6 +1,5 @@
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
 from typing import Any, TypeVar
 
 T = TypeVar("T", bound=Enum)
@@ -204,7 +203,7 @@ class MeetingRecording:
         # Файлы/пути (относительно media_dir)
         self.local_video_path: str | None = meeting_data.get("local_video_path")
         self.processed_video_path: str | None = meeting_data.get("processed_video_path")
-        self.processed_audio_dir: str | None = meeting_data.get("processed_audio_dir")
+        self.processed_audio_path: str | None = meeting_data.get("processed_audio_path")
         self.transcription_dir: str | None = meeting_data.get("transcription_dir")
         self.downloaded_at: datetime | None = meeting_data.get("downloaded_at")
 
@@ -640,31 +639,10 @@ class MeetingRecording:
         if self.status in [ProcessingStatus.UPLOADING, ProcessingStatus.UPLOADED]:
             return
 
-    def set_primary_audio(self, audio_path: str) -> None:
-        """Сохранить основной аудиофайл и зафиксировать директорию."""
-        if audio_path:
-            self.processed_audio_dir = str(Path(audio_path).parent)
-            info = self.transcription_info or {}
-            if not isinstance(info, dict):
-                info = {}
-            info["primary_audio"] = audio_path
-            self.transcription_info = info
-
     def get_primary_audio_path(self) -> str | None:
-        """Получить основной аудиофайл из сохранённой директории или transcription_info."""
-        # Приоритет: явный путь в transcription_info
-        if isinstance(self.transcription_info, dict):
-            path = self.transcription_info.get("primary_audio")
-            if path and Path(path).exists():
-                return path
-
-        if self.processed_audio_dir:
-            audio_dir = Path(self.processed_audio_dir)
-            if audio_dir.exists():
-                for ext in ("*.mp3", "*.wav", "*.m4a"):
-                    files = sorted(audio_dir.glob(ext))
-                    if files:
-                        return str(files[0])
+        """Получить путь к основному аудиофайлу."""
+        if self.processed_audio_path:
+            return self.processed_audio_path
         return None
 
     # --- Доступ к метаданным Zoom API ---
@@ -799,8 +777,8 @@ class MeetingRecording:
             progress["local_file"] = self.local_video_path
         if self.processed_video_path:
             progress["processed_file"] = self.processed_video_path
-        if self.processed_audio_dir:
-            progress["processed_audio_dir"] = self.processed_audio_dir
+        if self.processed_audio_path:
+            progress["processed_audio_path"] = self.processed_audio_path
         if self.transcription_dir:
             progress["transcription_dir"] = self.transcription_dir
 
@@ -820,7 +798,7 @@ class MeetingRecording:
         """Сброс записи к начальному состоянию"""
         self.local_video_path = None
         self.processed_video_path = None
-        self.processed_audio_dir = None
+        self.processed_audio_path = None
         self.downloaded_at = None
         self.transcription_dir = None
         self.topic_timestamps = None
