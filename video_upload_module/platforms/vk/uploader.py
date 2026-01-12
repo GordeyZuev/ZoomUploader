@@ -92,22 +92,16 @@ class VKUploader(BaseUploader):
             return False
 
     async def _authenticate_legacy(self) -> bool:
-        """Legacy authentication mode (file-based or interactive)."""
-        if not self.config.access_token:
-            try:
-                from setup_vk import VKTokenSetup
+        """Legacy authentication mode (file-based only).
 
-                self.logger.info("VK access_token не найден. Запускаю интерактивную настройку...")
-                setup = VKTokenSetup(app_id=getattr(self.config, "app_id", "54249533"))
-                token = await setup.get_token_interactive(getattr(self.config, "scope", "video,groups,wall"))
-                if token:
-                    self.config.access_token = token
-                else:
-                    self.logger.error("Не удалось получить VK access_token интерактивно")
-                    return False
-            except Exception as e:
-                self.logger.error(f"Не удалось запустить интерактивную настройку VK: {e}")
-                return False
+        Note: Interactive CLI setup has been removed. Use OAuth 2.0 flow via API instead.
+        """
+        if not self.config.access_token:
+            self.logger.error(
+                "VK access_token not found. Use OAuth 2.0 flow via API "
+                "(GET /oauth/vk/authorize) to obtain credentials."
+            )
+            return False
 
         return await self._validate_token()
 

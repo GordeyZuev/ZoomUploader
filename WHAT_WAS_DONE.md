@@ -16,6 +16,29 @@
 
 ## ⚡ Последние изменения (12 января 2026)
 
+### ✅ CLI Legacy Removal
+**Removed:** Legacy CLI support completely removed from codebase
+
+**Rationale:** Project has fully transitioned to REST API architecture with 84 endpoints. CLI was unmaintained legacy code from pre-SaaS era.
+
+**Deleted files:**
+- `main.py` - CLI entry point with Click commands (1,360 lines)
+- `cli_helpers.py` - CLI helper functions (107 lines)
+- `setup_vk.py` - VK interactive setup script (237 lines)
+- `setup_youtube.py` - YouTube interactive setup script (245 lines)
+
+**Cleaned up:**
+- `pipeline_manager.py` - removed CLI-specific display methods (7 methods)
+- `Makefile` - removed CLI commands, kept only API/infrastructure commands
+
+**Migration path:** Use REST API endpoints instead:
+- `python main.py sync` → `POST /recordings/sync`
+- `python main.py process` → `POST /recordings/{id}/process`
+- `python main.py upload` → `POST /recordings/batch/upload`
+- OAuth setup → `GET /oauth/youtube/authorize`, `GET /oauth/vk/authorize`
+
+---
+
 ### ✅ Template Config Live Update
 **Проблема:** Изменения в templates не применялись к существующим recordings
 

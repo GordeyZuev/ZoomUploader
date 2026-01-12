@@ -7,13 +7,11 @@ import os
 import re
 import shutil
 import time
-from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console, RenderableType
-from rich.padding import Padding
 from rich.progress import (
     BarColumn,
     Progress,
@@ -22,7 +20,6 @@ from rich.progress import (
     TextColumn,
     TimeElapsedColumn,
 )
-from rich.table import Table
 from rich.text import Text
 
 from api.zoom_api import ZoomAPI
@@ -45,8 +42,6 @@ from transcription_module import TranscriptionService
 from utils import (
     filter_available_recordings,
     filter_recordings_by_date_range,
-    format_date,
-    format_duration,
     get_recordings_by_date_range,
 )
 from utils.formatting import normalize_datetime_string
@@ -738,28 +733,6 @@ class PipelineManager:
         self.logger.info(f"Загружено записей: {success_count}/{len(eligible)}")
         return success_count, uploaded_recordings
 
-    def display_uploaded_videos(self, uploaded_recordings: list[MeetingRecording]) -> None:
-        """Отображение списка загруженных видео с ссылками"""
-        if not uploaded_recordings:
-            return
-
-        self.console.print("\n[bold white]📹 ЗАГРУЖЕННЫЕ ВИДЕО:[/bold white]")
-        self.console.print("[dim]" + "=" * 60 + "[/dim]")
-
-        for i, recording in enumerate(uploaded_recordings, 1):
-            youtube_link = self._get_target_link(recording, TargetType.YOUTUBE)
-            vk_link = self._get_target_link(recording, TargetType.VK)
-            if youtube_link or vk_link:
-                self.console.print(f"\n[bold cyan]{i}.[/bold cyan] [bold white]{recording.display_name}[/bold white]")
-
-                if youtube_link:
-                    self.console.print(
-                        f"    [bold red]📺 YouTube:[/bold red] [link={youtube_link}]{youtube_link}[/link]"
-                    )
-
-                if vk_link:
-                    self.console.print(f"    [bold blue]📘 VK:[/bold blue] [link={vk_link}]{vk_link}[/link]")
-
     def _check_and_set_mapping(self, recording: MeetingRecording) -> None:
         """Проверка маппинга записи и установка соответствующего статуса"""
         try:
@@ -1133,166 +1106,6 @@ class PipelineManager:
             self.logger.info("📋 Записи не найдены")
             return 0
 
-    def display_recordings(self, recordings: list[MeetingRecording], show_meta: bool = False):
-        """Отображение списка записей"""
-        if not recordings:
-            self.console.print("\n[bold dark_red]📋 Доступных записей не найдено[/bold dark_red]")
-            self.console.print("[dim]💡 Критерии: длительность >30 мин, размер >40 МБ, наличие видео[/dim]")
-            return
-
-        self.console.print(f"\n[bold blue]📋 Доступных записей: {len(recordings)}[/bold blue]")
-        self.console.print("[dim]" + "=" * 80 + "[/dim]")
-
-        dates = defaultdict(list)
-        for recording in recordings:
-            if recording.start_time:
-                try:
-                    normalized_time = normalize_datetime_string(recording.start_time)
-                    meeting_dt = datetime.fromisoformat(normalized_time)
-                    date_key = meeting_dt.date()
-                    dates[date_key].append(recording)
-                except ValueError:
-                    continue
-
-        sorted_dates = sorted(dates.keys(), reverse=False)
-
-        for date_idx, date_key in enumerate(sorted_dates):
-            date_recordings = dates[date_key]
-
-            def get_start_time_for_sort(recording):
-                try:
-                    normalized_time = normalize_datetime_string(recording.start_time)
-                    return datetime.fromisoformat(normalized_time)
-                except ValueError:
-                    return datetime.min
-
-            date_recordings.sort(key=get_start_time_for_sort)
-
-            if date_idx > 0:
-                self.console.print("")
-
-            date_str = date_key.strftime("%d.%m.%Y")
-            self.console.print(f"\n[bold blue]📅 ДАТА:[/bold blue] [bold white]{date_str}[/bold white]")
-            self.console.print(f"[bold blue]📊 Записей:[/bold blue] [bold white]{len(date_recordings)}[/bold white]")
-            self.console.print("[dim]" + "-" * 60 + "[/dim]")
-
-            for recording in date_recordings:
-                display_id = recording.db_id
-
-                date_human = format_date(recording.start_time)
-                dur_human = format_duration(recording.duration)
-                status_text = self._format_status(recording.status)
-
-                topic = recording.display_name.strip() if recording.display_name else "Без названия"
-                title_with_link = f"[bold blue]«{topic}»[/bold blue]"
-                self.console.print(f"[bold blue][{display_id}][/bold blue] {title_with_link}")
-                self.console.print(f"     📅 [white]{date_human}[/white] [dim]({dur_human})[/dim]")
-                if recording.has_video():
-                    size_str = f"{recording.video_file_size / (1024 * 1024):.1f} МБ"
-                    self.console.print(f"     💾 [white]{size_str}[/white]")
-                else:
-                    self.console.print("     [red]❌ Нет видео[/red]")
-                self.console.print(f"     🔐 {recording.account or 'Unknown'}")
-                self.console.print(f"     {status_text}")
-
-                # Отображаем метаданные если запрошено и есть транскрибация
-                if show_meta and self._should_show_meta(recording):
-                    self.console.print()  # Отступ после статуса
-                    self._display_recording_meta(recording)
-
-                self.console.print("")
-
-    def _should_show_meta(self, recording: MeetingRecording) -> bool:
-        """
-        Проверяет, нужно ли отображать метаданные для данной записи.
-
-        Метаданные показываются если:
-        - Статус TRANSCRIBED, UPLOADING или UPLOADED
-        - Или есть завершенный этап транскрибации
-        """
-        if recording.status in [
-            ProcessingStatus.TRANSCRIBED,
-            ProcessingStatus.UPLOADING,
-            ProcessingStatus.UPLOADED,
-        ]:
-            return True
-
-        # Проверяем этап транскрибации
-        transcription_stage = recording.get_stage(ProcessingStageType.TRANSCRIPTION)
-        if transcription_stage and transcription_stage.status == ProcessingStageStatus.COMPLETED:
-            return True
-
-        return False
-
-    def _display_recording_meta(self, recording: MeetingRecording):
-        """Отображает метаданные записи (темы и топики)"""
-        if hasattr(recording, "topic_timestamps") and recording.topic_timestamps:
-            if hasattr(recording, "main_topics") and recording.main_topics:
-                main_topic = recording.main_topics[0]
-                self.console.print(f"     📝 [bold yellow]Тема видео: «{main_topic}»:[/bold yellow]")
-            else:
-                self.console.print("     📝 [bold yellow]Темы:[/bold yellow]")
-
-            self.console.print()
-
-            table = Table(
-                show_header=True,
-                header_style="bold magenta",
-                border_style="dim",
-                expand=False,
-                show_lines=False,
-                padding=(0, 1),
-                box=None,
-            )
-
-            table.add_column("№", style="dim", width=3, justify="right")
-            table.add_column("Время", style="cyan", width=17, justify="center")
-            table.add_column("Мин", style="yellow", width=5, justify="right")
-            table.add_column("Топик", style="white")
-
-            for idx, ts in enumerate(recording.topic_timestamps, 1):
-                start = ts.get("start", 0)
-                end = ts.get("end", 0)
-                topic = ts.get("topic", "")
-
-                # Форматируем время
-                start_h = int(start // 3600)
-                start_m = int((start % 3600) // 60)
-                start_s = int(start % 60)
-                end_h = int(end // 3600)
-                end_m = int((end % 3600) // 60)
-                end_s = int(end % 60)
-
-                start_str = f"{start_h:02d}:{start_m:02d}:{start_s:02d}"
-                end_str = f"{end_h:02d}:{end_m:02d}:{end_s:02d}"
-                duration = end - start
-                duration_mins = duration / 60
-
-                time_str = f"{start_str}→{end_str}"
-
-                table.add_row(str(idx), time_str, f"{duration_mins:.1f}", topic)
-
-            padded_table = Padding(table, (0, 0, 0, 5))
-            self.console.print(padded_table)
-            self.console.print()
-
-    def _format_status(self, status: ProcessingStatus) -> str:
-        """Форматирование статуса с цветовым кодированием"""
-        status_map = {
-            ProcessingStatus.INITIALIZED: "[dim]⏳ Инициализировано[/dim]",
-            ProcessingStatus.DOWNLOADING: "[bold yellow]⬇️ Загружается...[/bold yellow]",
-            ProcessingStatus.DOWNLOADED: "[bold green]✅ Загружено[/bold green]",
-            ProcessingStatus.PROCESSING: "[bold yellow]⚙️ Обрабатывается...[/bold yellow]",
-            ProcessingStatus.PROCESSED: "[bold green]🎬 Обработано[/bold green]",
-            ProcessingStatus.TRANSCRIBING: "[bold yellow]🎤 Транскрибируется...[/bold yellow]",
-            ProcessingStatus.TRANSCRIBED: "[bold cyan]🎤 Транскрибировано[/bold cyan]",
-            ProcessingStatus.UPLOADING: "[bold yellow]⬆️ Загружается на платформы...[/bold yellow]",
-            ProcessingStatus.UPLOADED: "[bold blue]🚀 Загружено на платформы[/bold blue]",
-            ProcessingStatus.SKIPPED: "[white][dim]⏭️  Пропущено[/dim][/white]",
-            ProcessingStatus.EXPIRED: "[dim]🗑️  Устарело[/dim]",
-        }
-        return status_map.get(status, f"[dim]{status.value}[/dim]")
-
     async def _process_single_recording(self, recording: MeetingRecording, progress=None, task_id=None) -> bool:
         """Обработка одной записи с прогресс-баром"""
         try:
@@ -1652,11 +1465,13 @@ class PipelineManager:
                     main_topic=main_topic,
                 )
 
-            common_metadata = {}
+            # Check if recording has template mapping for metadata
             if not recording.is_mapped or not mapping_result or not mapping_result.matched_rule:
-                self.console.print(f"\n[yellow]⚠️ Правило маппинга не найдено для '{recording.display_name}'[/yellow]")
-                self.console.print("[cyan]📤 Требуется ввод метаданных для загрузки[/cyan]")
-                common_metadata = self._get_common_metadata(recording)
+                self.logger.error(
+                    f"Recording '{recording.display_name}' has no template match. "
+                    "Upload requires template-based metadata configuration."
+                )
+                return False
 
             platform_configs = {}
             upload_time_str = datetime.now().strftime("%d.%m.%Y %H:%M")
@@ -1671,52 +1486,35 @@ class PipelineManager:
                     else:
                         max_description_length = 5000  # Значение по умолчанию
 
-                    if not recording.is_mapped or not mapping_result or not mapping_result.matched_rule:
-                        title = common_metadata["title"]
-                        description = common_metadata.get("description", "")
-                        thumbnail_path = common_metadata.get("thumbnail_path")
-                        privacy_status = common_metadata.get("privacy_status", "unlisted")
+                    # Use template-based metadata
+                    title = mapping_result.title
+                    description = mapping_result.description
+                    thumbnail_path = mapping_result.thumbnail_path
 
-                        platform_specific = self._get_platform_specific_metadata(recording, platform)
+                    # Умный поиск thumbnail (user → templates fallback)
+                    if thumbnail_path and recording.user_id:
+                        thumbnail_manager = get_thumbnail_manager()
+                        resolved_path = thumbnail_manager.get_thumbnail_path(
+                            user_id=recording.user_id,
+                            thumbnail_name=thumbnail_path,
+                            fallback_to_template=True
+                        )
+                        if resolved_path:
+                            thumbnail_path = str(resolved_path)
 
-                        upload_kwargs = {"privacy_status": privacy_status}
+                    playlist_id = mapping_result.youtube_playlist_id if platform == "youtube" else None
+                    album_id = mapping_result.vk_album_id if platform == "vk" else None
+                    privacy_status = "unlisted"
 
-                        if thumbnail_path:
-                            upload_kwargs["thumbnail_path"] = thumbnail_path
+                    upload_kwargs = {
+                        "thumbnail_path": thumbnail_path,
+                        "privacy_status": privacy_status,
+                    }
 
-                        if platform == "youtube" and platform_specific.get("playlist_id"):
-                            upload_kwargs["playlist_id"] = platform_specific["playlist_id"]
-                        elif platform == "vk" and platform_specific.get("album_id"):
-                            upload_kwargs["album_id"] = platform_specific["album_id"]
-                    else:
-                        title = mapping_result.title
-                        description = mapping_result.description
-                        thumbnail_path = mapping_result.thumbnail_path
-
-                        # Умный поиск thumbnail (user → templates fallback)
-                        if thumbnail_path and recording.user_id:
-                            thumbnail_manager = get_thumbnail_manager()
-                            resolved_path = thumbnail_manager.get_thumbnail_path(
-                                user_id=recording.user_id,
-                                thumbnail_name=thumbnail_path,
-                                fallback_to_template=True
-                            )
-                            if resolved_path:
-                                thumbnail_path = str(resolved_path)
-
-                        playlist_id = mapping_result.youtube_playlist_id if platform == "youtube" else None
-                        album_id = mapping_result.vk_album_id if platform == "vk" else None
-                        privacy_status = "unlisted"
-
-                        upload_kwargs = {
-                            "thumbnail_path": thumbnail_path,
-                            "privacy_status": privacy_status,
-                        }
-
-                        if playlist_id:
-                            upload_kwargs["playlist_id"] = playlist_id
-                        if album_id:
-                            upload_kwargs["album_id"] = album_id
+                    if playlist_id:
+                        upload_kwargs["playlist_id"] = playlist_id
+                    if album_id:
+                        upload_kwargs["album_id"] = album_id
 
                     # Добавляем префикс части после маппинга только если видимых частей > 1.
                     part_idx = 0
@@ -1859,71 +1657,6 @@ class PipelineManager:
                 f"Ошибка загрузки записи: recording={recording.display_name} | recording_id={recording.db_id} | error={e}"
             )
             return False
-
-    def _get_common_metadata(self, recording: MeetingRecording) -> dict[str, Any]:
-        """Интерактивный ввод общих метаданных для всех платформ"""
-        metadata = {}
-
-        self.console.print()
-        self.console.print("[bold yellow]" + "=" * 70 + "[/bold yellow]")
-        self.console.print("[bold yellow]🎬 НАСТРОЙКА МЕТАДАННЫХ[/bold yellow]")
-        self.console.print("[bold yellow]" + "=" * 70 + "[/bold yellow]")
-        self.console.print(f"[bold white]Видео:[/bold white] {recording.display_name}")
-        self.console.print()
-
-        while True:
-            title = input("📝 Название видео (обязательно): ").strip()
-            if title:
-                metadata["title"] = title
-                break
-            self.console.print("[red]❌ Название не может быть пустым![/red]")
-
-        description = input("📄 Описание (необязательно, Enter для пропуска): ").strip()
-        if description:
-            metadata["description"] = description
-
-        thumbnail_path = input("🖼️ Путь к миниатюре (необязательно, Enter для пропуска): ").strip()
-        if thumbnail_path and os.path.exists(thumbnail_path):
-            metadata["thumbnail_path"] = thumbnail_path
-        elif thumbnail_path:
-            self.console.print(f"[yellow]⚠️ Файл миниатюры не найден: {thumbnail_path}[/yellow]")
-
-        privacy_options = ["public", "unlisted", "private"]
-        self.console.print()
-        self.console.print("[dim]" + "-" * 70 + "[/dim]")
-        self.console.print(f"🔒 [bold]Настройки приватности:[/bold] {', '.join(privacy_options)}")
-        privacy = input("🔒 Приватность (по умолчанию: unlisted): ").strip().lower()
-        if privacy in privacy_options:
-            metadata["privacy_status"] = privacy
-        else:
-            metadata["privacy_status"] = "unlisted"
-
-        self.console.print()
-        self.console.print("[bold green]✅ Общие метаданные настроены[/bold green]")
-        return metadata
-
-    def _get_platform_specific_metadata(self, recording: MeetingRecording, platform: str) -> dict[str, Any]:
-        """Интерактивный ввод метаданных, специфичных для платформы"""
-        metadata = {}
-
-        self.console.print()
-        self.console.print("[bold cyan]" + "=" * 70 + "[/bold cyan]")
-        self.console.print(f"[bold cyan]📺 НАСТРОЙКА ДЛЯ {platform.upper()}[/bold cyan]")
-        self.console.print("[bold cyan]" + "=" * 70 + "[/bold cyan]")
-        self.console.print()
-
-        if platform == "youtube":
-            playlist_id = input("🎵 ID плейлиста YouTube (необязательно, Enter для пропуска): ").strip()
-            if playlist_id:
-                metadata["playlist_id"] = playlist_id
-        elif platform == "vk":
-            album_id = input("📁 ID альбома VK (необязательно, Enter для пропуска): ").strip()
-            if album_id:
-                metadata["album_id"] = album_id
-
-        self.console.print()
-        self.console.print(f"[bold green]✅ Метаданные для {platform.upper()} настроены[/bold green]")
-        return metadata
 
     def _format_video_description(
         self,

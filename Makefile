@@ -163,35 +163,14 @@ help:
 	@echo "  make db-version     - Показать текущую версию БД"
 	@echo "  make db-history     - Показать историю миграций"
 	@echo ""
-	@echo "📋 Работа с записями:"
-	@echo "  make list           - Показать записи за сегодня"
-	@echo "  make list-week      - Показать записи за неделю"
-	@echo "  make sync           - Синхронизировать с Zoom"
-	@echo "  make sync-week      - Синхронизировать за неделю"
-	@echo ""
-	@echo "⬇️ Загрузка и обработка:"
-	@echo "  make download       - Скачать записи со статусом INITIALIZED"
-	@echo "  make process        - Обработать скачанные записи"
-	@echo "  make transcribe     - Транскрибировать обработанные записи"
-	@echo "  make upload-youtube - Загрузить на YouTube"
-	@echo "  make upload-vk      - Загрузить на VK"
-	@echo "  make upload-all     - Загрузить на все платформы"
-	@echo ""
-	@echo "🚀 Полный пайплайн:"
-	@echo "  make full-process   - Полный пайплайн (скачать + обработать + транскрибировать)"
-	@echo "  make full-youtube   - Полный пайплайн с YouTube"
-	@echo "  make full-all       - Полный пайплайн со всеми платформами"
-	@echo ""
 	@echo "🧹 Очистка:"
-	@echo "  make clean-old      - Очистить записи старше 7 дней"
 	@echo "  make clean-pycache  - Очистить __pycache__ и *.pyc/*.pyo"
 	@echo "  make clean-logs     - Очистить логи"
 	@echo "  make clean          - Очистить кэши и логи"
-	@echo "  make reset          - Сбросить статусы записей"
-	@echo "  make recreate-db    - Полностью пересоздать БД (УДАЛИТ ВСЕ ДАННЫЕ!)"
 	@echo ""
-	@echo "ℹ️ Справка:"
-	@echo "  make run-help       - Показать help приложения"
+	@echo "ℹ️ Документация:"
+	@echo "  API Documentation: http://localhost:8000/docs"
+	@echo "  Flower Monitoring: http://localhost:5555"
 
 .PHONY: uv-install uv-update uv-run
 uv-install:
@@ -218,65 +197,5 @@ clean-logs:
 
 .PHONY: clean
 clean: clean-pycache clean-logs
-
-.PHONY: run-help
-run-help:
-	@uv run python main.py --help || true
-
-# Команды для работы с записями
-.PHONY: list list-week sync sync-week
-list:
-	@uv run python main.py list --last 0
-
-list-week:
-	@uv run python main.py list --last 7
-
-sync:
-	@uv run python main.py sync
-
-sync-week:
-	@uv run python main.py sync --last 7
-
-# Команды загрузки и обработки
-.PHONY: download process transcribe upload-youtube upload-vk upload-all
-download:
-	@uv run python main.py download --all
-
-process:
-	@uv run python main.py process --all
-
-transcribe:
-	@uv run python main.py transcribe --all
-
-upload-youtube:
-	@uv run python main.py upload --youtube --all
-
-upload-vk:
-	@uv run python main.py upload --vk --all
-
-upload-all:
-	@uv run python main.py upload --all-platforms --all
-
-# Полный пайплайн
-.PHONY: full-process full-youtube full-all
-full-process:
-	@uv run python main.py full-process --all
-
-full-youtube:
-	@uv run python main.py full-process --youtube --all
-
-full-all:
-	@uv run python main.py full-process --all-platforms --all
-
-# Очистка и сброс
-.PHONY: clean-old reset recreate-db
-clean-old:
-	@uv run python main.py clean
-
-reset:
-	@uv run python main.py reset
-
-recreate-db:
-	@uv run python main.py recreate-db
 
 

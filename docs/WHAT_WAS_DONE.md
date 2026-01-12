@@ -332,6 +332,34 @@ python utils/create_test_user.py
 
 ## 🔄 Changelog (основные вехи)
 
+### 12 января 2026 - CLI Legacy Removal
+**Removed:** Legacy CLI support completely removed from codebase
+
+**Rationale:** Project has fully transitioned to REST API architecture with 84 endpoints. CLI was unmaintained legacy code from pre-SaaS era.
+
+**Deleted files:**
+- `main.py` - CLI entry point with Click commands (1,360 lines)
+- `cli_helpers.py` - CLI helper functions (107 lines)
+- `setup_vk.py` - VK interactive setup script (237 lines)
+- `setup_youtube.py` - YouTube interactive setup script (245 lines)
+
+**Cleaned up:**
+- `pipeline_manager.py` - removed 7 CLI-specific display methods (`display_recordings`, `display_uploaded_videos`, `_get_common_metadata`, `_get_platform_specific_metadata`, `_should_show_meta`, `_display_recording_meta`, `_format_status`)
+- `Makefile` - removed CLI commands (list, sync, download, process, transcribe, upload, etc.), kept only API/infrastructure commands
+
+**Migration path:** Use REST API endpoints instead:
+- `python main.py sync` → `POST /recordings/sync`
+- `python main.py process` → `POST /recordings/{id}/process`
+- `python main.py upload` → `POST /recordings/batch/upload`
+- `setup_youtube.py` → `GET /oauth/youtube/authorize`
+- `setup_vk.py` → `GET /oauth/vk/authorize`
+
+**Benefits:**
+- Cleaner codebase (-2,000+ lines of legacy code)
+- Better separation of concerns (API-only, no CLI mixing)
+- Easier maintenance (single interface)
+- Modern architecture (REST API vs. CLI)
+
 ### 12 января 2026 - Template Config Live Update
 **Проблема:** Template changes не применялись к существующим recordings
 
