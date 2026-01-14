@@ -1,1 +1,1 @@
-"""Pydantic схемы для API."""
+"""API Pydantic schemas"""

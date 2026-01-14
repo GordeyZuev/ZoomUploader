@@ -1,4 +1,4 @@
-"""Извлечение тем из транскрипции через DeepSeek"""
+"""Topic extraction from transcription using DeepSeek"""
 
 import re
 from pathlib import Path
@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 
 
 class TopicExtractor:
-    """Извлечение тем из транскрипции используя MapReduce подход"""
+    """Extract topics from transcription using MapReduce approach"""
 
     def __init__(self, config: DeepSeekConfig):
         self.config = config
@@ -717,9 +717,8 @@ class TopicExtractor:
             if not line_stripped:
                 continue
 
-            # Если нашли секцию детализированных топиков, проверяем все строки до неё
             if "ДЕТАЛИЗИРОВАННЫЕ ТОПИКИ" in line_stripped.upper() or "ТОПИКИ С ТАЙМКОДАМИ" in line_stripped.upper():
-                # Ищем тему во всех строках до этой секции (но не слишком далеко - максимум 10 строк)
+                # Look for topic in previous 10 lines
                 for j in range(max(0, i - 10), i):
                     candidate = lines[j].strip()
                     if candidate and not candidate.startswith("##") and not candidate.startswith("#"):
@@ -796,8 +795,7 @@ class TopicExtractor:
                 in_detailed_topics = False
                 continue
 
-            # Если строка начинается с временной метки [HH:MM:SS], это детализированный топик
-            # (даже если мы не нашли заголовок секции)
+            # Timestamp indicates detailed topic
             timestamp_match = re.match(timestamp_pattern, line)
             if timestamp_match:
                 in_detailed_topics = True

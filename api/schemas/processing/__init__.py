@@ -1,1 +1,1 @@
-"""Схемы для настроек обработки."""
+"""Processing settings schemas"""

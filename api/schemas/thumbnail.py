@@ -1,4 +1,4 @@
-"""Pydantic схемы для работы с thumbnails."""
+"""Thumbnail schemas"""
 
 from pydantic import BaseModel, Field
 

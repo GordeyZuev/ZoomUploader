@@ -1,4 +1,4 @@
-"""Middleware для rate limiting."""
+"""Rate limiting middleware"""
 
 import time
 from collections import defaultdict

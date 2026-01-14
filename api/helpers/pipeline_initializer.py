@@ -119,7 +119,6 @@ async def initialize_output_targets_from_config(
 
     targets_to_create = []
 
-    # Получаем preset_ids (теперь это список)
     preset_ids = output_config.get("preset_ids", [])
 
     if not preset_ids:
@@ -246,10 +245,8 @@ async def ensure_output_targets(
 
     from database.template_models import OutputPresetModel
 
-    # Получаем существующие target types
     existing_target_types = {target.target_type for target in recording.outputs}
 
-    # Определяем какие targets нужны (теперь это список)
     preset_ids = output_config.get("preset_ids", [])
     new_targets = []
 

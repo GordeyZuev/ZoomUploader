@@ -1,4 +1,4 @@
-"""Типизированные схемы для output_config."""
+"""Typed schemas for output_config"""
 
 from pydantic import BaseModel, Field, field_validator
 

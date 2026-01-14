@@ -1,1 +1,1 @@
-"""Модуль аутентификации и авторизации."""
+"""Authentication and authorization module"""

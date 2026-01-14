@@ -1,8 +1,4 @@
-"""Factory для создания TranscriptionService с user-specific credentials.
-
-Обеспечивает создание сервиса транскрипции с правильными credentials
-из базы данных для каждого пользователя.
-"""
+"""TranscriptionService factory with user-specific credentials"""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,7 +11,7 @@ logger = get_logger()
 
 
 class TranscriptionServiceFactory:
-    """Factory для создания TranscriptionService с credentials пользователя."""
+    """Create TranscriptionService with user credentials"""
 
     @staticmethod
     async def create_for_user(

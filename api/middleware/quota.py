@@ -1,4 +1,4 @@
-"""Middleware для проверки квот пользователей."""
+"""User quota check middleware"""
 
 from fastapi import HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession

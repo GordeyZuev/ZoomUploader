@@ -1,4 +1,4 @@
-"""Типизированные схемы для input source config."""
+"""Typed schemas for input source config"""
 
 from typing import Literal
 

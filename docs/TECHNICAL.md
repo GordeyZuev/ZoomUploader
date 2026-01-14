@@ -1,152 +1,303 @@
-# 🔧 Техническая документация
+# Technical Documentation
 
-Полная техническая документация системы автоматизации обработки и публикации видеолекций.
+**Complete technical reference for LEAP Platform**
 
-**Версия:** v0.9.2.2
-**Статус:** Dev Status
-
----
-
-## 🆕 Последние обновления (январь 2026)
-
-### Pydantic V2 Рефакторинг - Clean Architecture
-
-**Полная типизация API (118+ Pydantic моделей):**
-- ✅ 84 REST endpoints с типизированными request/response схемами
-- ✅ Вложенные конфигурации: `MatchingRules`, `TemplateProcessingConfig`, `TemplateMetadataConfig`
-- ✅ Platform-specific metadata: `YouTubePresetMetadata`, `VKPresetMetadata`
-- ✅ Source configs: `ZoomSourceConfig`, `GoogleDriveSourceConfig`
-
-**Pydantic V2 Best Practices:**
-- ✅ `model_config = BASE_MODEL_CONFIG` вместо `class Config`
-- ✅ `Field(min_length=3, max_length=255)` вместо custom валидаторов
-- ✅ `@field_validator` с `mode="before"` для pre-processing
-- ✅ Централизованные валидаторы в `api/schemas/common/validators.py`
-- ✅ Сохранение порядка полей в Swagger UI
-
-**Clean Architecture принципы:**
-- ✅ **DRY** - общие валидаторы, BASE_MODEL_CONFIG
-- ✅ **YAGNI** - удалены устаревшие поля (`is_private`, `watch_directory`)
-- ✅ **KISS** - встроенные Field constraints вместо custom логики
-
-**Bulk Operations:**
-- ✅ Унифицированный `BulkOperationRequest` с фильтрами
-- ✅ Endpoints: `/bulk/download`, `/bulk/trim`, `/bulk/transcribe`, `/bulk/upload`
-- ✅ Template lifecycle: auto-unmap при удалении template
-- ✅ Dry-run режим для preview без изменений
-
-**Документация:**
-- 📖 [API_SCHEMAS_GUIDE.md](API_SCHEMAS_GUIDE.md) - полный гайд по схемам
-- 📖 [PYDANTIC_BEST_PRACTICES.md](PYDANTIC_BEST_PRACTICES.md) - best practices
-- 📖 [BULK_OPERATIONS_GUIDE.md](BULK_OPERATIONS_GUIDE.md) - bulk операции
+**Version:** v0.9.3 (January 2026)  
+**Status:** 🚧 Development
 
 ---
 
-## 📐 Архитектура системы
+## 📋 Table of Contents
 
-Система построена на модульной архитектуре с четким разделением ответственности и следует принципам KISS, DRY и Separation of Concerns.
+1. [System Overview](#system-overview)
+2. [Architecture](#architecture)
+3. [Core Components](#core-components)
+4. [System Modules](#system-modules)
+5. [Database Design](#database-design)
+6. [Processing Pipeline](#processing-pipeline)
+7. [REST API](#rest-api)
+8. [Security](#security)
+9. [Development Guide](#development-guide)
 
-### Архитектурная схема
+---
 
+## System Overview
+
+### What is LEAP
+
+**LEAP** (Learning Educational Automation Platform) - это multi-tenant платформа для автоматизации end-to-end обработки образовательного видеоконтента.
+
+**Ключевые возможности:**
+- ✅ Синхронизация видео из Zoom, локальных файлов
+- ✅ FFmpeg обработка (удаление тишины, обрезка)
+- ✅ AI транскрибация (Fireworks Whisper)
+- ✅ AI извлечение тем (DeepSeek)
+- ✅ Генерация субтитров (SRT, VTT)
+- ✅ Multi-platform upload (YouTube, VK)
+- ✅ Template-driven automation
+- ✅ Scheduled jobs (Celery Beat)
+
+### Technology Stack
+
+**Backend:**
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Pipeline Manager                      │
-│              (Координация всего процесса)                │
-└─────────────────────────────────────────────────────────┘
-         │         │         │         │         │
-         ▼         ▼         ▼         ▼         ▼
-    ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
-    │  API   │ │Download│ │Process │ │Transcr.│ │ Upload │
-    │ Module │ │ Module │ │ Module │ │Module  │ │ Module │
-    └────────┘ └────────┘ └────────┘ └────────┘ └────────┘
-         │         │         │         │         │
-         ▼         ▼         ▼         ▼         ▼
-    ┌──────────────────────────────────────────────────┐
-    │              Database Module                     │
-    │         (PostgreSQL + SQLAlchemy)                │
-    └──────────────────────────────────────────────────┘
+Python 3.11+ • FastAPI • SQLAlchemy 2.0 (async)
+PostgreSQL 12+ • Redis • Celery + Beat
 ```
 
-### Архитектурные принципы
+**AI & Media:**
+```
+Fireworks AI (Whisper-v3-turbo) • DeepSeek API
+FFmpeg • Pydantic V2
+```
 
-#### KISS (Keep It Simple, Stupid)
-- **ServiceContext**: Единый объект для передачи user_id и session
-- **ConfigHelper**: Централизованный доступ к credentials
-- **Factories**: Простое создание сервисов с правильными credentials
+**External APIs:**
+```
+Zoom API • YouTube Data API v3 • VK API
+```
 
-#### DRY (Don't Repeat Yourself)
-- Все credential-запросы идут через `CredentialService`
-- Все config-запросы идут через `ConfigHelper`
-- Factories избегают дублирования логики создания объектов
+**Security:**
+```
+JWT • OAuth 2.0 • Fernet Encryption • PBKDF2
+```
 
-#### Separation of Concerns
-- **Repository Pattern**: Доступ к данным
-- **Service Layer**: Бизнес-логика
-- **Factory Pattern**: Создание объектов
-- **Context Pattern**: Передача контекста выполнения
+### Project Structure
+
+```
+ZoomUploader/
+├── api/                      # FastAPI application
+│   ├── routers/              # API endpoints (15 routers)
+│   ├── services/             # Business logic layer
+│   ├── repositories/         # Data access layer
+│   ├── schemas/              # Pydantic models (118+)
+│   ├── core/                 # Core utilities (context, security)
+│   ├── helpers/              # Helper classes
+│   └── tasks/                # Celery tasks
+├── database/                 # Database models & config
+│   ├── models.py             # Core models (Recording, etc.)
+│   ├── auth_models.py        # User, Credentials, Subscriptions
+│   ├── template_models.py    # Templates, Sources, Presets
+│   ├── automation_models.py  # Automation jobs
+│   └── config.py             # Database configuration
+├── *_module/                 # Processing modules
+│   ├── video_download_module/
+│   ├── video_processing_module/
+│   ├── transcription_module/
+│   ├── deepseek_module/
+│   ├── subtitle_module/
+│   └── video_upload_module/
+├── alembic/                  # Database migrations (19)
+├── config/                   # Configuration files
+├── utils/                    # Utilities
+└── docs/                     # Documentation (14 guides)
+```
 
 ---
 
-## 🏗️ Основные компоненты
+## Architecture
 
-### 1. ServiceContext (`api/core/context.py`)
+### High-Level Architecture
 
-**Назначение**: Централизованное хранение контекста выполнения операции
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Client Layer                          │
+│              REST API (84 endpoints) + JWT Auth              │
+└─────────────────────────────────────────────────────────────┘
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                      Service Layer                           │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
+│   │ Recording    │  │ Template     │  │ Automation   │    │
+│   │ Service      │  │ Service      │  │ Service      │    │
+│   └──────────────┘  └──────────────┘  └──────────────┘    │
+│                                                              │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
+│   │ Credential   │  │ User         │  │ Upload       │    │
+│   │ Service      │  │ Service      │  │ Service      │    │
+│   └──────────────┘  └──────────────┘  └──────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                    Repository Layer                          │
+│   (Database Access via SQLAlchemy async ORM)                │
+│                                                              │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
+│   │ Recording    │  │ Template     │  │ User         │    │
+│   │ Repository   │  │ Repository   │  │ Repository   │    │
+│   └──────────────┘  └──────────────┘  └──────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                      Data Layer                              │
+│              PostgreSQL (12 tables, 19 migrations)           │
+└─────────────────────────────────────────────────────────────┘
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                   Processing Modules                         │
+│                                                              │
+│   Video Download → Video Processing → Transcription →       │
+│   Topic Extraction → Subtitle Generation → Upload           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Design Patterns
+
+#### 1. Repository Pattern
+**Purpose:** Изоляция доступа к данным от бизнес-логики
+
+```python
+class RecordingRepository:
+    """Data access layer for recordings"""
+    
+    async def find_by_id(self, user_id: int, recording_id: int) -> Recording:
+        """Get recording with multi-tenant isolation"""
+        
+    async def find_all(self, user_id: int, filters: dict) -> list[Recording]:
+        """List recordings with filters"""
+```
+
+**Benefits:**
+- ✅ Automatic multi-tenant filtering
+- ✅ Reusable queries
+- ✅ Easy to test and mock
+- ✅ Separation of concerns
+
+#### 2. Factory Pattern
+**Purpose:** Создание сервисов с правильными credentials
+
+```python
+# TranscriptionServiceFactory
+service = await TranscriptionServiceFactory.create_for_user(
+    session, user_id
+)
+
+# UploaderFactory
+uploader = await UploaderFactory.create_uploader(
+    session, user_id, platform="youtube"
+)
+```
+
+**Benefits:**
+- ✅ Централизованная логика создания
+- ✅ Автоматическая загрузка credentials
+- ✅ Fallback на default config
+- ✅ Type-safe
+
+#### 3. Service Context Pattern
+**Purpose:** Передача контекста выполнения (user_id, session)
+
+```python
+@dataclass
+class ServiceContext:
+    session: AsyncSession
+    user_id: int
+    
+    @property
+    def config_helper(self) -> ConfigHelper:
+        """Lazy-loaded config helper"""
+```
+
+**Benefits:**
+- ✅ Избегает передачи множества параметров
+- ✅ Lazy-loading dependencies
+- ✅ Единая точка входа
+
+#### 4. Config-Driven Pattern
+**Purpose:** Template-based automation
+
+```python
+# Config hierarchy (deep merge):
+final_config = user_config ← template_config ← recording_override
+```
+
+**Benefits:**
+- ✅ Консистентность обработки
+- ✅ Гибкость через overrides
+- ✅ Масштабируемость
+
+### Architecture Principles
+
+**KISS (Keep It Simple):**
+- ServiceContext вместо передачи множества параметров
+- ConfigHelper вместо прямого доступа к credentials
+- Factories для упрощения создания объектов
+
+**DRY (Don't Repeat Yourself):**
+- Все credential-запросы через `CredentialService`
+- Все config-запросы через `ConfigHelper`
+- Repository pattern для избежания дублирования SQL
+
+**Separation of Concerns:**
+- Router → Service → Repository → Model
+- Каждый слой имеет четкую ответственность
+- Dependencies injection через FastAPI
+
+---
+
+## Core Components
+
+### 1. ServiceContext
+
+**File:** `api/core/context.py`
+
+**Purpose:** Централизованное хранение контекста выполнения операции
 
 ```python
 from api.dependencies import get_service_context
 
-@router.post("/some-endpoint")
-async def my_endpoint(ctx: ServiceContext = Depends(get_service_context)):
+@router.post("/recordings/{id}/process")
+async def process_recording(
+    id: int,
+    ctx: ServiceContext = Depends(get_service_context)
+):
     # ctx содержит: session, user_id, config_helper
-    zoom_config = await ctx.config_helper.get_zoom_config()
-    ...
+    config = await ctx.config_helper.get_fireworks_config()
+    # ...
 ```
 
-**Преимущества**:
-- Не нужно передавать session и user_id отдельно
-- Lazy-loading ConfigHelper
+**Key Features:**
+- Автоматическая инициализация в `get_service_context` dependency
+- Lazy-loading `ConfigHelper` (создается только при обращении)
 - Единая точка входа для всех сервисов
 
----
+### 2. ConfigHelper
 
-### 2. ConfigHelper (`api/helpers/config_helper.py`)
+**File:** `api/helpers/config_helper.py`
 
-**Назначение**: Получение конфигураций и credentials для пользователя
+**Purpose:** Получение конфигураций и credentials для пользователя
 
 ```python
 config_helper = ConfigHelper(session, user_id)
 
-# Zoom
+# Platform credentials
 zoom_config = await config_helper.get_zoom_config(account_name="myaccount")
-
-# Transcription
-fireworks_config = await config_helper.get_fireworks_config()
-deepseek_config = await config_helper.get_deepseek_config()
-
-# Upload
 youtube_creds = await config_helper.get_youtube_credentials()
 vk_creds = await config_helper.get_vk_credentials()
 
-# Generic
+# AI service credentials
+fireworks_config = await config_helper.get_fireworks_config()
+deepseek_config = await config_helper.get_deepseek_config()
+
+# Generic access
 creds = await config_helper.get_credentials_for_platform("zoom", "myaccount")
 ```
 
-**Преимущества**:
-- Абстрагирует детали хранения credentials
+**Key Features:**
+- Абстракция деталей хранения credentials
 - Единый интерфейс для всех платформ
 - Автоматическая валидация и дешифрование
+- Fallback на default credentials
 
----
+### 3. TranscriptionServiceFactory
 
-### 3. TranscriptionServiceFactory (`transcription_module/factory.py`)
+**File:** `transcription_module/factory.py`
 
-**Назначение**: Создание TranscriptionService с user credentials
+**Purpose:** Создание TranscriptionService с user credentials
 
 ```python
 from transcription_module.factory import TranscriptionServiceFactory
 
-# Создание для пользователя
+# Создать для конкретного пользователя
 service = await TranscriptionServiceFactory.create_for_user(session, user_id)
 
 # С fallback на default credentials
@@ -155,34 +306,41 @@ service = await TranscriptionServiceFactory.create_with_fallback(
 )
 ```
 
----
+**Поддерживаемые провайдеры:**
+- `fireworks` - Fireworks AI (Whisper-v3-turbo)
 
-### 4. UploaderFactory (`video_upload_module/factory.py`)
+### 4. UploaderFactory
 
-**Назначение**: Создание uploaders с user credentials
+**File:** `video_upload_module/uploader_factory.py`
+
+**Purpose:** Создание uploaders с user credentials
 
 ```python
 from video_upload_module.factory import UploaderFactory
 
-# По платформе
+# По платформе (автоматический выбор credentials)
 uploader = await UploaderFactory.create_uploader(session, user_id, "youtube")
 
-# По credential_id
+# По credential_id (явный выбор)
 uploader = await UploaderFactory.create_youtube_uploader(
     session, user_id, credential_id=5
 )
 
-# По output preset
+# По output preset (из template)
 uploader = await UploaderFactory.create_uploader_by_preset_id(
     session, user_id, preset_id=1
 )
 ```
 
----
+**Поддерживаемые платформы:**
+- `youtube` - YouTube Data API v3
+- `vk_video` - VK Video API
 
-### 5. CredentialService (`api/services/credential_service.py`)
+### 5. CredentialService
 
-**Назначение**: Низкоуровневая работа с credentials
+**File:** `api/services/credential_service.py`
+
+**Purpose:** Низкоуровневая работа с credentials (encryption, validation)
 
 ```python
 from api.services.credential_service import CredentialService
@@ -206,804 +364,120 @@ is_valid = await cred_service.validate_credentials(user_id, "zoom")
 platforms = await cred_service.list_available_platforms(user_id)
 ```
 
-**Преимущества**:
-- Автоматическое дешифрование
+**Key Features:**
+- Автоматическое дешифрование (Fernet)
 - Валидация структуры credentials
-- Обновление last_used_at
+- Обновление `last_used_at`
+- Multi-tenant изоляция
 
 ---
 
-## 🔄 Модули системы
+## System Modules
 
 ### 📡 API Module (`api/`)
-- Работа с Zoom API
-- Получение списка записей
-- Аутентификация через OAuth 2.0
-- Поддержка нескольких аккаунтов
-- **TokenManager** — централизованное управление токенами
-  - Кэширование и автоматическое обновление
-  - Защита от одновременных запросов
-  - Автоматические повторные попытки при ошибках
 
-### ⬇️ Download Module (`video_download_module/`)
-- Многопоточная загрузка видео файлов
-- Отслеживание прогресса
-- Обработка ошибок и повторные попытки
-- Сохранение в `media/video/unprocessed/`
+**Purpose:** REST API endpoints, аутентификация, валидация
 
-### ✂️ Processing Module (`video_processing_module/`)
-- Детекция сегментов с отсутствием звука
-- Обрезка "тихих" частей из видео
-- Использование FFmpeg для обработки (без перекодирования, кодек: copy)
-- Экспорт обработанного видео в `media/video/processed/`
-- Извлечение аудио в `media/processed_audio/`
+**Key Components:**
+- `routers/` - 15 routers (84 endpoints)
+- `services/` - Business logic
+- `repositories/` - Data access
+- `schemas/` - Pydantic models (118+)
+- `core/` - Auth, security, context
 
-### 🎤 Transcription Modules
+**Features:**
+- JWT authentication + refresh tokens
+- OAuth 2.0 integration (YouTube, VK, Zoom)
+- Role-based access control (RBAC)
+- Quota management
+- OpenAPI documentation (Swagger, ReDoc)
 
-#### Fireworks Module (`fireworks_module/`)
-- Транскрибация через Fireworks Audio API
-  - 📖 [Документация](https://fireworks.ai/docs/api-reference/audio-transcriptions)
-- Модель `whisper-v3-turbo`
-- Поддержка больших файлов
+**Documentation:** [API_GUIDE.md](API_GUIDE.md)
+
+---
+
+### ⬇️ Video Download Module (`video_download_module/`)
+
+**Purpose:** Загрузка видео из внешних источников
+
+**Key Features:**
+- Multi-threaded download
+- Progress tracking
+- Retry механизм
+- Checksum validation
+
+**Supported Sources:**
+- Zoom API (OAuth 2.0 / Server-to-Server)
+- Локальные файлы
+
+**Output:** `media/video/unprocessed/recording_*.mp4`
+
+---
+
+### ✂️ Video Processing Module (`video_processing_module/`)
+
+**Purpose:** FFmpeg обработка видео
+
+**Key Features:**
+- Детекция тишины (silence detection)
+- Обрезка "тихих" частей
+- Удаление пустого начала и конца
+- Audio extraction для транскрибации
+- Codec: copy (без перекодирования)
+
+**Files:**
+- `video_processor.py` - Main processor
+- `audio_detector.py` - Silence detection
+- `segments.py` - Segment management
+
+**Output:**
+- Processed video: `media/video/processed/recording_*_processed.mp4`
+- Extracted audio: `media/processed_audio/recording_*_processed.mp3`
+
+---
+
+### 🎤 Transcription Module (`transcription_module/`)
+
+**Purpose:** Координация транскрибации через AI сервисы
+
+**Architecture:**
+```
+TranscriptionManager (manager.py)
+    ↓
+TranscriptionServiceFactory (factory.py)
+    ↓
+FireworksService (fireworks_module/service.py)
+```
+
+**Key Features:**
+- Транскрибация через Fireworks AI (Whisper-v3-turbo)
+- Параллельная обработка с ограничением (max 2 concurrent)
+- Retry механизм (3 попытки с exponential backoff)
 - Валидация конфигурации через Pydantic
-- Улучшенный retry: 3 попытки с экспоненциальной задержкой
-- Ограничение параллелизма (макс. 2 одновременно)
 
-#### Transcription Module (`transcription_module/`)
-- Координация транскрибации через Fireworks
-- Обработка результатов транскрибации
-- Извлечение тем через DeepSeek / Fireworks DeepSeek
-- Сохранение транскрипций в структурированных папках
-- Параллельная транскрибация с ограничением
+**Output:** `media/user_{user_id}/transcriptions/{recording_id}/`
+- `words.txt` - Слова с таймкодами
+- `segments.txt` - Сегменты
+- `master.json` - Метаданные транскрипции
 
-#### DeepSeek Module (`deepseek_module/`)
-- Извлечение тем из транскрипции через DeepSeek API
-- Определение перерывов (паузы ≥8 минут)
-- Структурирование контента
-- Генерация оглавления
-- Поддержка двух провайдеров: DeepSeek и Fireworks DeepSeek
+**Documentation:** [Fireworks Audio API](https://fireworks.ai/docs/api-reference/audio-transcriptions)
+
+---
+
+### 🧠 DeepSeek Module (`deepseek_module/`)
+
+**Purpose:** Извлечение тем и структурирование контента
+
+**Key Features:**
+- Определение основных тем (main topics)
+- Генерация детализированных тем с таймкодами
+- Автоматическое определение перерывов (паузы ≥8 минут)
 - Динамический расчёт количества тем по длительности
+- Поддержка двух провайдеров: DeepSeek, Fireworks DeepSeek
 
-### 📝 Subtitle Module (`subtitle_module/`)
-- Генерация субтитров SRT/VTT из транскрипций
-- Форматирование строк
-- Команда `python main.py subtitles --format srt,vtt`
-- Загрузка субтитров на YouTube
+**Output:** `topics.json` с версионированием (v1, v2, ...)
 
-### 🚀 Upload Module (`video_upload_module/`)
-- Загрузка на YouTube и VK
-- Управление плейлистами и альбомами
-- Обработка миниатюр
-- Форматирование описаний
-- Загрузка субтитров на YouTube
-
-### 🗄️ Database Module (`database/`)
-- Модели данных (SQLAlchemy):
-  - `RecordingModel` - основная запись с метаданными
-  - `SourceMetadataModel` - метаданные источника (1:1)
-  - `OutputTargetModel` - целевые платформы (1:N)
-  - `UserModel` - пользователи
-  - `UserCredentialsModel` - учетные данные
-  - `InputSourceModel` - источники данных
-  - `OutputPresetModel` - пресеты выгрузки
-  - `RecordingTemplateModel` - шаблоны обработки
-  - `BaseConfigModel` - базовые конфигурации
-- Управление миграциями (Alembic)
-- Асинхронные операции (asyncpg)
-- Multi-tenancy поддержка
-
----
-
-## 🗄️ Настройка базы данных
-
-### Автоматическая инициализация
-
-При первом запуске FastAPI БД автоматически инициализируется через startup event:
-
-```python
-@app.on_event("startup")
-async def startup_event():
-    # Создаем БД, если её нет
-    db_manager = DatabaseManager(DatabaseConfig.from_env())
-    await db_manager.create_database_if_not_exists()
-    
-    # Применяем миграции Alembic
-    subprocess.run(["alembic", "upgrade", "head"])
-```
-
-### Способы запуска БД
-
-#### 1. Автоматически при запуске FastAPI
-
-```bash
-uvicorn api.main:app --reload
-# или
-make api
-```
-
-#### 2. Docker Compose
-
-```bash
-docker-compose up
-```
-
-#### 3. Вручную через Makefile
-
-```bash
-# Запустить PostgreSQL
-make docker-up
-
-# Инициализировать БД
-make init-db
-```
-
-### Команды для работы с БД
-
-```bash
-make init-db        # Полная инициализация
-make migrate        # Применить миграции
-make migrate-down   # Откатить миграцию
-make db-version     # Текущая версия
-make db-history     # История миграций
-make recreate-db    # Пересоздать БД (⚠️ УДАЛИТ ДАННЫЕ)
-```
-
-### Структура миграций
-
-```
-<base> → 001 → 002 → 003 → 004 → 005 → 006 (head)
-```
-
-1. **001_create_base_tables.py** - Базовые таблицы
-2. **002_add_auth_tables.py** - Аутентификация
-3. **003_add_multitenancy.py** - Multi-tenancy
-4. **004_add_config_type_field.py** - Тип конфигурации
-5. **005_add_account_name_to_credentials.py** - Множественные аккаунты
-6. **006_add_foreign_keys_to_sources_and_presets.py** - Foreign Keys
-
-### Переменные окружения
-
-```env
-# База данных
-DATABASE_HOST=localhost
-DATABASE_PORT=5432
-DATABASE_NAME=zoom_manager
-DATABASE_USERNAME=postgres
-DATABASE_PASSWORD=postgres
-
-# API
-API_JWT_SECRET_KEY=your-secret-key-change-in-production
-
-# Celery (опционально)
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/0
-```
-
----
-
-## 📚 REST API Endpoints
-
-Полный список всех доступных API endpoints в системе.
-
-### 🔐 Authentication (`/api/v1/auth`)
-
-| Method | Endpoint | Описание | Auth |
-|--------|----------|----------|------|
-| POST | `/api/v1/auth/register` | Регистрация нового пользователя | ❌ |
-| POST | `/api/v1/auth/login` | Вход в систему | ❌ |
-| POST | `/api/v1/auth/refresh` | Обновление access токена | ❌ |
-| POST | `/api/v1/auth/logout` | Выход из системы | ❌ |
-| GET | `/api/v1/auth/me` | Получить информацию о себе + квоты | ✅ |
-
----
-
-### 👤 User Management (`/api/v1/users`)
-
-| Method | Endpoint | Описание | Auth |
-|--------|----------|----------|------|
-| PATCH | `/api/v1/users/me` | Обновить профиль (имя, email) | ✅ |
-| POST | `/api/v1/users/me/password` | Сменить пароль | ✅ |
-| DELETE | `/api/v1/users/me` | Удалить аккаунт | ✅ |
-
----
-
-### 🔑 Credentials Management (`/api/v1/credentials`)
-
-Управление credentials для внешних сервисов.
-
-| Method | Endpoint | Описание | Auth |
-|--------|----------|----------|------|
-| GET | `/api/v1/credentials` | Список всех credentials | ✅ |
-| GET | `/api/v1/credentials/{platform}` | Credentials для платформы | ✅ |
-| POST | `/api/v1/credentials` | Создать credential | ✅ |
-| PUT | `/api/v1/credentials/{credential_id}` | Обновить credential | ✅ |
-| DELETE | `/api/v1/credentials/{credential_id}` | Удалить credential | ✅ |
-
-**Поддерживаемые платформы:**
-- `youtube` - YouTube API
-- `vk` - ВКонтакте API
-- `zoom` - Zoom API
-- `fireworks` - Fireworks AI (транскрибация)
-- `deepseek` - DeepSeek (извлечение топиков)
-- `yandex_disk` - Яндекс.Диск
-
----
-
-### 🎬 Recordings (`/api/v1/recordings`)
-
-Полный цикл обработки видео: download → process → transcribe → upload
-
-| Method | Endpoint | Описание | Auth |
-|--------|----------|----------|------|
-| GET | `/api/v1/recordings` | Список recordings (с фильтрацией) | ✅ |
-| GET | `/api/v1/recordings/{id}` | Получить одну запись | ✅ |
-| POST | `/api/v1/recordings` | Добавить локальное видео | ✅ |
-| POST | `/api/v1/recordings/{id}/download` | Скачать видео из Zoom | ✅ |
-| POST | `/api/v1/recordings/{id}/process` | FFmpeg обработка | ✅ |
-| POST | `/api/v1/recordings/{id}/transcribe` | Транскрибация | ✅ |
-| POST | `/api/v1/recordings/{id}/upload/{platform}` | Загрузка на платформу | ✅ |
-| POST | `/api/v1/recordings/{id}/full-pipeline` | Полный цикл | ✅ |
-| POST | `/api/v1/recordings/batch-process` | Массовая обработка | ✅ |
-
----
-
-### 📥 Input Sources (`/api/v1/sources`)
-
-| Method | Endpoint | Описание | Auth |
-|--------|----------|----------|------|
-| GET | `/api/v1/sources` | Список sources | ✅ |
-| GET | `/api/v1/sources/{id}` | Получить один source | ✅ |
-| POST | `/api/v1/sources` | Создать source | ✅ |
-| PUT | `/api/v1/sources/{id}` | Обновить source | ✅ |
-| DELETE | `/api/v1/sources/{id}` | Удалить source | ✅ |
-| POST | `/api/v1/sources/{id}/sync` | Синхронизация с Zoom | ✅ |
-
-**Типы источников:** `zoom`, `yandex_disk`
-
----
-
-### 📤 Output Presets (`/api/v1/presets`)
-
-| Method | Endpoint | Описание | Auth |
-|--------|----------|----------|------|
-| GET | `/api/v1/presets` | Список presets | ✅ |
-| GET | `/api/v1/presets/{id}` | Получить preset | ✅ |
-| POST | `/api/v1/presets` | Создать preset | ✅ |
-| PUT | `/api/v1/presets/{id}` | Обновить preset | ✅ |
-| DELETE | `/api/v1/presets/{id}` | Удалить preset | ✅ |
-
----
-
-### 📋 Templates (`/api/v1/templates`)
-
-Правила автоматического matching видео к presets.
-
-| Method | Endpoint | Описание | Auth |
-|--------|----------|----------|------|
-| GET | `/api/v1/templates` | Список templates | ✅ |
-| GET | `/api/v1/templates/{id}` | Получить template | ✅ |
-| POST | `/api/v1/templates` | Создать template | ✅ |
-| PUT | `/api/v1/templates/{id}` | Обновить template | ✅ |
-| DELETE | `/api/v1/templates/{id}` | Удалить template | ✅ |
-| POST | `/api/v1/templates/{id}/match` | Проверить matching | ✅ |
-
----
-
-### ⚙️ Configs (`/api/v1/configs`)
-
-| Method | Endpoint | Описание | Auth |
-|--------|----------|----------|------|
-| GET | `/api/v1/configs` | Список configs | ✅ |
-| GET | `/api/v1/configs/{id}` | Получить config | ✅ |
-| POST | `/api/v1/configs` | Создать config | ✅ |
-| PUT | `/api/v1/configs/{id}` | Обновить config | ✅ |
-| DELETE | `/api/v1/configs/{id}` | Удалить config | ✅ |
-
----
-
-### 📊 Tasks (`/api/v1/tasks`)
-
-| Method | Endpoint | Описание | Auth |
-|--------|----------|----------|------|
-| GET | `/api/v1/tasks/{task_id}` | Статус задачи | ✅ |
-| DELETE | `/api/v1/tasks/{task_id}` | Отменить задачу | ✅ |
-| GET | `/api/v1/tasks` | Список задач пользователя | ✅ |
-
----
-
-### 💚 Health Check
-
-| Method | Endpoint | Описание | Auth |
-|--------|----------|----------|------|
-| GET | `/api/v1/health` | Статус системы | ❌ |
-
----
-
-### 📈 Статистика API
-
-| Категория | Количество | Типизация |
-|-----------|-----------|-----------|
-| **Authentication** | 5 | ✅ Полная |
-| **User Management** | 6 | ✅ Полная |
-| **Admin Stats** | 3 | ✅ Полная |
-| **Recordings** | 16 | ✅ Полная |
-| **Templates** | 8 | ✅ Полная |
-| **Credentials** | 6 | ✅ Полная |
-| **OAuth** | 6 | ✅ Полная |
-| **Automation** | 6 | ✅ Полная |
-| **Tasks** | 2 | ✅ Полная |
-| **Input Sources** | 6 | ✅ Полная |
-| **Output Presets** | 5 | ✅ Полная |
-| **Thumbnails** | 4 | ✅ Полная |
-| **Health** | 1 | ✅ Полная |
-| **TOTAL** | **84** | **100%** |
-
-**Pydantic схемы:**
-- 118+ моделей в OpenAPI
-- 15+ вложенных типизированных конфигураций
-- 6 Enum'ов (`YouTubePrivacy`, `VKPrivacyLevel`, `TopicsDisplayFormat`, etc.)
-- 100% типизация на всех уровнях вложенности
-
----
-
-## 🔒 Безопасность
-
-### Изоляция данных пользователей
-
-1. **Database Level**: Все таблицы с user_id имеют индексы
-2. **Repository Level**: Все запросы фильтруются по user_id
-3. **Service Level**: ServiceContext передает правильный user_id
-4. **API Level**: JWT токен валидируется через `get_current_user`
-
-### Credentials
-
-1. **Шифрование**: Fernet (симметричное) через `CredentialEncryption`
-2. **Хранение**: Encrypted в `user_credentials.encrypted_data`
-3. **Доступ**: Только через `CredentialService`
-4. **Логирование**: Credentials никогда не логируются
-
-### Аутентификация
-
-Все endpoints (кроме `/auth/register`, `/auth/login`, `/health`) требуют JWT токен:
-
-```
-Authorization: Bearer <access_token>
-```
-
-### Rate Limiting
-
-Настроено ограничение запросов:
-- Per minute: 60 requests
-- Per hour: 1000 requests
-
----
-
-## 🔄 Полный пайплайн обработки
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           НАЧАЛО: Zoom Запись                                │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  ЭТАП 1: СИНХРОНИЗАЦИЯ (sync)                                               │
-│  • Запрос к Zoom API (OAuth 2.0)                                            │
-│  • Получение списка записей с метаданными                                    │
-│  • Фильтрация (длительность > 30 мин, размер > 40 МБ)                       │
-│  • Сохранение метаданных в PostgreSQL                                       │
-│  • Статус: INITIALIZED → DOWNLOADING                                         │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  ЭТАП 2: ЗАГРУЗКА (download)                                                 │
-│  • Многопоточное скачивание из Zoom                                          │
-│  • Отслеживание прогресса                                                    │
-│  • Сохранение в: media/video/unprocessed/                                   │
-│  • Статус: DOWNLOADING → DOWNLOADED                                         │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  ЭТАП 3: ОБРАБОТКА ВИДЕО (process)                                          │
-│  • Анализ аудиодорожки (FFmpeg)                                             │
-│  • Детекция сегментов с отсутствием звука                                   │
-│  • Обрезка "тихих" частей                                                   │
-│  • Экспорт обработанного видео                                               │
-│  • Извлечение аудио                                                          │
-│  • Статус: PROCESSING → PROCESSED                                           │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  ЭТАП 4: ТРАНСКРИБАЦИЯ (transcribe)                                         │
-│  • Транскрибация через Fireworks (whisper-v3-turbo)                          │
-│  • Извлечение тем через DeepSeek API                                         │
-│  • Определение основных тем и детализированных тем с таймкодами             │
-│  • Автоматическое определение перерывов (паузы ≥8 минут)                    │
-│  • Сохранение в media/transcriptions/<recording_id>/                        │
-│  • Статус: PROCESSED → TRANSCRIBING → TRANSCRIBED                           │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  ЭТАП 4.5: СУБТИТРЫ (subtitles)                                             │
-│  • Генерация SRT/VTT из транскрипций                                        │
-│  • Форматирование строк с таймкодами                                         │
-│  • Сохранение в transcription_dir/subtitles.(srt|vtt)                       │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  ЭТАП 5: ЗАГРУЗКА НА ПЛАТФОРМЫ (upload)                                     │
-│  • Формирование описания с таймкодами                                        │
-│  • Загрузка на YouTube и VK                                                  │
-│  • Загрузка субтитров (YouTube)                                              │
-│  • Добавление в плейлисты/альбомы                                            │
-│  • Статус: TRANSCRIBED → UPLOADING → UPLOADED                               │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    РЕЗУЛЬТАТ: Опубликованное видео                           │
-│  • YouTube: видео с оглавлением, таймкодами, миниатюрой                      │
-│  • VK: видео с оглавлением, таймкодами, миниатюрой                           │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 📂 Структура хранения данных
-
-### Файловая система
-
-```
-media/
-├── video/
-│   ├── unprocessed/            # Исходные видео
-│   │   └── recording_*.mp4
-│   ├── processed/              # Обработанные видео
-│   │   └── recording_*_processed.mp4
-│   └── temp_processing/        # Временные файлы
-├── processed_audio/            # Извлеченное аудио
-│   └── recording_*_processed.mp3
-└── transcriptions/             # Транскрипции
-    └── <recording_id>/
-        ├── words.txt           # Слова с таймкодами
-        ├── segments.txt        # Сегменты
-        ├── segments_auto.txt   # Автосегментация
-        ├── subtitles.srt       # Субтитры SRT
-        └── subtitles.vtt       # Субтитры VTT
-
-thumbnails/
-└── *.png                       # Миниатюры для видео
-```
-
-### База данных PostgreSQL (12 таблиц)
-
-**Ключевые изменения (2026-01-12):**
-- Migration 019: `processed_audio_dir` → `processed_audio_path` (specific file paths)
-- Migration 018: Добавлен `blank_record` для фильтрации коротких записей
-
-```sql
-# Authentication & Users (4 таблицы)
-users, refresh_tokens, user_credentials, user_configs
-
-# Subscription & Quotas (4 таблицы)  
-subscription_plans, user_subscriptions, quota_usage, quota_change_history
-
-# Processing (6 таблиц)
-recordings, recording_templates, input_sources, output_presets,
-source_metadata, output_targets
-
-# Automation (2 таблицы)
-automation_jobs, processing_stages
-
-# Основные модели:
-
-RecordingModel:
-  - Метаданные записи (display_name, start_time, duration)
-  - Пути к файлам (local_video_path, processed_video_path, processed_audio_path)
-  - Статусы обработки (status, timestamps)
-  - Транскрипция (transcription_dir, topic_timestamps)
-  - template_id (FK), processing_preferences (JSON overrides)
-  - blank_record (bool, auto-detected)
-  - Связи: source_metadata (1:1), output_targets (1:N)
-
-RecordingTemplateModel:
-  - matching_rules (JSON: exact_matches, keywords, patterns)
-  - processing_config, output_config, metadata_config (JSON)
-  - Auto-matching на sync, live config updates
-
-SourceMetadataModel:
-  - source_type (zoom, local_file, yandex_disk_api)
-  - source_key (уникальный ключ источника)
-  - metadata (сырой JSON ответа/параметров)
-
-OutputTargetModel:
-  - target_type (youtube, vk, yandex_disk)
-  - status (not_uploaded, uploading, uploaded, failed)
-  - target_meta (ids, links, технические поля)
-  - uploaded_at
-
-UserModel:
-  - email, hashed_password, full_name
-  - role (admin/user), is_active, timezone
-  - Связи: credentials, recordings, templates, sources, presets
-
-UserCredentialsModel:
-  - platform, account_name
-  - encrypted_data (Fernet encrypted)
-  - is_active, last_used_at
-
-SubscriptionPlanModel:
-  - name, tier, price
-  - quotas (recordings, storage, tasks, automation_jobs)
-  
-UserSubscriptionModel:
-  - user_id, plan_id, custom_quotas (override)
-  - start_date, end_date
-```
-
----
-
-## 🛠️ Управление состоянием
-
-### ProcessingStatus
-
-- `INITIALIZED` - Инициализировано
-- `DOWNLOADING` - В процессе загрузки
-- `DOWNLOADED` - Загружено
-- `PROCESSING` - В процессе обработки
-- `PROCESSED` - Обработано
-- `TRANSCRIBING` - В процессе транскрибации
-- `TRANSCRIBED` - Транскрибировано
-- `UPLOADING` - В процессе загрузки на платформу
-- `UPLOADED` - Загружено на платформу
-- `FAILED` - Ошибка обработки
-- `SKIPPED` - Пропущено
-- `EXPIRED` - Устарело (очищено)
-
-### TargetStatus
-
-- `NOT_UPLOADED` | `UPLOADING` | `UPLOADED` | `FAILED` для каждой площадки
-
----
-
-## 🔧 API интеграции
-
-### Zoom API
-- OAuth 2.0 аутентификация
-- Получение списка записей
-- Загрузка видео файлов
-- TokenManager для управления токенами
-
-### Fireworks Audio API
-- Транскрибация через whisper-v3-turbo
-- Поддержка больших файлов
-- 3 попытки с экспоненциальной задержкой
-- Ограничение параллелизма (макс. 2)
-- 📖 [Документация](https://fireworks.ai/docs/api-reference/audio-transcriptions)
-
-### DeepSeek API
-- Извлечение тем из транскрипции
-- Структурирование контента
-- Генерация оглавления
-
-### YouTube Data API v3
-- Загрузка видео с указанием языка (RU)
-- Управление плейлистами
-- Загрузка субтитров
-
-### VK API
-- Загрузка видео
-- Управление альбомами
-- Обработка метаданных
-
----
-
-## 🚀 Производительность
-
-### Оптимизации
-
-1. **Lazy Loading**: ConfigHelper создается только при первом обращении
-2. **Session Reuse**: Используем один session на request
-3. **Async Operations**: Все IO операции асинхронные
-4. **Index Coverage**: Все внешние ключи проиндексированы
-
-### Кэширование
-
-- Redis для кэширования Zoom tokens (TokenManager)
-- Мемоизация для ConfigHelper в рамках одного request
-
----
-
-## 🎯 Быстрый старт API
-
-### 1. Регистрация
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/auth/register" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "user@example.com",
-    "password": "SecurePass123",
-    "full_name": "Ivan Petrov"
-  }'
-```
-
-### 2. Получение токена
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/auth/login" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "user@example.com",
-    "password": "SecurePass123"
-  }'
-```
-
-### 3. Использование API
-
-```bash
-export TOKEN="eyJhbGc..."
-
-# Получить профиль
-curl -X GET "http://localhost:8000/api/v1/auth/me" \
-  -H "Authorization: Bearer $TOKEN"
-
-# Получить список recordings
-curl -X GET "http://localhost:8000/api/v1/recordings" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
----
-
-## 📖 Документация API
-
-- **Swagger UI:** http://localhost:8000/docs
-- **ReDoc:** http://localhost:8000/redoc
-- **OpenAPI JSON:** http://localhost:8000/openapi.json
-
----
-
-## 🔄 Специальные возможности
-
-### Обработка SKIPPED записей
-
-По умолчанию записи со статусом `SKIPPED` **не обрабатываются** на всех этапах pipeline для предотвращения случайной обработки нежелательного контента.
-
-#### Как разрешить обработку SKIPPED записей
-
-**1. Query Parameter (явно в запросе):**
-
-```bash
-# Download SKIPPED recording
-POST /api/v1/recordings/19/download?allow_skipped=true
-
-# Process SKIPPED recording
-POST /api/v1/recordings/19/process?allow_skipped=true
-
-# Upload SKIPPED recording
-POST /api/v1/recordings/19/upload/youtube?allow_skipped=true
-```
-
-**2. User Config (глобально для пользователя):**
-
-```bash
-PUT /api/v1/users/me/config
-{
-  "processing": {
-    "allow_skipped": true
-  }
-}
-```
-
-**3. Template Config (для конкретного шаблона):**
-
-```json
-{
-  "name": "My Template",
-  "processing_config": {
-    "allow_skipped": true
-  }
-}
-```
-
-**Приоритет:** Query Parameter → Template Config → User Config → Default (false)
-
----
-
-### Система миниатюр (Thumbnails)
-
-**Структура:**
-
-```
-media/
-├── templates/thumbnails/       # Глобальные templates (для всех)
-│   ├── machine_learning.png
-│   └── ...
-│
-└── user_{id}/thumbnails/       # Личные thumbnails пользователя
-    ├── machine_learning.png    # Копия template
-    ├── custom.png              # Загружено пользователем
-    └── ...
-```
-
-**Python API:**
-
-```python
-from utils.thumbnail_manager import get_thumbnail_manager
-
-thumbnail_manager = get_thumbnail_manager()
-
-# Умный поиск (user → templates fallback)
-thumbnail_path = thumbnail_manager.get_thumbnail_path(
-    user_id=1,
-    thumbnail_name="machine_learning.png",
-    fallback_to_template=True
-)
-
-# Загрузить пользовательский thumbnail
-saved_path = thumbnail_manager.upload_user_thumbnail(
-    user_id=1,
-    source_path="/tmp/my_thumbnail.png"
-)
-```
-
-**REST API:**
-
-```bash
-# Список thumbnails (метаданные)
-GET /api/v1/thumbnails?include_templates=true
-
-# Получить файл
-GET /api/v1/thumbnails/{name}
-
-# Загрузить новый
-POST /api/v1/thumbnails
-
-# Удалить
-DELETE /api/v1/thumbnails/{name}
-```
-
-**Автоматическая инициализация:** При регистрации нового пользователя создается `media/user_{id}/thumbnails/` и копируются все templates.
-
----
-
-### Отслеживание использования токенов и моделей
-
-Система отслеживает использование AI моделей для:
-- **Транскрипции аудио** (Fireworks Whisper API)
-- **Извлечения топиков** (DeepSeek / Fireworks DeepSeek API)
-
-**Хранение данных:**
-
-1. **Транскрипция** (`media/user_{user_id}/transcriptions/{recording_id}/master.json`):
-
-```json
-{
-  "recording_id": 21,
-  "model": "fireworks",
-  "duration": 5606.683,
-  "stats": {
-    "words_count": 11202,
-    "segments_count": 252
-  },
-  "_metadata": {
-    "model": "whisper-v3-turbo",
-    "config": {
-      "temperature": 0.01,
-      "language": "ru"
-    },
-    "usage": null
-  }
-}
-```
-
-2. **Топики** (`media/user_{user_id}/transcriptions/{recording_id}/topics.json`):
-
+**Example:**
 ```json
 {
   "recording_id": 21,
@@ -1012,80 +486,965 @@ DELETE /api/v1/thumbnails/{name}
     {
       "id": "v1",
       "model": "deepseek-chat",
-      "_metadata": {
-        "model": "deepseek-chat",
-        "config": {
-          "temperature": 0.0,
-          "max_tokens": 8000
-        }
-      }
+      "main_topics": ["ML", "Neural Networks", "Backpropagation"],
+      "detailed_topics": [
+        {"time": "00:05:30", "title": "Introduction to ML"},
+        {"time": "00:15:45", "title": "Neural Network Basics"}
+      ],
+      "breaks": [{"time": "01:30:00", "duration_minutes": 10}]
     }
   ]
 }
 ```
 
-**Утилиты для анализа:**
+---
 
+### 📝 Subtitle Module (`subtitle_module/`)
+
+**Purpose:** Генерация субтитров из транскрипций
+
+**Key Features:**
+- Форматы: SRT, VTT
+- Автоматическое разбиение на строки
+- Таймкоды из words.txt
+- Поддержка multiple языков
+
+**Output:** 
+- `subtitles.srt`
+- `subtitles.vtt`
+
+**Usage:**
 ```bash
-# Статистика по всем записям пользователя
-python utils/usage_stats.py 4
-
-# Статистика по конкретной записи
-python utils/usage_stats.py 4 21
-
-# Расчет стоимости
-python utils/cost_calculator.py 4
-
-# Экспорт в JSON
-python utils/usage_stats.py 4 --export
+python main.py subtitles --format srt,vtt
 ```
 
-**Цены на API (актуальные):**
-
-| Сервис | Модель | Цена |
-|--------|--------|------|
-| Fireworks AI | whisper-v3-turbo | $0.0001 за минуту |
-| DeepSeek | deepseek-chat | $0.14 за 1M input tokens |
-| Fireworks AI | deepseek-chat | $0.09 за 1M input tokens |
+**Upload:**
+- YouTube: автоматическая загрузка субтитров
+- VK: субтитры не поддерживаются
 
 ---
 
-### Исправление дубликатов при синхронизации
+### 🚀 Upload Module (`video_upload_module/`)
 
-**Проблема:** При повторных вызовах `POST /api/v1/sources/{source_id}/sync` создавались дубликаты записей.
+**Purpose:** Загрузка видео на платформы
 
-**Решение:**
+**Architecture:**
+```
+video_upload_module/
+├── factory.py                # UploaderFactory
+├── uploader_factory.py       # Legacy factory
+├── credentials_provider.py   # Credential providers
+├── config_factory.py         # Config factory
+└── platforms/
+    ├── youtube/
+    │   ├── uploader.py       # YouTubeUploader
+    │   └── config.py         # YouTubeUploadConfig
+    └── vk/
+        ├── uploader.py       # VKUploader
+        └── config.py         # VKUploadConfig
+```
 
-1. **Метод `find_by_source_key`** в `RecordingRepository` находит существующие записи
-2. **Метод `create_or_update`** реализует upsert логику:
-   - Если запись найдена и статус НЕ `UPLOADED` → обновляет
-   - Если запись найдена и статус `UPLOADED` → НЕ обновляет
-   - Если запись НЕ найдена → создает новую
-3. **Проверка маппинга** с шаблонами определяет статус:
-   - `is_mapped=True` → статус `INITIALIZED`
-   - `is_mapped=False` → статус `SKIPPED`
+**Supported Platforms:**
 
-**API Response:**
+#### YouTube (YouTube Data API v3)
+- Video upload с metadata
+- Playlist management
+- Subtitle upload (SRT, VTT)
+- Thumbnail upload
+- Privacy settings
+- OAuth 2.0 authentication
 
-```json
-{
-  "message": "Sync completed",
-  "recordings_found": 10,
-  "recordings_saved": 3,      // новые записи
-  "recordings_updated": 7     // обновленные записи
+#### VK (VK Video API)
+- Video upload
+- Album management
+- Thumbnail upload
+- Privacy settings
+- Implicit Flow authentication (2026 policy)
+
+**Key Features:**
+- Automatic token refresh (YouTube)
+- Retry механизм
+- Progress tracking
+- Multi-account support
+- Credential provider pattern
+
+**Documentation:**
+- [OAUTH.md](OAUTH.md) - OAuth setup
+- [VK_INTEGRATION.md](VK_INTEGRATION.md) - VK details
+
+---
+
+### 🗄️ Database Module (`database/`)
+
+**Purpose:** Database models и migrations
+
+**Key Files:**
+- `models.py` - Core models (Recording, SourceMetadata, OutputTarget)
+- `auth_models.py` - User, Credentials, Subscriptions
+- `template_models.py` - Templates, Sources, Presets
+- `automation_models.py` - Automation jobs
+- `config.py` - Database configuration
+- `manager.py` - Database manager
+
+**ORM:** SQLAlchemy 2.0 (async)
+
+**Migrations:** Alembic (19 migrations, auto-init)
+
+**Documentation:** [DATABASE_DESIGN.md](DATABASE_DESIGN.md)
+
+---
+
+## Database Design
+
+### Overview
+
+**Database:** PostgreSQL 12+  
+**ORM:** SQLAlchemy 2.0 (async)  
+**Migrations:** Alembic (19 migrations)  
+**Tables:** 12 (multi-tenant)
+
+### Table Categories
+
+**Authentication & Users (4 tables):**
+- `users` - Пользователи с ролями и permissions
+- `refresh_tokens` - JWT refresh tokens
+- `user_credentials` - Encrypted credentials для внешних API
+- `user_configs` - User-specific конфигурации
+
+**Subscription & Quotas (4 tables):**
+- `subscription_plans` - Планы подписок (Free/Plus/Pro/Enterprise)
+- `user_subscriptions` - Привязка пользователей к планам
+- `quota_usage` - Использование квот (recordings, storage, tasks)
+- `quota_change_history` - История изменений квот
+
+**Processing (4 tables):**
+- `recordings` - Записи видео
+- `source_metadata` - Метаданные источника (1:1 с recordings)
+- `output_targets` - Целевые платформы (1:N с recordings)
+- `recording_templates` - Шаблоны обработки
+
+**Configuration (3 tables):**
+- `base_configs` - Базовые конфигурации (deprecated)
+- `input_sources` - Источники данных (Zoom accounts)
+- `output_presets` - Пресеты загрузки (YouTube, VK)
+
+**Automation (2 tables):**
+- `automation_jobs` - Scheduled jobs (Celery Beat)
+- `processing_stages` - Tracking stages (download, process, upload)
+
+### Entity Relationship Diagram
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    AUTHENTICATION                        │
+└─────────────────────────────────────────────────────────┘
+                          users
+                            │
+        ┌───────────────────┼───────────────────┐
+        │                   │                   │
+  refresh_tokens    user_credentials    user_configs
+
+┌─────────────────────────────────────────────────────────┐
+│                    SUBSCRIPTIONS                         │
+└─────────────────────────────────────────────────────────┘
+       subscription_plans
+                │
+        user_subscriptions (user ← plan)
+                │
+        ┌───────┴────────┐
+   quota_usage   quota_change_history
+
+┌─────────────────────────────────────────────────────────┐
+│                      PROCESSING                          │
+└─────────────────────────────────────────────────────────┘
+   recording_templates ─┐
+                        │
+   input_sources ───────┼─┐
+                        │ │
+   output_presets ──────┼─┼─┐
+                        │ │ │
+                recordings ←┘ │
+                │   │         │
+     source_metadata  │       │
+                │     │       │
+          output_targets ←────┘
+
+┌─────────────────────────────────────────────────────────┐
+│                     AUTOMATION                           │
+└─────────────────────────────────────────────────────────┘
+   automation_jobs (schedule + template)
+        │
+   processing_stages (tracking)
+```
+
+### Key Models
+
+#### RecordingModel
+```python
+class RecordingModel:
+    # Identification
+    id: int
+    user_id: int
+    input_source_id: int | None
+    template_id: int | None
+    
+    # Core metadata
+    display_name: str
+    start_time: datetime
+    duration: int
+    status: ProcessingStatus  # INITIALIZED → ... → UPLOADED
+    
+    # Flags
+    is_mapped: bool           # Matched to template
+    blank_record: bool        # Short/empty recording
+    failed: bool
+    
+    # File paths
+    local_video_path: str | None
+    processed_video_path: str | None
+    processed_audio_path: str | None
+    transcription_dir: str | None
+    
+    # AI results
+    transcription_info: dict | None
+    topic_timestamps: dict | None
+    main_topics: dict | None
+    
+    # Overrides
+    processing_preferences: dict | None  # Config overrides
+    
+    # Relationships
+    owner: UserModel
+    input_source: InputSourceModel
+    template: RecordingTemplateModel
+    source: SourceMetadataModel (1:1)
+    outputs: list[OutputTargetModel] (1:N)
+```
+
+#### RecordingTemplateModel
+```python
+class RecordingTemplateModel:
+    # Identification
+    id: int
+    user_id: int
+    name: str
+    
+    # Matching rules
+    matching_rules: dict  # exact_matches, keywords, patterns
+    
+    # Configuration
+    processing_config: dict  # transcription, video_processing
+    metadata_config: dict    # title_template, youtube, vk
+    output_config: dict      # preset_ids, auto_upload
+    
+    # State
+    is_active: bool
+```
+
+#### UserCredentialModel
+```python
+class UserCredentialModel:
+    # Identification
+    id: int
+    user_id: int
+    platform: str  # zoom, youtube, vk_video, fireworks, deepseek
+    account_name: str | None
+    
+    # Encrypted data (Fernet)
+    encrypted_data: str
+    encryption_key_version: int
+    
+    # State
+    is_active: bool
+    last_used_at: datetime | None
+```
+
+### Multi-Tenancy Strategy
+
+**Shared Database + Row-Level Filtering**
+
+**Implementation:**
+1. Все таблицы имеют `user_id` колонку (кроме глобальных)
+2. Foreign Key: `REFERENCES users(id) ON DELETE CASCADE`
+3. Index на `user_id` для производительности
+4. Repository Layer автоматически фильтрует по `user_id`
+
+**Example:**
+```python
+class RecordingRepository:
+    async def find_all(self, user_id: int, **filters) -> list[Recording]:
+        query = select(RecordingModel).where(
+            RecordingModel.user_id == user_id  # Automatic isolation
+        )
+        # ... apply filters
+```
+
+### Migrations
+
+**19 migrations (автоматическая инициализация):**
+
+```
+001 → Create base tables (recordings, source_metadata, output_targets)
+002 → Add auth tables (users, refresh_tokens)
+003 → Add multitenancy (user_id to all tables)
+004 → Add config_type field to base_configs
+005 → Add account_name to user_credentials
+006 → Add foreign keys to input_sources and output_presets
+007 → Create user_configs table
+008 → Update platform enum (add yandex_disk, rutube)
+009 → Add unique constraint to input_sources
+010 → Add FSM fields to output_targets
+011 → Update ProcessingStatus enum
+012 → Add automation quotas (max_automation_jobs to plans)
+013 → Create automation_jobs table
+014 → Create Celery Beat tables
+015 → Add timezone to users
+016 → Refactor quota system (quota_usage, quota_change_history)
+017 → Add template_id to recordings
+018 → Add blank_record flag
+019 → Replace processed_audio_dir with processed_audio_path
+```
+
+**Auto-init on first run:**
+```python
+@app.on_event("startup")
+async def startup_event():
+    db_manager = DatabaseManager(DatabaseConfig.from_env())
+    await db_manager.create_database_if_not_exists()
+    subprocess.run(["alembic", "upgrade", "head"])
+```
+
+**Documentation:** [DATABASE_DESIGN.md](DATABASE_DESIGN.md)
+
+---
+
+## Processing Pipeline
+
+### Full Pipeline Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           INPUT: Zoom Recording                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STAGE 1: SYNC                                                               │
+│  • Zoom API request (OAuth 2.0)                                             │
+│  • Fetch recordings metadata                                                 │
+│  • Filter (duration > 30min, size > 40MB)                                   │
+│  • Template matching (keywords, patterns)                                    │
+│  • Save to PostgreSQL                                                        │
+│  Status: INITIALIZED                                                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STAGE 2: DOWNLOAD                                                           │
+│  • Multi-threaded download from Zoom                                         │
+│  • Progress tracking                                                         │
+│  • Checksum validation                                                       │
+│  • Save to: media/video/unprocessed/                                        │
+│  Status: DOWNLOADING → DOWNLOADED                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STAGE 3: VIDEO PROCESSING                                                   │
+│  • FFmpeg silence detection                                                  │
+│  • Trim silent parts (begin, end, middle)                                   │
+│  • Extract audio for transcription                                           │
+│  • Output:                                                                   │
+│    - media/video/processed/recording_*_processed.mp4                        │
+│    - media/processed_audio/recording_*_processed.mp3                        │
+│  Status: PROCESSING → PROCESSED                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STAGE 4: TRANSCRIPTION                                                      │
+│  • Fireworks AI (Whisper-v3-turbo) transcription                            │
+│  • DeepSeek topic extraction                                                 │
+│  • Generate main topics + detailed topics with timestamps                    │
+│  • Auto-detect breaks (pauses ≥8min)                                        │
+│  • Save to: media/user_{user_id}/transcriptions/{recording_id}/             │
+│    - words.txt (words + timestamps)                                         │
+│    - segments.txt (segments)                                                │
+│    - topics.json (structured topics)                                        │
+│    - master.json (metadata)                                                 │
+│  Status: TRANSCRIBING → TRANSCRIBED                                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STAGE 5: SUBTITLE GENERATION                                                │
+│  • Convert transcription to SRT/VTT                                          │
+│  • Format lines with timestamps                                              │
+│  • Save to: transcription_dir/subtitles.(srt|vtt)                           │
+│  Optional stage                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STAGE 6: UPLOAD                                                             │
+│  • Format description with timestamps                                        │
+│  • Upload to YouTube and/or VK                                               │
+│  • Upload subtitles (YouTube only)                                           │
+│  • Upload thumbnails                                                         │
+│  • Add to playlists/albums                                                   │
+│  Status: UPLOADING → UPLOADED                                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    OUTPUT: Published Videos                                  │
+│  • YouTube: video + description + timestamps + subtitles + thumbnail        │
+│  • VK: video + description + timestamps + thumbnail                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Processing Status Flow
+
+```
+INITIALIZED → DOWNLOADING → DOWNLOADED → PROCESSING → PROCESSED →
+TRANSCRIBING → TRANSCRIBED → UPLOADING → UPLOADED
+```
+
+**Special statuses:**
+- `SKIPPED` - Пропущено (не matched к template или user choice)
+- `FAILED` - Ошибка на одном из этапов
+- `EXPIRED` - Устарело (TTL exceeded)
+
+### Template-Driven Processing
+
+**Config Hierarchy (Deep Merge):**
+```
+User Default Config ← Template Config ← Recording Override Config
+```
+
+**Example:**
+```python
+# User default
+user_config = {"transcription": {"language": "ru"}}
+
+# Template config
+template_config = {
+    "transcription": {"enable_topics": True, "language": "en"},
+    "video": {"remove_silence": True}
+}
+
+# Recording override
+override_config = {"transcription": {"language": "ru"}}
+
+# Final (deep merge)
+final = {
+    "transcription": {
+        "language": "ru",           # override wins
+        "enable_topics": True       # from template
+    },
+    "video": {"remove_silence": True}  # from template
 }
 ```
 
-**Сохранение метаданных Zoom:**
-
-Теперь в `source_metadata` сохраняются все важные поля:
-- `share_url` - ссылка на просмотр в Zoom
-- `download_url` - ссылка для скачивания
-- `delete_time` - дата удаления (если в корзине)
-- `auto_delete_date` - дата автоматического удаления
-- `zoom_api_meeting` - полный ответ API
-- И многое другое
+**Documentation:** [TEMPLATES.md](TEMPLATES.md)
 
 ---
 
-**Общее количество endpoints:** 49
+## REST API
+
+### API Statistics
+
+**84 endpoints** across 15 routers:
+
+| Category | Count | Description |
+|----------|-------|-------------|
+| 🔐 **Authentication** | 6 | Register, Login, Refresh, Logout, Profile |
+| 👤 **User Management** | 6 | Profile, Config, Password, Account |
+| 👔 **Admin** | 3 | Stats, Users, Quotas |
+| 🎥 **Recordings** | 16 | CRUD, Pipeline, Batch operations |
+| 📋 **Templates** | 8 | CRUD, Matching, Re-match |
+| 🔑 **Credentials** | 6 | CRUD, Platform management |
+| 🔌 **OAuth** | 6 | YouTube, VK, Zoom flows |
+| 🤖 **Automation** | 6 | Jobs, Scheduling, Celery Beat |
+| 📊 **Tasks** | 4 | Async task monitoring |
+| 📥 **Input Sources** | 6 | Zoom sources, Sync |
+| 📤 **Output Presets** | 5 | Upload presets |
+| 🖼️ **Thumbnails** | 4 | Upload, Management |
+| 💚 **Health** | 1 | System status |
+| 🔧 **User Config** | 2 | User-specific settings |
+| **TOTAL** | **84** | **100% Production Ready** |
+
+### Pydantic Schemas
+
+**118+ models** with full type safety:
+
+- Request/Response models для всех endpoints
+- Nested typing (templates, presets, configs)
+- 6 Enums (`ProcessingStatus`, `YouTubePrivacy`, `VKPrivacyLevel`, etc.)
+- 100% OpenAPI documentation coverage
+
+**Documentation:** [API_GUIDE.md](API_GUIDE.md)
+
+### Key Endpoint Groups
+
+#### Recordings Pipeline
+
+```bash
+# Full pipeline
+POST /api/v1/recordings/{id}/full-pipeline
+
+# Individual stages
+POST /api/v1/recordings/{id}/download
+POST /api/v1/recordings/{id}/process
+POST /api/v1/recordings/{id}/transcribe
+POST /api/v1/recordings/{id}/upload/{platform}
+
+# Batch operations
+POST /api/v1/recordings/batch-process
+POST /api/v1/recordings/batch-upload
+```
+
+#### Template Management
+
+```bash
+# CRUD
+GET /api/v1/templates
+POST /api/v1/templates
+GET /api/v1/templates/{id}
+PATCH /api/v1/templates/{id}
+DELETE /api/v1/templates/{id}
+
+# Matching
+POST /api/v1/templates/{id}/preview-match
+POST /api/v1/templates/{id}/rematch
+POST /api/v1/templates/{id}/preview-rematch
+```
+
+#### OAuth Flows
+
+```bash
+# YouTube
+GET /api/v1/oauth/youtube/authorize
+GET /api/v1/oauth/youtube/callback
+
+# VK
+GET /api/v1/oauth/vk/authorize
+POST /api/v1/oauth/vk/token/submit  # Implicit Flow
+
+# Zoom
+GET /api/v1/oauth/zoom/authorize
+GET /api/v1/oauth/zoom/callback
+```
+
+### API Documentation
+
+**Interactive documentation:**
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+- OpenAPI JSON: http://localhost:8000/openapi.json
+
+---
+
+## Security
+
+### Multi-Tenant Isolation
+
+**3-Layer Security:**
+
+**1. Database Level:**
+- Все таблицы имеют `user_id` с индексами
+- Foreign Key constraints: `ON DELETE CASCADE`
+- Row-level filtering в queries
+
+**2. Repository Level:**
+- Автоматическая фильтрация по `user_id` во всех запросах
+- Validation в `find_by_id`, `find_all`, `update`, `delete`
+
+**3. Service Level:**
+- `ServiceContext` передает правильный `user_id`
+- Validation на существование ресурса и ownership
+
+**4. API Level:**
+- JWT token validation через `get_current_user` dependency
+- Автоматическая инъекция `user_id` в `ServiceContext`
+
+### Authentication & Authorization
+
+**JWT (JSON Web Tokens):**
+- Access token: 15 минут
+- Refresh token: 30 дней
+- Stored in database (`refresh_tokens` table)
+- Automatic rotation
+
+**OAuth 2.0:**
+- YouTube: Authorization Code Flow
+- VK: Implicit Flow (2026 policy)
+- Zoom: OAuth 2.0 / Server-to-Server
+- CSRF protection через Redis state tokens
+
+**RBAC (Role-Based Access Control):**
+```python
+class UserModel:
+    role: str  # "user", "admin"
+    
+    # Permissions
+    can_transcribe: bool
+    can_process_video: bool
+    can_upload: bool
+    can_create_templates: bool
+    can_delete_recordings: bool
+    can_manage_credentials: bool
+```
+
+**Documentation:** [OAUTH.md](OAUTH.md)
+
+### Credentials Encryption
+
+**Fernet (Symmetric Encryption):**
+
+```python
+from cryptography.fernet import Fernet
+
+# Encrypt
+encrypted_data = fernet.encrypt(json.dumps(credentials).encode())
+
+# Store in DB
+user_credentials.encrypted_data = encrypted_data.decode()
+
+# Decrypt
+decrypted = json.loads(fernet.decrypt(encrypted_data.encode()))
+```
+
+**Key Management:**
+- Encryption key stored in environment variable: `ENCRYPTION_KEY`
+- Key rotation support через `encryption_key_version`
+- Never log or expose credentials
+
+**Encrypted Platforms:**
+- Zoom (OAuth tokens, Server-to-Server credentials)
+- YouTube (OAuth tokens)
+- VK (access tokens)
+- Fireworks API keys
+- DeepSeek API keys
+
+### Rate Limiting
+
+**API Rate Limits:**
+- Per minute: 60 requests
+- Per hour: 1000 requests
+- 429 Too Many Requests response
+
+**Quota System:**
+- Monthly recordings limit (by plan)
+- Storage limit (by plan)
+- Concurrent tasks limit
+- Automation jobs limit
+
+### Security Best Practices
+
+**Environment Variables:**
+```bash
+# Never commit these
+API_JWT_SECRET_KEY=your-secret-key-change-in-production
+ENCRYPTION_KEY=your-fernet-key-here
+DATABASE_PASSWORD=secure-password
+```
+
+**CORS Configuration:**
+```python
+# Production: strict origins
+ALLOWED_ORIGINS = ["https://yourdomain.com"]
+
+# Development: localhost only
+ALLOWED_ORIGINS = ["http://localhost:3000"]
+```
+
+**HTTPS Only:**
+- All OAuth redirects must use HTTPS in production
+- Secure cookies (`SameSite=Lax`, `Secure=True`)
+
+---
+
+## Development Guide
+
+### Setup
+
+**Requirements:**
+- Python 3.11+
+- PostgreSQL 12+
+- Redis
+- FFmpeg
+
+**Installation:**
+```bash
+# 1. Clone repository
+git clone <repo-url>
+cd ZoomUploader
+
+# 2. Install dependencies (UV recommended)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync
+
+# 3. Setup environment
+cp .env.example .env
+# Edit .env with your credentials
+
+# 4. Start infrastructure
+make docker-up
+
+# 5. Initialize database
+make init-db
+
+# 6. Run API
+make api
+```
+
+### Project Commands
+
+**Development:**
+```bash
+make api          # Start FastAPI server
+make worker       # Start Celery worker
+make beat         # Start Celery beat (scheduling)
+make flower       # Start Flower (monitoring)
+```
+
+**Database:**
+```bash
+make init-db      # Initialize database + migrations
+make migrate      # Apply migrations
+make migrate-down # Rollback migration
+make db-version   # Show current version
+make db-history   # Show migration history
+make recreate-db  # Drop + recreate (⚠️ data loss)
+```
+
+**Code Quality:**
+```bash
+make lint         # Run ruff linter
+make format       # Format code with ruff
+make type-check   # Run type checking (planned)
+```
+
+### Running Tests
+
+**Unit Tests:**
+```bash
+pytest tests/unit/
+```
+
+**Integration Tests:**
+```bash
+pytest tests/integration/
+```
+
+**E2E Tests:**
+```bash
+pytest tests/e2e/
+```
+
+### Adding New Features
+
+**1. Create migration:**
+```bash
+alembic revision -m "add_new_feature"
+# Edit migration file
+alembic upgrade head
+```
+
+**2. Add models:**
+```python
+# database/models.py
+class NewModel(Base):
+    __tablename__ = "new_table"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"))  # Multi-tenant
+```
+
+**3. Add repository:**
+```python
+# api/repositories/new_repository.py
+class NewRepository:
+    async def find_all(self, user_id: int) -> list[NewModel]:
+        # Auto-filter by user_id
+        pass
+```
+
+**4. Add service:**
+```python
+# api/services/new_service.py
+class NewService:
+    def __init__(self, repo: NewRepository):
+        self.repo = repo
+```
+
+**5. Add schemas:**
+```python
+# api/schemas/new/schemas.py
+class NewCreate(BaseModel):
+    name: str = Field(..., min_length=1)
+    
+class NewResponse(BaseModel):
+    id: int
+    name: str
+```
+
+**6. Add router:**
+```python
+# api/routers/new.py
+@router.get("/new")
+async def list_new(ctx: ServiceContext = Depends(get_service_context)):
+    service = NewService(NewRepository(ctx.session))
+    return await service.list(ctx.user_id)
+```
+
+### Environment Variables
+
+**Required:**
+```bash
+# Database
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_NAME=zoom_manager
+DATABASE_USERNAME=postgres
+DATABASE_PASSWORD=postgres
+
+# API
+API_JWT_SECRET_KEY=your-secret-key
+ENCRYPTION_KEY=your-fernet-key
+
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+# Celery
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
+```
+
+**Optional:**
+```bash
+# AI Services
+FIREWORKS_API_KEY=your-key
+DEEPSEEK_API_KEY=your-key
+
+# OAuth
+# See config/oauth_*.json files
+```
+
+### Debugging
+
+**Enable debug logging:**
+```python
+# logger.py
+LOG_LEVEL = "DEBUG"
+```
+
+**View logs:**
+```bash
+# Docker
+docker-compose logs -f api
+docker-compose logs -f worker
+
+# Local
+tail -f logs/api.log
+tail -f logs/worker.log
+```
+
+**Redis inspection:**
+```bash
+redis-cli
+> KEYS *
+> GET oauth:state:abc-123
+```
+
+**Database inspection:**
+```bash
+psql -U postgres -d zoom_manager
+> \dt  # List tables
+> SELECT * FROM recordings WHERE user_id=1;
+```
+
+---
+
+## Performance
+
+### Optimization Strategies
+
+**1. Lazy Loading:**
+- `ConfigHelper` создается только при первом обращении
+- SQLAlchemy relationships с `lazy="selectin"`
+
+**2. Async Operations:**
+- Все I/O операции асинхронные (FastAPI, SQLAlchemy)
+- Concurrent transcription/upload (с ограничением)
+
+**3. Database Indexing:**
+- Все foreign keys имеют индексы
+- Composite indexes для часто используемых queries
+
+**4. Caching:**
+- Redis для OAuth state tokens
+- Token caching в memory (planned)
+
+**5. Connection Pooling:**
+- SQLAlchemy async connection pool
+- Redis connection pool
+
+### Monitoring
+
+**Metrics:**
+- API response time (via middleware)
+- Database query performance (slow query log)
+- Celery task duration (via Flower)
+- Quota usage tracking
+
+**Tools:**
+- Flower: http://localhost:5555 (Celery monitoring)
+- PostgreSQL slow query log
+- Redis monitoring via redis-cli
+
+---
+
+## Related Documentation
+
+**Core Guides:**
+- [INDEX.md](INDEX.md) - Documentation index
+- [README.md](../README.md) - Project overview
+- [DEPLOYMENT.md](DEPLOYMENT.md) - Production deployment
+- [CHANGELOG.md](CHANGELOG.md) - Version history
+
+**Features:**
+- [TEMPLATES.md](TEMPLATES.md) - Template-driven automation
+- [OAUTH.md](OAUTH.md) - OAuth integration
+- [VK_INTEGRATION.md](VK_INTEGRATION.md) - VK Implicit Flow
+- [BULK_OPERATIONS_GUIDE.md](BULK_OPERATIONS_GUIDE.md) - Batch processing
+
+**Architecture:**
+- [DATABASE_DESIGN.md](DATABASE_DESIGN.md) - Database schema
+- [ADR_OVERVIEW.md](ADR_OVERVIEW.md) - Architecture decisions
+- [ADR_FEATURES.md](ADR_FEATURES.md) - Feature ADRs
+- [API_GUIDE.md](API_GUIDE.md) - API schemas & best practices
+
+---
+
+## Quick Reference
+
+**API Endpoints:** 84 (production-ready)  
+**Database Tables:** 12 (multi-tenant)  
+**Migrations:** 19 (auto-init)  
+**Pydantic Models:** 118+ (fully typed)  
+**Processing Modules:** 7 (video, transcription, upload)  
+**OAuth Platforms:** 3 (YouTube, VK, Zoom)  
+**AI Models:** 2 (Whisper, DeepSeek)
+
+**Technology Stack:**  
+Python 3.11+ • FastAPI • SQLAlchemy 2.0 • PostgreSQL 12+ • Redis • Celery • FFmpeg
+
+**Documentation:** 14 comprehensive guides
+
+---
+
+**Version:** v0.9.3 (January 2026)  
+**Status:** Development  
+**License:** Business Source License 1.1

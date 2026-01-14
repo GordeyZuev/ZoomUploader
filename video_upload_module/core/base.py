@@ -1,3 +1,5 @@
+"""Base uploader classes and data structures."""
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
@@ -6,7 +8,7 @@ from typing import Any
 
 @dataclass
 class UploadResult:
-    """Результат загрузки видео"""
+    """Video upload result."""
 
     video_id: str
     video_url: str
@@ -23,7 +25,7 @@ class UploadResult:
 
 
 class BaseUploader(ABC):
-    """Базовый класс загрузчика"""
+    """Base uploader class for all platforms."""
 
     def __init__(self, config):
         self.config = config
@@ -31,11 +33,11 @@ class BaseUploader(ABC):
 
     @abstractmethod
     async def authenticate(self) -> bool:
-        """Аутентификация на платформе"""
+        """Authenticate with the platform."""
         pass
 
     def is_authenticated(self) -> bool:
-        """Проверка статуса аутентификации"""
+        """Check authentication status."""
         return self._authenticated
 
     @abstractmethod
@@ -48,30 +50,29 @@ class BaseUploader(ABC):
         task_id=None,
         **kwargs,
     ) -> UploadResult | None:
-        """Загрузка видео"""
+        """Upload video to platform."""
         pass
 
     @abstractmethod
     async def get_video_info(self, video_id: str) -> dict[str, Any] | None:
-        """Получение информации о видео"""
+        """Get video information."""
         pass
 
     @abstractmethod
     async def delete_video(self, video_id: str) -> bool:
-        """Удаление видео"""
+        """Delete video from platform."""
         pass
 
     def validate_file(self, file_path: str) -> tuple[bool, str]:
-        """Валидация файла перед загрузкой"""
+        """Validate file before upload."""
         import os
 
         if not os.path.exists(file_path):
-            return False, "Файл не существует"
+            return False, "File does not exist"
 
-        # Базовая валидация - размер файла
         file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
-        if file_size_mb > 5000:  # 5GB лимит по умолчанию
-            return False, f"Файл слишком большой: {file_size_mb:.1f}MB"
+        if file_size_mb > 5000:
+            return False, f"File too large: {file_size_mb:.1f}MB"
 
         return True, "OK"
 
@@ -83,7 +84,7 @@ class BaseUploader(ABC):
         platform: str,
         metadata: dict[str, Any] | None = None,
     ) -> UploadResult:
-        """Создание результата загрузки"""
+        """Create upload result."""
         return UploadResult(
             video_id=video_id,
             video_url=video_url,
@@ -101,7 +102,7 @@ class BaseUploader(ABC):
         name: str | None = None,
     ) -> bool:
         """
-        Загрузка субтитров (по умолчанию не реализована).
-        Переопределяется платформенными загрузчиками, которые это поддерживают.
+        Upload captions/subtitles (not implemented by default).
+        Override in platform-specific uploaders that support this feature.
         """
         return False

@@ -1,4 +1,4 @@
-"""API endpoints for automation jobs management."""
+"""Automation job management endpoints"""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 

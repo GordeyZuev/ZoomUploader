@@ -1,4 +1,4 @@
-"""Репозиторий для работы с записями."""
+"""Recording repository"""
 
 from typing import Any
 
@@ -7,7 +7,7 @@ from models import MeetingRecording, ProcessingStatus
 
 
 class RecordingRepository:
-    """Репозиторий для работы с записями."""
+    """Recording repository"""
 
     def __init__(self, db: DatabaseManager):
         self.db = db

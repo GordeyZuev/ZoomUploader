@@ -1,4 +1,4 @@
-"""Типизированные схемы для metadata_config (по реальной структуре)."""
+"""Typed schemas for metadata_config"""
 
 from pydantic import BaseModel, Field, field_validator
 

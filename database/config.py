@@ -1,4 +1,4 @@
-"""Конфигурация подключения к PostgreSQL с валидацией через Pydantic"""
+"""PostgreSQL connection configuration"""
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -7,11 +7,7 @@ from config.settings import settings
 
 
 class DatabaseConfig(BaseSettings):
-    """
-    Конфигурация подключения к PostgreSQL.
-
-    Использует настройки из config.settings, но может быть переопределена.
-    """
+    """PostgreSQL connection configuration"""
 
     model_config = SettingsConfigDict(
         env_file=None,

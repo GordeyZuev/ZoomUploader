@@ -9,6 +9,16 @@ wheels/
 *.egg
 *.bak
 
+# Testing and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
 # Virtual environments
 .venv
 venv/
@@ -70,11 +80,20 @@ logs/
 *.temp
 temp/
 tmp/
+temp_*.py
+test_*.py.bak
+
+# Test archives and data
+*.zip
+*.tar.gz
+*.tar
 
 # Celery and Redis
 celerybeat-schedule
+celerybeat-schedule-shm
+celerybeat-schedule-wal
 celerybeat.pid
-dump.rdb
+*.rdb
 
 # UV lock file (optional - you might want to keep it)
 # uv.lock

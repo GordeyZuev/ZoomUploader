@@ -1,4 +1,4 @@
-"""Модели базы данных для аутентификации и multi-tenancy."""
+"""Database models for authentication and multi-tenancy"""
 
 from datetime import datetime
 
@@ -20,7 +20,7 @@ from database.models import Base
 
 
 class UserModel(Base):
-    """Модель пользователя для multi-tenancy."""
+    """User model for multi-tenancy"""
 
     __tablename__ = "users"
 

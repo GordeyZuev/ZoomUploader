@@ -1,4 +1,4 @@
-"""Helpers для удобной работы с конфигурациями и credentials."""
+"""Configuration and credentials helpers"""
 
 from api.helpers.config_helper import ConfigHelper
 

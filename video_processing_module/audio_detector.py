@@ -7,20 +7,19 @@ logger = get_logger()
 
 
 class AudioDetector:
-    """Детектор звука для определения границ контента."""
+    """Audio detector for content boundary detection""" 
 
     def __init__(self, silence_threshold: float = -30.0, min_silence_duration: float = 2.0):
         self.silence_threshold = silence_threshold
         self.min_silence_duration = min_silence_duration
 
     async def detect_audio_boundaries(self, video_path: str) -> tuple[float | None, float | None]:
-        """Определение границ звука в видео."""
+        """Determine audio boundaries in video."""
         try:
-            logger.info(f"🔍 Анализ звука в видео: {video_path}")
+            logger.info(f"🔍 Analyzing audio in video: {video_path}")
 
-            # Сначала проверяем, что файл существует и не поврежден
             if not await self._validate_video_file(video_path):
-                logger.error(f"Файл видео поврежден или недоступен: {video_path}")
+                logger.error(f"Video file corrupted or inaccessible: {video_path}")
                 return None, None
 
             cmd = [
@@ -42,36 +41,36 @@ class AudioDetector:
 
             if process.returncode != 0:
                 error_msg = stderr.decode()
-                logger.error(f"Ошибка детекции звука: {error_msg}")
+                logger.error(f"Error detecting audio: {error_msg}")
 
-                # Проверяем специфичные ошибки FFmpeg
+                # Check specific FFmpeg errors
                 if "Invalid data found when processing input" in error_msg:
-                    logger.error("Файл поврежден или не является корректным видео")
+                    logger.error("File corrupted or not a valid video")
                 elif "moov atom not found" in error_msg:
-                    logger.error("Файл не содержит необходимые метаданные видео")
+                    logger.error("File does not contain necessary video metadata")
                 elif "No such file or directory" in error_msg:
-                    logger.error("Файл не найден")
+                    logger.error("File not found")
 
                 return None, None
 
             silence_periods = self._parse_silence_detection(stderr.decode())
 
             if not silence_periods:
-                logger.info("Звук обнаружен на протяжении всего видео")
-                return 0.0, None  # Весь файл содержит звук
+                logger.info("Sound detected throughout the video")
+                return 0.0, None  # Entire file contains sound
 
             first_sound = self._find_first_sound(silence_periods)
             last_sound = await self._find_last_sound(silence_periods, video_path)
 
-            logger.info(f"🎵 Границы звука: {first_sound:.1f}s - {last_sound:.1f}s")
+            logger.info(f"🎵 Audio boundaries: {first_sound:.1f}s - {last_sound:.1f}s")
             return first_sound, last_sound
 
         except Exception as e:
-            logger.error(f"Ошибка детекции звука: {e}")
+            logger.error(f"Error detecting audio: {e}")
             return None, None
 
     def _parse_silence_detection(self, ffmpeg_output: str) -> list[tuple[float, float]]:
-        """Парсинг вывода ffmpeg для извлечения периодов тишины."""
+        """Parsing ffmpeg output to extract silence periods."""
         silence_periods = []
         lines = ffmpeg_output.split("\n")
 
@@ -91,7 +90,7 @@ class AudioDetector:
         return silence_periods
 
     def _find_first_sound(self, silence_periods: list[tuple[float, float]]) -> float:
-        """Нахождение времени первого звука."""
+        """Finding the time of the first sound."""
         if not silence_periods:
             return 0.0
 
@@ -101,9 +100,9 @@ class AudioDetector:
         return silence_periods[0][1]
 
     async def _find_last_sound(self, silence_periods: list[tuple[float, float]], video_path: str) -> float | None:
-        """Нахождение времени последнего звука."""
+        """Finding the time of the last sound."""
         if not silence_periods:
-            return None  # Весь файл содержит звук
+            return None  # Entire file contains sound
 
         duration = await self._get_video_duration(video_path)
         if duration is None:
@@ -115,7 +114,7 @@ class AudioDetector:
         return silence_periods[-1][0]
 
     async def _get_video_duration(self, video_path: str) -> float | None:
-        """Получение длительности видео."""
+        """Getting video duration."""
         try:
             cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", video_path]
 
@@ -130,42 +129,35 @@ class AudioDetector:
                 return float(data["format"]["duration"])
 
         except Exception as e:
-            logger.error(f"Ошибка получения длительности видео: {e}")
+            logger.error(f"Error getting video duration: {e}")
 
         return None
 
     async def _validate_video_file(self, video_path: str) -> bool:
         """
-        Валидация видео файла перед обработкой.
-
-        Args:
-            video_path: Путь к видео файлу
-
-        Returns:
-            True если файл валиден, False иначе
+        Validate video file before processing.
         """
         try:
             import os
 
-            # Проверяем существование файла
+            # Check if file exists
             if not os.path.exists(video_path):
-                logger.error(f"Файл не существует: {video_path}")
+                logger.error(f"File does not exist: {video_path}")
                 return False
 
-            # Проверяем размер файла
+            # Check file size
             file_size = os.path.getsize(video_path)
-            if file_size < 1024:  # Меньше 1 КБ
-                logger.error(f"Файл слишком мал: {file_size} байт")
+            if file_size < 1024:  # Less than 1 KB
+                logger.error(f"File too small: {file_size} bytes")
                 return False
 
-            # Проверяем, не является ли файл HTML
+            # Check if file is HTML
             with open(video_path, "rb") as f:
                 first_chunk = f.read(1024)
                 if b"<html" in first_chunk.lower() or b"<!doctype html" in first_chunk.lower():
-                    logger.error("Файл является HTML страницей, а не видео")
+                    logger.error("File is an HTML page, not a video")
                     return False
 
-            # Используем ffprobe для проверки, что это действительно видео файл
             cmd = ["ffprobe", "-v", "error", "-show_entries", "format=format_name", "-of", "json", video_path]
 
             process = await asyncio.create_subprocess_exec(
@@ -175,22 +167,22 @@ class AudioDetector:
             stdout, stderr = await process.communicate()
 
             if process.returncode != 0:
-                logger.error(f"ffprobe не смог обработать файл: {stderr.decode()}")
+                logger.error(f"ffprobe could not process file: {stderr.decode()}")
                 return False
 
-            # Проверяем, что ffprobe распознал формат
+            # Check if ffprobe recognized the format
             try:
                 data = json.loads(stdout.decode())
                 if "format" not in data or "format_name" not in data["format"]:
-                    logger.error("Файл не распознан как видео")
+                    logger.error("File not recognized as video")
                     return False
-                logger.info(f"Видео формат: {data['format']['format_name']}")
+                logger.info(f"Video format: {data['format']['format_name']}")
             except json.JSONDecodeError:
-                logger.error("Не удалось распарсить вывод ffprobe")
+                logger.error("Could not parse ffprobe output")
                 return False
 
             return True
 
         except Exception as e:
-            logger.error(f"Ошибка при валидации видео файла {video_path}: {e}")
+            logger.error(f"Error validating video file {video_path}: {e}")
             return False

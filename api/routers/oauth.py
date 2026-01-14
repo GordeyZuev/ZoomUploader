@@ -1,4 +1,4 @@
-"""OAuth endpoints for YouTube and VK authorization."""
+"""OAuth endpoints for YouTube and VK"""
 
 from urllib.parse import urlencode
 

@@ -1,4 +1,4 @@
-"""Конфигурация FastAPI приложения."""
+"""FastAPI application configuration"""
 
 from typing import Literal
 
@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class APISettings(BaseSettings):
-    """Настройки API."""
+    """API settings"""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -19,7 +19,7 @@ class APISettings(BaseSettings):
 
     # API
     api_title: str = Field(default="LEAP API - Lecture Enhancement & Automation Platform", description="Название API")
-    api_version: str = Field(default="0.9.1", description="Версия API")
+    api_version: str = Field(default="0.9.2.2", description="Версия API")
     api_description: str = Field(
         default="AI-powered platform for intelligent educational video content processing", description="Описание API"
     )

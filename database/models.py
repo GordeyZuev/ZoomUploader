@@ -33,7 +33,7 @@ class Base(DeclarativeBase):
 
 
 class RecordingModel(Base):
-    """Универсальная запись."""
+    """Universal recording model"""
 
     __tablename__ = "recordings"
 

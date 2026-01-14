@@ -1,4 +1,4 @@
-"""Утилиты для безопасности: хеширование паролей, JWT токены."""
+"""Security utilities: password hashing, JWT tokens"""
 
 from datetime import datetime, timedelta
 from typing import Any
@@ -12,7 +12,7 @@ settings = get_settings()
 
 
 class PasswordHelper:
-    """Помощник для работы с паролями."""
+    """Password helper"""
 
     @staticmethod
     def hash_password(password: str) -> str:

@@ -1,4 +1,4 @@
-"""Схемы для аутентификации."""
+"""Authentication schemas"""
 
 from .credential import (
     UserCredentialBase,

@@ -1,4 +1,4 @@
-"""Общие схемы."""
+"""Common schemas"""
 
 from .config import BASE_MODEL_CONFIG, ORM_MODEL_CONFIG
 from .validators import (

@@ -1,35 +1,35 @@
-"""Схемы фильтров для recordings."""
+"""Recording filter schemas"""
 
 from pydantic import BaseModel, Field
 
 
 class RecordingFilters(BaseModel):
     """
-    Фильтры для bulk операций над recordings.
+    Filters for bulk operations over recordings.
 
-    Поддерживает фильтрацию по различным критериям для автоматической выборки записей.
+    Supports filtering by various criteria for automatic selection of records.
     """
 
-    # Связи
-    template_id: int | None = Field(None, description="Фильтр по ID шаблона")
-    source_id: int | None = Field(None, alias="input_source_id", description="Фильтр по ID источника")
+    # Connections
+    template_id: int | None = Field(None, description="Filter by template ID")
+    source_id: int | None = Field(None, description="Filter by source ID")
 
-    # Статусы (множественный выбор)
-    status: list[str] | None = Field(None, description="Фильтр по статусам (список)")
+    # Statuses (multiple selection)
+    status: list[str] | None = Field(None, description="Filter by statuses (list)")
 
-    # Флаги
-    is_mapped: bool | None = Field(None, description="Фильтр по наличию mapping к template")
-    failed: bool | None = Field(None, description="Фильтр по наличию ошибки")
-    exclude_blank: bool = Field(True, description="Исключить blank records (слишком короткие/маленькие)")
+    # Flags
+    is_mapped: bool | None = Field(None, description="Filter by presence of mapping to template")
+    failed: bool | None = Field(None, description="Filter by presence of error")
+    exclude_blank: bool = Field(True, description="Exclude blank records (too short/small)")
 
-    # Даты (для обратной совместимости)
-    from_date: str | None = Field(None, description="Фильтр по дате начала (ISO 8601)")
-    to_date: str | None = Field(None, description="Фильтр по дате окончания (ISO 8601)")
-    source_type: str | None = Field(None, description="Фильтр по типу источника")
+    # Dates (for backward compatibility)
+    from_date: str | None = Field(None, description="Filter by start date (ISO 8601)")
+    to_date: str | None = Field(None, description="Filter by end date (ISO 8601)")
+    source_type: str | None = Field(None, description="Filter by source type")
 
-    # Сортировка
-    order_by: str = Field("created_at", description="Поле для сортировки (created_at, updated_at, id)")
-    order: str = Field("asc", description="Направление сортировки (asc, desc)")
+    # Sorting
+    order_by: str = Field("created_at", description="Field to sort by (created_at, updated_at, id)")
+    order: str = Field("asc", description="Sorting direction (asc, desc)")
 
     class Config:
         json_schema_extra = {

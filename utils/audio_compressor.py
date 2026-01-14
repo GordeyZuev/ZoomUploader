@@ -1,4 +1,4 @@
-"""Сжатие и обработка аудио файлов"""
+"""Audio compression and processing"""
 
 import asyncio
 import os
@@ -10,7 +10,7 @@ logger = get_logger()
 
 
 class AudioCompressor:
-    """Компрессор аудио для сжатия и разбиения файлов"""
+    """Audio compression and file splitting"""
 
     def __init__(
         self,

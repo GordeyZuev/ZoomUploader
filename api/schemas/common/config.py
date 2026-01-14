@@ -1,4 +1,4 @@
-"""Базовые конфигурации для Pydantic моделей."""
+"""Base Pydantic model configurations"""
 
 from pydantic import ConfigDict
 

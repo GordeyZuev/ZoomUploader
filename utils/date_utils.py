@@ -1,4 +1,4 @@
-"""Утилиты для работы с датами."""
+"""Date utilities"""
 
 from datetime import datetime, timedelta
 

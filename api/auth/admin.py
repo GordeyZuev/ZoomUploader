@@ -1,4 +1,4 @@
-"""Dependencies для админских эндпоинтов."""
+"""Admin endpoint dependencies"""
 
 from fastapi import Depends, HTTPException, status
 

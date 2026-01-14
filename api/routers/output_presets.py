@@ -1,4 +1,4 @@
-"""API endpoints для работы с пресетами выгрузки."""
+"""Output preset endpoints"""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession

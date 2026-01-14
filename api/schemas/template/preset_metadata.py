@@ -1,4 +1,4 @@
-"""Типизированные схемы для preset_metadata."""
+"""Typed schemas for preset_metadata"""
 
 from enum import Enum
 

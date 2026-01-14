@@ -1,4 +1,4 @@
-"""Synchronization between automation jobs and Celery Beat scheduler."""
+"""Automation jobs and Celery Beat synchronization"""
 
 import json
 import logging

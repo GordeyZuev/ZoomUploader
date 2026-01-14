@@ -1,4 +1,4 @@
-"""Endpoints для аутентификации и управления пользователями."""
+"""Authentication and user management endpoints"""
 
 import json
 from datetime import datetime, timedelta

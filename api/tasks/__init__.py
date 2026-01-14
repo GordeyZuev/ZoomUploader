@@ -1,4 +1,4 @@
-"""Асинхронные задачи Celery."""
+"""Celery async tasks"""
 
 # Import all tasks so Celery can discover them
 from .automation import run_automation_job_task  # noqa: F401

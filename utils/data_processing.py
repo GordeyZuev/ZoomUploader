@@ -81,21 +81,17 @@ def process_meetings_data(response_data: dict[str, Any], filter_video_only: bool
             meeting_data["part_index"] = idx
             meeting_data["video_file_size"] = part.get("file_size")
 
-            # Сохраняем полный ответ от Zoom API в source_metadata
-            # Это позволяет иметь доступ ко всем метаданным встречи (включая все recording_files)
-            # даже если мы выбрали только лучший MP4 файл для обработки
+            # Store full Zoom API response for metadata access
             if "source_metadata" not in meeting_data:
                 meeting_data["source_metadata"] = {}
 
-            # Сохраняем полный ответ от Zoom API (весь объект meeting со всеми recording_files)
             meeting_data["source_metadata"]["zoom_api_response"] = meeting
 
-            # Сохраняем meeting_id из ответа API
             if meeting.get("uuid"):
                 meeting_data["source_metadata"]["meeting_uuid"] = meeting.get("uuid")
             if meeting.get("meeting_id"):
                 meeting_data["source_metadata"]["meeting_id"] = meeting.get("meeting_id")
-                logger.debug(f"Сохранен meeting_id из API: meeting_id={meeting.get('meeting_id')}")
+                logger.debug(f"Saved meeting_id from API: meeting_id={meeting.get('meeting_id')}")
             elif meeting.get("id"):
                 meeting_data["source_metadata"]["meeting_id"] = meeting.get("id")
                 logger.debug(f"Сохранен id как meeting_id: id={meeting.get('id')}")
@@ -152,7 +148,6 @@ async def get_recordings_by_date_range(
 
         recordings = process_meetings_data(response, filter_video_only)
 
-        # Получаем детальную информацию с download_access_token для каждой записи
         enhanced_recordings = []
         for recording in recordings:
             try:
@@ -161,13 +156,11 @@ async def get_recordings_by_date_range(
                 )
                 detailed_data = await api.get_recording_details(recording.meeting_id, include_download_token=True)
 
-                # Обновляем запись с детальной информацией
                 recording.password = detailed_data.get("password")
                 recording.recording_play_passcode = detailed_data.get("recording_play_passcode")
                 recording.download_access_token = detailed_data.get("download_access_token")
 
-                # Сохраняем полный детальный ответ от Zoom API в source_metadata
-                # Это включает download_access_token, password и все остальные поля из get_recording_details
+                # Store detailed Zoom API response in source_metadata
                 if not hasattr(recording, "source_metadata") or not isinstance(recording.source_metadata, dict):
                     recording.source_metadata = {}
                 recording.source_metadata["zoom_api_details"] = detailed_data
@@ -175,16 +168,15 @@ async def get_recordings_by_date_range(
                 enhanced_recordings.append(recording)
 
             except Exception as e:
-                logger.warning(f"Не удалось получить детальную информацию для записи {recording.meeting_id}: {e}")
-                # Добавляем запись без детальной информации
+                logger.warning(f"Failed to get details for recording {recording.meeting_id}: {e}")
                 enhanced_recordings.append(recording)
 
-        logger.info(f"Обработано записей: {len(enhanced_recordings)}")
+        logger.info(f"Processed recordings: {len(enhanced_recordings)}")
 
         return enhanced_recordings
 
     except Exception as e:
-        logger.error(f"Ошибка получения записей: {e}")
+        logger.error(f"Error getting recordings: {e}")
         raise
 
 
@@ -209,7 +201,6 @@ def filter_available_recordings(
     long_enough = filter_recordings_by_duration(with_video, min_duration_minutes)
     large_enough = filter_recordings_by_size(long_enough, min_size_mb)
 
-    # Подсчитываем количество видимых частей по meeting_id, чтобы решать нужен ли префикс [n]
     counts: dict[str, int] = {}
     for r in large_enough:
         meeting_id = r.meeting_id or (r.source_metadata.get("meeting_id") if hasattr(r, "source_metadata") else None)
@@ -222,11 +213,9 @@ def filter_available_recordings(
         try:
             total = counts.get(key, 1)
             r.total_visible_parts = total
-            # Сохраняем в метаданные, чтобы префикс можно было читать из БД
             if hasattr(r, "source_metadata") and isinstance(r.source_metadata, dict):
                 r.source_metadata["total_visible_parts"] = total
         except Exception:
-            # В случае если объект не позволяет устанавливать атрибуты
             pass
 
     return large_enough

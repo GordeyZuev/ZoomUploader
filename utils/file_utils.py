@@ -10,15 +10,9 @@ from .formatting import format_duration, format_file_size
 
 def sanitize_filename(filename: str) -> str:
     """
-    Создание безопасного имени файла.
+    Create a safe filename.
 
-    Удаляет недопустимые символы и пробелы, заменяя их на подчеркивания.
-
-    Args:
-        filename: Исходное имя файла
-
-    Returns:
-        Безопасное имя файла
+    Removes invalid characters and spaces, replacing them with underscores.
     """
     filename = re.sub(r'[<>:"/\\|?*]', "_", filename)
     filename = re.sub(r"\s+", "_", filename)
@@ -29,7 +23,7 @@ def sanitize_filename(filename: str) -> str:
 
 
 def save_recordings_to_json(recordings: list[MeetingRecording], filename: str = "meetings.json") -> None:
-    """Сохранение записей в JSON файл."""
+    """Save recordings to a JSON file."""
     data = []
     for recording in recordings:
         record_data = {
@@ -48,7 +42,7 @@ def save_recordings_to_json(recordings: list[MeetingRecording], filename: str = 
 
 
 def save_recordings_to_csv(recordings: list[MeetingRecording], filename: str = "meetings.csv") -> None:
-    """Сохранение записей в CSV файл."""
+    """Save recordings to a CSV file."""
     if not recordings:
         return
 
@@ -84,21 +78,21 @@ def save_recordings_to_csv(recordings: list[MeetingRecording], filename: str = "
 
 
 def load_recordings_from_json(filename: str) -> list[dict]:
-    """Загрузка записей из JSON файла."""
+    """Load recordings from a JSON file."""
     with open(filename, encoding="utf-8") as f:
         return json.load(f)
 
 
 def export_recordings_summary(recordings: list[MeetingRecording], filename: str = "summary.txt") -> None:
-    """Экспорт краткого отчета о записях."""
+    """Export a short report about recordings."""
     stats = get_recordings_statistics(recordings)
 
     with open(filename, "w", encoding="utf-8") as f:
-        f.write("=== ОТЧЕТ ПО ЗАПИСЯМ ZOOM ===\n\n")
+        f.write("=== ZOOM RECORDINGS SUMMARY ===\n\n")
         f.write(f"Всего записей: {stats['total_recordings']}\n")
-        f.write(f"Общая длительность: {stats['total_duration_formatted']}\n")
-        f.write(f"Общий размер видео: {stats['total_video_size_formatted']}\n")
-        f.write(f"Общий размер чатов: {stats['total_chat_size_formatted']}\n")
+        f.write(f"Total duration: {stats['total_duration_formatted']}\n")
+        f.write(f"Total video size: {stats['total_video_size_formatted']}\n")
+        f.write(f"Total chat size: {stats['total_chat_size_formatted']}\n")
         f.write(f"Количество тем: {stats['topics_count']}\n\n")
 
         f.write("Статистика по статусам:\n")

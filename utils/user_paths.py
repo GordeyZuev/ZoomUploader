@@ -1,54 +1,51 @@
-"""Утилиты для работы с путями файлов пользователей."""
+"""User file path utilities"""
 
 import os
 from pathlib import Path
 
 
 class UserPathManager:
-    """Менеджер путей для изоляции файлов по пользователям."""
+    """Path manager for per-user file isolation"""
 
     def __init__(self, base_media_dir: str = "media"):
         """
-        Инициализация менеджера путей.
-
-        Args:
-            base_media_dir: Базовая директория для медиа файлов
+        Initialize the path manager.
         """
         self.base_media_dir = Path(base_media_dir)
 
     def get_user_root(self, user_id: int) -> Path:
-        """Получить корневую директорию пользователя."""
+        """Get the root directory for the user."""
         return self.base_media_dir / f"user_{user_id}"
 
     def get_video_dir(self, user_id: int) -> Path:
-        """Получить директорию для видео."""
+        """Get the directory for video."""
         return self.get_user_root(user_id) / "video"
 
     def get_unprocessed_video_dir(self, user_id: int) -> Path:
-        """Получить директорию для необработанных видео."""
+        """Get the directory for unprocessed video."""
         return self.get_video_dir(user_id) / "unprocessed"
 
     def get_processed_video_dir(self, user_id: int) -> Path:
-        """Получить директорию для обработанных видео."""
+        """Get the directory for processed video."""
         return self.get_video_dir(user_id) / "processed"
 
     def get_temp_processing_dir(self, user_id: int) -> Path:
-        """Получить временную директорию для обработки."""
+        """Get the temporary directory for processing."""
         return self.get_video_dir(user_id) / "temp_processing"
 
     def get_audio_dir(self, user_id: int) -> Path:
-        """Получить директорию для аудио."""
+        """Get the directory for audio."""
         return self.get_user_root(user_id) / "processed_audio"
 
     def get_transcription_dir(self, user_id: int, recording_id: int | None = None) -> Path:
-        """Получить директорию для транскрипций."""
+        """Get the directory for transcriptions."""
         trans_dir = self.get_user_root(user_id) / "transcriptions"
         if recording_id:
             trans_dir = trans_dir / str(recording_id)
         return trans_dir
 
     def ensure_user_directories(self, user_id: int) -> None:
-        """Создать все необходимые директории для пользователя."""
+        """Create all necessary directories for the user."""
         directories = [
             self.get_user_root(user_id),
             self.get_unprocessed_video_dir(user_id),
@@ -68,7 +65,7 @@ class UserPathManager:
         filename: str,
         processed: bool = False,
     ) -> Path:
-        """Получить путь для видео файла записи."""
+        """Get the path for the video file of the recording."""
         if processed:
             return self.get_processed_video_dir(user_id) / f"{recording_id}_{filename}"
         return self.get_unprocessed_video_dir(user_id) / f"{recording_id}_{filename}"
@@ -79,33 +76,26 @@ class UserPathManager:
         recording_id: int,
         filename: str,
     ) -> Path:
-        """Получить путь для аудио файла записи."""
+        """Get the path for the audio file of the recording."""
         return self.get_audio_dir(user_id) / f"{recording_id}_{filename}"
 
     def get_relative_path(self, absolute_path: Path) -> str:
-        """Получить относительный путь от базовой директории."""
+        """Get the relative path from the base directory."""
         try:
             return str(absolute_path.relative_to(self.base_media_dir))
         except ValueError:
-            # Если путь не относительный к base_media_dir, возвращаем как есть
+            # If the path is not relative to base_media_dir, return as is
             return str(absolute_path)
 
     def check_user_access(self, user_id: int, file_path: str | Path) -> bool:
         """
-        Проверить имеет ли пользователь доступ к файлу.
-
-        Args:
-            user_id: ID пользователя
-            file_path: Путь к файлу
-
-        Returns:
-            True если пользователь имеет доступ, False иначе
+        Check if the user has access to the file.
         """
         file_path = Path(file_path)
         user_root = self.get_user_root(user_id)
 
         try:
-            # Проверяем что файл находится внутри директории пользователя
+            # Check if the file is inside the user's directory
             file_path.resolve().relative_to(user_root.resolve())
             return True
         except ValueError:
@@ -113,13 +103,7 @@ class UserPathManager:
 
     def get_user_storage_size(self, user_id: int) -> int:
         """
-        Получить размер хранилища пользователя в байтах.
-
-        Args:
-            user_id: ID пользователя
-
-        Returns:
-            Размер в байтах
+        Get the size of the user's storage in bytes.
         """
         user_root = self.get_user_root(user_id)
 
@@ -139,26 +123,19 @@ class UserPathManager:
 
     def get_user_storage_size_gb(self, user_id: int) -> float:
         """
-        Получить размер хранилища пользователя в гигабайтах.
-
-        Args:
-            user_id: ID пользователя
-
-        Returns:
-            Размер в гигабайтах
+        Get the size of the user's storage in gigabytes.
         """
         bytes_size = self.get_user_storage_size(user_id)
         return bytes_size / (1024 ** 3)
 
 
-# Глобальный экземпляр менеджера
+# Global instance of the path manager
 _path_manager: UserPathManager | None = None
 
 
 def get_path_manager(base_media_dir: str = "media") -> UserPathManager:
-    """Получить глобальный экземпляр менеджера путей."""
+    """Get the global instance of the path manager."""
     global _path_manager
     if _path_manager is None:
         _path_manager = UserPathManager(base_media_dir)
     return _path_manager
-

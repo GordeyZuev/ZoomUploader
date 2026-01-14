@@ -1,4 +1,4 @@
-"""Модели базы данных для автоматизации обработки записей."""
+"""Database models for recording automation"""
 
 from datetime import datetime
 
@@ -10,7 +10,7 @@ from database.models import Base
 
 
 class AutomationJobModel(Base):
-    """Модель задачи автоматизации для синхронизации и обработки записей по расписанию."""
+    """Automation job for scheduled recording sync and processing"""
 
     __tablename__ = "automation_jobs"
 

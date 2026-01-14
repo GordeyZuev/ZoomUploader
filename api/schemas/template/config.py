@@ -1,4 +1,4 @@
-"""Схемы для базовых конфигураций."""
+"""Base configuration schemas"""
 
 from datetime import datetime
 from typing import Any

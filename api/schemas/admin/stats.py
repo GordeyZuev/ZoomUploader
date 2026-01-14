@@ -1,4 +1,4 @@
-"""Схемы для админской статистики."""
+"""Admin statistics schemas"""
 
 from decimal import Decimal
 

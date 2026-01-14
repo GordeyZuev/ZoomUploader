@@ -1,4 +1,4 @@
-"""OAuth state management for CSRF protection."""
+"""OAuth state management for CSRF protection"""
 
 import json
 import time

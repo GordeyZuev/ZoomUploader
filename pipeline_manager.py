@@ -1,6 +1,4 @@
-"""
-Менеджер пайплайна обработки видео
-"""
+"""Video processing pipeline manager"""
 
 import asyncio
 import os

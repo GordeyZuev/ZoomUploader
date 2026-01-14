@@ -1,4 +1,4 @@
-"""Типизированные схемы для различных типов конфигураций.
+"""Typed schemas for various configuration types
 
 Эти схемы используются для валидации config_data в BaseConfigModel.
 """

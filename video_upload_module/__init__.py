@@ -1,3 +1,5 @@
+"""Video upload module for YouTube and VK platforms."""
+
 from .config_factory import (
     PlatformConfig,
     UploadConfig,
@@ -9,17 +11,17 @@ from .core import BaseUploader, UploadManager, UploadResult
 from .platforms import VKUploader, YouTubeUploader
 
 __all__ = [
-    # Core
+    # Core classes
     "BaseUploader",
     "UploadResult",
     "UploadManager",
-    # Config
+    # Configuration
     "UploadConfig",
     "YouTubeConfig",
     "VKConfig",
     "PlatformConfig",
     "UploadConfigFactory",
-    # Platforms
+    # Platform uploaders
     "YouTubeUploader",
     "VKUploader",
 ]

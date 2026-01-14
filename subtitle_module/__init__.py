@@ -1,4 +1,4 @@
-"""Модуль для генерации субтитров из транскрипций"""
+"""Subtitle generation module from transcriptions"""
 
 from .subtitle_generator import SubtitleGenerator
 

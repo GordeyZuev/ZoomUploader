@@ -23,20 +23,20 @@ logger = get_logger()
 
 
 class ZoomDownloader:
-    """Класс для загрузки файлов Zoom."""
+    """Zoom file downloader"""
 
     def __init__(self, download_dir: str = "media/video/unprocessed"):
         self.download_dir = Path(download_dir)
         self.download_dir.mkdir(parents=True, exist_ok=True)
         self.console = Console()
-        logger.debug(f"Загрузчик инициализирован: {self.download_dir}")
+        logger.debug(f"Downloader initialized: {self.download_dir}")
 
     def _encode_download_url(self, url: str) -> str:
-        """Правильное кодирование URL для скачивания согласно документации Zoom."""
+        """Correct URL encoding for downloading according to Zoom documentation."""
         if "==" in url or "//" in url:
             encoded = quote(url, safe="/:")
             double_encoded = quote(encoded, safe="/:")
-            logger.debug(f"Выполнено двойное кодирование URL: {url} -> {double_encoded}")
+            logger.debug(f"Double URL encoding completed: {url} -> {double_encoded}")
             return double_encoded
         return url
 
@@ -51,7 +51,7 @@ class ZoomDownloader:
                 date_obj = datetime.fromisoformat(normalized_time)
                 formatted_date = date_obj.strftime("%d.%m.%Y")
             except Exception as e:
-                logger.debug(f"Ошибка парсинга даты в _get_filename '{recording.start_time}': {e}")
+                logger.debug(f"Error parsing date in _get_filename '{recording.start_time}': {e}")
                 formatted_date = "unknown_date"
         else:
             formatted_date = "unknown_date"
@@ -62,7 +62,7 @@ class ZoomDownloader:
         self,
         url: str,
         filepath: Path,
-        description: str = "файл",
+        description: str = "file",
         progress: Progress = None,
         task_id: TaskID = None,
         expected_size: int = None,
@@ -73,21 +73,21 @@ class ZoomDownloader:
         max_retries: int = 10,
         completed_offset: int = 0,
     ) -> bool:
-        """Загрузка файла по URL с поддержкой возобновления и retry механизмом."""
+        """Download file by URL with resume and retry mechanism."""
 
         for attempt in range(max_retries):
             try:
                 if attempt > 0:
-                    logger.info(f"🔄 Попытка загрузки {attempt + 1}/{max_retries}: {description}")
+                    logger.info(f"🔄 Download attempt {attempt + 1}/{max_retries}: {description}")
                 else:
-                    logger.debug(f"Начинаю загрузку {description}: {url}")
+                    logger.debug(f"Starting download {description}: {url}")
 
-                # Проверяем, есть ли уже частично загруженный файл
+                # Check if there is a partially downloaded file
                 downloaded = 0
                 if filepath.exists():
                     downloaded = filepath.stat().st_size
                     logger.info(
-                        f"📦 Найден частично загруженный файл: {downloaded} байт ({downloaded / (1024 * 1024):.1f} MB)"
+                        f"📦 Partially downloaded file found: {downloaded} bytes ({downloaded / (1024 * 1024):.1f} MB)"
                     )
 
                 encoded_url = self._encode_download_url(url)
@@ -96,57 +96,57 @@ class ZoomDownloader:
                 params = {}
 
                 logger.info(
-                    f"🔐 Проверка аутентификации: oauth_token={bool(oauth_token)}, download_access_token={bool(download_access_token)}, passcode={bool(passcode)}, password={bool(password)}"
+                    f"🔐 Authentication check: oauth_token={bool(oauth_token)}, download_access_token={bool(download_access_token)}, passcode={bool(passcode)}, password={bool(password)}"
                 )
 
                 if oauth_token:
                     headers["Authorization"] = f"Bearer {oauth_token}"
-                    logger.info(f"✅ Используем OAuth access token для аутентификации (длина: {len(oauth_token)})")
+                    logger.info(f"✅ Using OAuth access token for authentication (length: {len(oauth_token)})")
                 elif download_access_token:
                     headers["Authorization"] = f"Bearer {download_access_token}"
                     logger.info(
-                        f"✅ Используем download_access_token для аутентификации (длина: {len(download_access_token)})"
+                        f"✅ Using download_access_token for authentication (length: {len(download_access_token)})"
                     )
                 elif passcode:
                     headers["X-Zoom-Passcode"] = passcode
                     headers["Authorization"] = f"Bearer {passcode}"
-                    logger.info(f"✅ Используем passcode для аутентификации (длина: {len(passcode)})")
+                    logger.info(f"✅ Using passcode for authentication (length: {len(passcode)})")
                 elif password:
                     params["password"] = password
                     params["access_token"] = password
-                    logger.info(f"✅ Используем пароль для аутентификации: {password}")
+                    logger.info(f"✅ Using password for authentication: {password}")
                 else:
-                    logger.warning("⚠️ Нет данных для аутентификации!")
+                    logger.warning("⚠️ No authentication data!")
 
-                # Добавляем Range заголовок для продолжения загрузки
+                # Add Range header for continued download
                 if downloaded > 0:
                     headers["Range"] = f"bytes={downloaded}-"
-                    logger.info(f"🔄 Продолжаем загрузку с байта {downloaded}")
+                    logger.info(f"🔄 Continuing download from byte {downloaded}")
 
-                logger.debug(f"Заголовки: {headers}")
-                logger.debug(f"Параметры: {params}")
+                logger.debug(f"Headers: {headers}")
+                logger.debug(f"Parameters: {params}")
 
-                # Оптимизированные таймауты для быстрого обнаружения обрыва
+                # Optimized timeouts for fast detection of break
                 async with httpx.AsyncClient(
                     timeout=httpx.Timeout(
-                        timeout=180.0,  # общий таймаут 3 минуты
-                        connect=30.0,  # подключение 30 секунд
-                        read=60.0,  # чтение данных 60 секунд (быстрее обнаруживаем обрыв)
-                        write=30.0,  # запись 30 секунд
+                        timeout=180.0,  # total timeout 3 minutes
+                        connect=30.0,  # connection 30 seconds
+                        read=60.0,  # read data 60 seconds (faster detection of break)
+                        write=30.0,  # write 30 seconds
                     ),
                     follow_redirects=True,
                     limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
                 ) as client:
                     async with client.stream("GET", encoded_url, headers=headers, params=params) as response:
-                        # Проверяем поддержку Range (206 Partial Content)
+                        # Check support for Range (206 Partial Content)
                         if downloaded > 0 and response.status_code == 206:
-                            logger.info("✅ Сервер поддерживает возобновление загрузки (206 Partial Content)")
+                            logger.info("✅ Server supports resume (206 Partial Content)")
                             mode = "ab"  # append binary
                         elif downloaded > 0 and response.status_code == 200:
-                            logger.warning("⚠️ Сервер не поддерживает возобновление, начинаем заново")
+                            logger.warning("⚠️ Server does not support resume, starting over")
                             downloaded = 0
                             mode = "wb"
-                            # Удаляем старый файл, чтобы начать с нуля
+                            # Remove old file to start from zero
                             if filepath.exists():
                                 filepath.unlink()
                         else:
@@ -155,12 +155,12 @@ class ZoomDownloader:
 
                         filepath.parent.mkdir(parents=True, exist_ok=True)
 
-                        # Получаем полный размер из Content-Range или Content-Length
+                        # Get full size from Content-Range or Content-Length
                         content_range = response.headers.get("content-range")
                         if content_range:
-                            # Формат: "bytes 1000-2000/3000"
+                            # Format: "bytes 1000-2000/3000" (Content-Range header)
                             total_size = int(content_range.split("/")[-1])
-                            logger.debug(f"Получен Content-Range: {content_range}, total_size: {total_size}")
+                            logger.debug(f"Content-Range received: {content_range}, total_size: {total_size}")
                         else:
                             total_size = int(response.headers.get("content-length", 0))
                             if downloaded > 0 and mode == "ab":
@@ -170,14 +170,14 @@ class ZoomDownloader:
                             total_size = expected_size
 
                         logger.debug(
-                            f"Размер файла: {total_size} байт ({total_size / (1024 * 1024):.1f} MB), уже загружено: {downloaded} байт ({downloaded / (1024 * 1024):.1f} MB)"
+                            f"File size: {total_size} bytes ({total_size / (1024 * 1024):.1f} MB), already downloaded: {downloaded} bytes ({downloaded / (1024 * 1024):.1f} MB)"
                         )
 
-                        # Обновляем прогресс с учетом уже загруженного
+                        # Update progress with already downloaded
                         if progress and task_id and total_size > 0:
                             progress.update(task_id, total=total_size, completed=completed_offset + downloaded)
 
-                        # Открываем файл в нужном режиме (wb или ab)
+                        # Open file in the needed mode (wb or ab)
                         with open(filepath, mode) as f:
                             chunk_count = 0
                             bytes_in_session = 0
@@ -190,17 +190,17 @@ class ZoomDownloader:
                                 downloaded += chunk_size
                                 chunk_count += 1
 
-                                # Обновляем прогресс каждые 10 чанков для плавности
+                                # Update progress every 10 chunks for smoothness
                                 if progress and task_id is not None and chunk_count % 10 == 0:
                                     try:
-                                        # Проверяем, что задача существует в прогресс-баре
+                                        # Check if the task exists in the progress bar
                                         if task_id in progress.task_ids:
                                             progress.update(task_id, completed=completed_offset + downloaded)
                                             last_update_downloaded = downloaded
                                     except Exception:
-                                        pass  # Игнорируем ошибки обновления прогресса
+                                        pass  # Ignore progress update errors
 
-                            # Финальное обновление прогресса
+                            # Final progress update
                             if progress and task_id is not None and downloaded > last_update_downloaded:
                                 try:
                                     if task_id in progress.task_ids:
@@ -209,77 +209,73 @@ class ZoomDownloader:
                                     pass
 
                         logger.info(
-                            f"✅ Файл записан: {downloaded}/{total_size} байт ({downloaded / (1024 * 1024):.1f}/{total_size / (1024 * 1024):.1f} MB)"
+                            f"✅ File written: {downloaded}/{total_size} bytes ({downloaded / (1024 * 1024):.1f}/{total_size / (1024 * 1024):.1f} MB)"
                         )
 
-                # Проверяем корректность файла только на последней итерации или при успешной загрузке
+                # Check if the file is correct only on the last iteration or when successful download
                 if not self._validate_downloaded_file(filepath, expected_size, total_size):
-                    logger.warning(f"⚠️ Скачанный {description} некорректен или неполный")
-                    # НЕ удаляем файл - даем возможность повторить попытку!
+                    logger.warning(f"⚠️ Downloaded {description} is incorrect or incomplete")
                     if attempt < max_retries - 1:
-                        wait_time = 3 if attempt < 2 else 5  # Быстрый retry для валидации
+                        wait_time = 3 if attempt < 2 else 5  # Fast retry for validation
                         logger.info(
-                            f"🔄 Повторная попытка {attempt + 2}/{max_retries} через {wait_time} секунд (файл неполный)..."
+                            f"🔄 Retry attempt {attempt + 2}/{max_retries} through {wait_time} seconds (file incomplete)..."
                         )
                         await asyncio.sleep(wait_time)
                         continue
                     else:
-                        logger.error(f"❌ Исчерпаны все попытки загрузки {description}")
-                        # Только на последней попытке удаляем некорректный файл
+                        logger.error(f"❌ All download attempts exhausted for {description}")
                         if filepath.exists():
                             filepath.unlink()
                         return False
 
-                logger.debug(f"Файл успешно загружен: description={description} | path={filepath}")
+                logger.debug(f"File successfully downloaded: description={description} | path={filepath}")
                 return True
 
             except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError, httpx.ReadTimeout) as e:
-                logger.warning(f"⚠️ Сетевая ошибка при загрузке {description}: {type(e).__name__}: {e}")
+                logger.warning(f"⚠️ Network error during download {description}: {type(e).__name__}: {e}")
                 if attempt < max_retries - 1:
-                    # Более агрессивный backoff: 3s → 5s → 10s → 15s → 20s → 30s (макс)
+                    # More aggressive backoff: 3s → 5s → 10s → 15s → 20s → 30s (max)
                     if attempt < 2:
                         wait_time = 3 + attempt * 2  # 3s, 5s
                     else:
                         wait_time = min(10 + (attempt - 2) * 5, 30)  # 10s, 15s, 20s, 25s, 30s...
-                    logger.info(f"🔄 Повторная попытка {attempt + 2}/{max_retries} через {wait_time} секунд...")
+                    logger.info(f"🔄 Retry attempt {attempt + 2}/{max_retries} through {wait_time} seconds...")
                     await asyncio.sleep(wait_time)
                     continue
                 else:
-                    logger.error(f"❌ Исчерпаны все попытки загрузки {description} после сетевых ошибок")
-                    # НЕ удаляем частично загруженный файл - можно будет продолжить позже!
+                    logger.error(f"❌ All download attempts exhausted for {description} after network errors")
+                    # Do not delete partially downloaded file - can continue later!
                     return False
 
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code
-                # Специальная обработка 416 Range Not Satisfiable — файл мог быть уже докачан или размер изменился
+                # Special handling for 416 Range Not Satisfiable - file may have been already downloaded or size changed
                 if status == 416 and filepath.exists():
-                    logger.warning("⚠️ Получен 416 Range Not Satisfiable — перезапускаем загрузку с нуля")
+                    logger.warning("⚠️ Received 416 Range Not Satisfiable - restarting download from zero")
                     try:
                         filepath.unlink()
-                        downloaded = 0  # сбрасываем размер для следующей попытки
+                        downloaded = 0  # reset size for the next attempt
                     except Exception:
                         pass
                     if attempt < max_retries - 1:
                         await asyncio.sleep(1)
                         continue
 
-                logger.error(f"❌ HTTP ошибка при загрузке {description}: {status}")
-                # При HTTP ошибках (401, 403, 404 и т.д.) повторять бесполезно
+                logger.error(f"❌ HTTP error during download {description}: {status}")
                 if filepath.exists() and status >= 400:
                     filepath.unlink()
                 return False
 
             except Exception as e:
-                logger.error(f"❌ Непредвиденная ошибка загрузки {description}: {type(e).__name__}: {e}")
+                logger.error(f"❌ Unexpected error during download {description}: {type(e).__name__}: {e}")
                 if attempt < max_retries - 1:
                     wait_time = 5
                     logger.info(
-                        f"🔄 Повторная попытка {attempt + 2}/{max_retries} через {wait_time} секунд (непредвиденная ошибка)..."
+                        f"🔄 Retry attempt {attempt + 2}/{max_retries} through {wait_time} seconds (unexpected error)..."
                     )
                     await asyncio.sleep(wait_time)
                     continue
                 else:
-                    # Только критические ошибки - удаляем файл
                     if filepath.exists():
                         filepath.unlink()
                     return False
@@ -287,7 +283,7 @@ class ZoomDownloader:
         return False
 
     def _validate_downloaded_file(self, filepath: Path, expected_size: int = None, total_size: int = None) -> bool:
-        """Проверка корректности скачанного файла."""
+        """Check if the downloaded file is correct."""
         try:
             if not filepath.exists():
                 return False
@@ -295,50 +291,49 @@ class ZoomDownloader:
             file_size = filepath.stat().st_size
 
             if file_size < 1024:
-                logger.warning(f"Файл слишком мал: {file_size} байт")
+                logger.warning(f"File too small: {file_size} bytes")
                 return False
 
-            # Используем total_size из Content-Range если доступен, иначе expected_size
+            # Use total_size from Content-Range if available, otherwise expected_size
             reference_size = total_size or expected_size
 
-            # Проверяем, что файл полностью загружен (если знаем ожидаемый размер)
+            # Check if the file is fully downloaded (if we know the expected size)
             if reference_size:
                 if file_size < reference_size:
-                    # Файл еще не полностью загружен
+                    # File is not fully downloaded
                     logger.warning(
-                        f"Файл загружен не полностью: {file_size}/{reference_size} байт "
+                        f"File not fully downloaded: {file_size}/{reference_size} bytes "
                         f"({file_size / (1024 * 1024):.1f}/{reference_size / (1024 * 1024):.1f} MB, "
                         f"{(file_size / reference_size * 100):.1f}%)"
                     )
                     return False
                 elif file_size > reference_size * 1.1:
-                    # Файл больше ожидаемого на 10%+ - что-то не так
+                    # File is larger than expected by 10%+ - something is wrong
                     logger.warning(
-                        f"Файл больше ожидаемого: {file_size} > {reference_size} "
+                        f"File is larger than expected: {file_size} > {reference_size} "
                         f"({file_size / (1024 * 1024):.1f} > {reference_size / (1024 * 1024):.1f} MB)"
                     )
-                    # Но не считаем это критичной ошибкой, продолжаем валидацию
 
             with open(filepath, "rb") as f:
                 first_chunk = f.read(1024)
                 if b"<html" in first_chunk.lower() or b"<!doctype html" in first_chunk.lower():
-                    logger.error("Скачанный файл является HTML страницей (возможно, требуется пароль)")
+                    logger.error("Downloaded file is an HTML page (possibly requires a password)")
                     return False
 
                 if filepath.suffix.lower() == ".mp4":
                     if not (
                         first_chunk.startswith(b"\x00\x00\x00") or b"ftyp" in first_chunk or b"moov" in first_chunk
                     ):
-                        logger.error("Файл не является корректным MP4 видео")
+                        logger.error("File is not a valid MP4 video")
                         return False
 
             logger.debug(
-                f"Файл прошел валидацию: path={filepath} | size={file_size}bytes ({file_size / (1024 * 1024):.1f}MB)"
+                f"File passed validation: path={filepath} | size={file_size}bytes ({file_size / (1024 * 1024):.1f}MB)"
             )
             return True
 
         except Exception as e:
-            logger.error(f"Ошибка при валидации файла {filepath}: {e}")
+            logger.error(f"Error during file validation {filepath}: {e}")
             return False
 
     async def download_recording(
@@ -348,26 +343,26 @@ class ZoomDownloader:
         task_id: TaskID = None,
         force_download: bool = False,
     ) -> bool:
-        """Загрузка одной записи (один MP4)."""
-        logger.debug(f"Начинаю загрузку записи: {recording.display_name}")
+        """Download one recording (one MP4)."""
+        logger.debug(f"Starting download of recording: {recording.display_name}")
 
         if not recording.video_file_download_url:
-            logger.error(f"Нет ссылки на видео для {recording.display_name}")
+            logger.error(f"No video link for {recording.display_name}")
             recording.mark_failure(
-                reason="Нет ссылки на видео",
+                reason="No video link",
                 rollback_to_status=ProcessingStatus.INITIALIZED,
                 failed_at_stage="downloading",
             )
             return False
 
-        # Пропускаем только если уже загружено и файл существует (если force=False)
+        # Skip if already downloaded and file exists (if force=False)
         if (
             not force_download
             and recording.status == ProcessingStatus.DOWNLOADED
             and recording.local_video_path
             and Path(recording.local_video_path).exists()
         ):
-            logger.info(f"⏭️ Запись уже загружена, пропускаем: {recording.display_name}")
+            logger.info(f"⏭️ Recording already downloaded, skipping: {recording.display_name}")
             return False
 
         recording.update_status(ProcessingStatus.DOWNLOADING)
@@ -387,12 +382,12 @@ class ZoomDownloader:
                     detailed_data = await api.get_recording_details(recording.meeting_id, include_download_token=True)
                     fresh_download_token = detailed_data.get("download_access_token")
                     logger.info(
-                        f"🔄 Получен свежий download_access_token (длина: {len(fresh_download_token) if fresh_download_token else 0})"
+                        f"🔄 Fresh download_access_token received (length: {len(fresh_download_token) if fresh_download_token else 0})"
                     )
                 else:
-                    logger.warning(f"⚠️ Не найден конфиг для аккаунта: {recording.account}")
+                    logger.warning(f"⚠️ No config found for account: {recording.account}")
             except Exception as e:
-                logger.error(f"❌ Ошибка получения свежего токена: {e}")
+                logger.error(f"❌ Error getting fresh token: {e}")
                 fresh_download_token = recording.download_access_token
 
         oauth_token = None
@@ -405,10 +400,10 @@ class ZoomDownloader:
                 api = ZoomAPI(account_config)
                 oauth_token = await api.get_access_token()
                 logger.info(
-                    f"🔄 Получен OAuth access token для аутентификации (длина: {len(oauth_token) if oauth_token else 0})"
+                    f"🔄 OAuth access token received for authentication (length: {len(oauth_token) if oauth_token else 0})"
                 )
         except Exception as e:
-            logger.error(f"❌ Ошибка получения OAuth токена: {e}")
+            logger.error(f"❌ Error getting OAuth token: {e}")
 
         total_size = recording.video_file_size or 0
         if progress and task_id and total_size > 0:
@@ -420,7 +415,7 @@ class ZoomDownloader:
         success = await self.download_file(
             recording.video_file_download_url,
             final_path,
-            "видео",
+            "video file",
             progress,
             task_id,
             total_size,
@@ -434,11 +429,11 @@ class ZoomDownloader:
 
         if not success:
             recording.mark_failure(
-                reason="Ошибка загрузки файла",
+                reason="Error downloading file",
                 rollback_to_status=ProcessingStatus.INITIALIZED,
                 failed_at_stage="downloading",
             )
-            logger.error(f"❌ Ошибка загрузки записи {recording.display_name}")
+            logger.error(f"❌ Error downloading recording {recording.display_name}")
             return False
 
         try:
@@ -448,7 +443,7 @@ class ZoomDownloader:
         recording.update_status(ProcessingStatus.DOWNLOADED)
         recording.downloaded_at = datetime.now()
         logger.debug(
-            f"Запись успешно загружена: recording={recording.display_name} | recording_id={recording.db_id} | path={recording.local_video_path}"
+            f"Recording successfully downloaded: recording={recording.display_name} | recording_id={recording.db_id} | path={recording.local_video_path}"
         )
         return True
 
@@ -458,8 +453,8 @@ class ZoomDownloader:
         max_concurrent: int = 3,
         force_download: bool = False,
     ) -> list[bool]:
-        """Загрузка нескольких записей параллельно с красивыми индивидуальными прогресс-барами."""
-        logger.debug(f"Начинаю загрузку {len(recordings)} записей (макс. {max_concurrent} одновременно)")
+        """Download multiple recordings in parallel with beautiful individual progress bars."""
+        logger.debug(f"Starting download of {len(recordings)} recordings (max {max_concurrent} concurrently)")
 
         with Progress(
             TextColumn("[cyan]{task.fields[date]}[/cyan]"),
@@ -487,8 +482,8 @@ class ZoomDownloader:
                         date_str = "??/??/??"
 
                     title = f"{recording.display_name[:45]}{'...' if len(recording.display_name) > 45 else ''}"
-                    # Используем реальный размер файла или разумное значение по умолчанию
-                    estimated_size = recording.video_file_size or (200 * 1024 * 1024)  # 200 МБ по умолчанию
+                    # Use real file size or reasonable default value
+                    estimated_size = recording.video_file_size or (200 * 1024 * 1024)  # 200 MB by default
                     task_id = progress.add_task(title, total=estimated_size, date=date_str)
 
                     success = await self.download_recording(recording, progress, task_id, force_download)
@@ -501,5 +496,5 @@ class ZoomDownloader:
             results = await asyncio.gather(*[download_with_progress(rec) for rec in recordings])
 
         success_count = sum(results)
-        logger.debug(f"Загрузка завершена: {success_count}/{len(recordings)} успешно")
+        logger.debug(f"Download completed: {success_count}/{len(recordings)} successfully")
         return results

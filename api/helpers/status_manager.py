@@ -59,8 +59,6 @@ def compute_aggregate_status(recording: RecordingModel) -> ProcessingStatus:
 
     # Хотя бы один этап в процессе
     if any(status == ProcessingStageStatus.IN_PROGRESS for status in stage_statuses):
-        # Legacy: если есть TRANSCRIBE stage, используем TRANSCRIBING
-        # Новый: PREPARING для всех этапов
         return ProcessingStatus.PREPARING
 
     # Все этапы завершены

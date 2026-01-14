@@ -1,4 +1,4 @@
-"""Общие типы для API."""
+"""Common API types"""
 
 from typing import TypeVar
 

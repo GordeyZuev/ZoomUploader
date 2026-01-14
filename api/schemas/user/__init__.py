@@ -1,4 +1,4 @@
-"""Схемы для управления пользователями."""
+"""User management schemas"""
 
 from .operations import AccountDeleteResponse, PasswordChangeResponse
 from .profile import (

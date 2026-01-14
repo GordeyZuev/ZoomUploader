@@ -1,4 +1,4 @@
-"""Схемы ответов для recordings."""
+"""Recording response schemas"""
 
 from datetime import datetime
 from typing import Any

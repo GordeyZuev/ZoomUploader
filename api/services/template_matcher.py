@@ -1,4 +1,4 @@
-"""Сервис для сопоставления записей с шаблонами."""
+"""Recording to template matching service"""
 
 from typing import Any
 

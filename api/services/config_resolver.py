@@ -277,18 +277,6 @@ class ConfigResolver:
                     logger.info(f"[Metadata Resolution] Merging template '{platform_key}' specific metadata")
                     final_metadata = self._merge_configs(final_metadata, template_meta[platform_key])
 
-                # Step 3: Merge top-level fields (backward compatibility)
-                # Skip platform keys and common key
-                top_level_fields = {
-                    k: v for k, v in template_meta.items()
-                    if k not in ["youtube", "vk", "common"]
-                }
-                if top_level_fields:
-                    logger.info(f"[Metadata Resolution] Merging template top-level fields: {list(top_level_fields.keys())}")
-                    if "description_template" in top_level_fields:
-                        logger.info(f"[Metadata Resolution] Template has top-level description_template: {top_level_fields['description_template'][:100]}")
-                    final_metadata = self._merge_configs(final_metadata, top_level_fields)
-
             elif template:
                 logger.info(
                     f"[Metadata Resolution] Template '{template.name}' has no metadata_config, using preset only"

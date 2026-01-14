@@ -1,4 +1,4 @@
-"""Базовые переиспользуемые response схемы."""
+"""Base reusable response schemas"""
 
 from pydantic import BaseModel
 

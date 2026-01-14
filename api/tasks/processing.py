@@ -773,18 +773,10 @@ def process_recording_task(
         extract_topics = transcription.get("enable_topics", True)
         generate_subs = transcription.get("enable_subtitles", True)
 
-        # Upload configuration from output_config (not full_config!)
+        # Upload configuration from output_config
         upload = output_config.get("auto_upload", False)
         preset_ids_list = output_config.get("preset_ids", [])
-
-        # Fallback: check in full_config["upload"] for backward compatibility
-        if not upload and "upload" in full_config:
-            upload = full_config["upload"].get("auto_upload", False)
-
-        # Platforms (can be in either location)
         platforms = output_config.get("default_platforms", [])
-        if not platforms and "upload" in full_config:
-            platforms = full_config["upload"].get("default_platforms", [])
 
         # Processing parameters
         granularity = transcription.get("granularity", "long")

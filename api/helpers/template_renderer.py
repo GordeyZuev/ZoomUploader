@@ -1,4 +1,4 @@
-"""Template renderer for upload metadata with flexible topics formatting."""
+"""Template renderer for upload metadata"""
 
 import re
 from datetime import datetime
@@ -323,10 +323,6 @@ class TemplateRenderer:
                     )
         else:
             context["topics"] = ""
-
-        # Add aliases for template compatibility
-        context["topic"] = context["themes"]  # {topic} → short topics
-        context["date"] = context["record_time"]  # {date} → record datetime
 
         return context
 

@@ -1,4 +1,4 @@
-"""Схемы запросов для recordings."""
+"""Recording request schemas"""
 
 from datetime import date
 

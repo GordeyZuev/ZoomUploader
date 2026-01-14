@@ -1,4 +1,4 @@
-"""Типизированные схемы для processing_config (по реальной структуре)."""
+"""Typed schemas for processing_config"""
 
 from typing import Literal
 

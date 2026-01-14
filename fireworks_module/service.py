@@ -1,4 +1,4 @@
-'"""Сервис транскрибации аудио через Fireworks Audio Inference API"""'
+"""Audio transcription service via Fireworks Audio Inference API"""
 
 import asyncio
 import json
@@ -358,12 +358,10 @@ class FireworksTranscriptionService:
             ends_with_sentence = word_text.endswith(sentence_endings)
             ends_with_comma = word_text.endswith(comma_punctuation)
 
-            # ПРИОРИТЕТ 1: Конец предложения - всегда разбивать (даже без паузы)
+            # Priority 1: End of sentence - always break
             should_break_sentence = ends_with_sentence
 
-            # ПРИОРИТЕТ 2: Пауза больше порога - обязательная граница
-            # НО: не разбиваем по паузам, если текущая группа слишком короткая (< 0.5 сек)
-            # Это предотвращает разбиение на отдельные слова из-за больших пауз
+            # Priority 2: Pause threshold - break if group is long enough
             current_group_duration = (
                 (current_group[-1].get("end", 0.0) - current_start)
                 if current_group and current_start is not None
@@ -376,46 +374,36 @@ class FireworksTranscriptionService:
 
             should_break_pause = pause_duration > pause_threshold_seconds and enough_group
 
-            # ПРИОРИТЕТ 3: Запятая + пауза > 0.2 сек - разбивать на части предложения
-            # Для запятой тоже учитываем минимальную длительность группы
+            # Priority 3: Comma with pause
             should_break_comma = ends_with_comma and pause_duration > pause_for_comma and enough_group
 
-            # ПРИОРИТЕТ 4: Превышение максимальной длительности
-            # Вычисляем длительность группы ПОСЛЕ добавления текущего слова
+            # Priority 4: Max duration exceeded
             group_duration_after = word_end_float - current_start
             should_break_duration = group_duration_after > max_duration_seconds and enough_group
 
-            # Определяем, нужно ли разбивать сегмент
-            # Для конца предложения - разбиваем ПОСЛЕ добавления слова (высший приоритет)
-            # Для остальных случаев - разбиваем ДО добавления слова
+            # Break before adding word (except for sentence end)
             should_break_before = (
                 should_break_pause or should_break_comma or should_break_duration
             ) and not should_break_sentence
 
-            # Если нужно разбить ДО добавления слова (пауза, запятая, длительность)
-            # Но НЕ если это конец предложения (для него приоритет - разбивать ПОСЛЕ)
             if should_break_before and current_group and current_start is not None:
                 segment = _finalize_segment(current_group, current_start)
                 if segment:
                     segments.append(segment)
                     segment_id += 1
 
-                # Начинаем новую группу
                 current_group = []
                 current_start = word_start_float
 
-            # Добавляем слово в текущую группу
             current_group.append(word_item)
 
-            # Если это конец предложения, сразу завершаем группу (после добавления слова)
-            # Это высший приоритет - всегда разбиваем по предложениям
+            # Break after adding word if sentence end
             if should_break_sentence and current_group and current_start is not None:
                 segment = _finalize_segment(current_group, current_start)
                 if segment:
                     segments.append(segment)
                     segment_id += 1
 
-                # Начинаем новую группу
                 current_group = []
                 current_start = None
 

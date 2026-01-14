@@ -1,4 +1,4 @@
-"""Dependency Injection для FastAPI."""
+"""FastAPI dependency injection"""
 
 from collections.abc import AsyncGenerator
 from functools import lru_cache

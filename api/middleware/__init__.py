@@ -1,1 +1,1 @@
-"""Middleware для FastAPI."""
+"""FastAPI middleware"""

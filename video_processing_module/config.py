@@ -1,4 +1,4 @@
-"""Конфигурация обработки видео с валидацией через Pydantic"""
+"""Video processing configuration"""
 
 from __future__ import annotations
 
@@ -9,11 +9,7 @@ from config.settings import settings
 
 
 class ProcessingConfig(BaseSettings):
-    """
-    Конфигурация обработки видео.
-
-    Использует настройки из config.settings, но может быть переопределена.
-    """
+    """Video processing configuration"""
 
     model_config = SettingsConfigDict(
         env_file=None,
@@ -21,7 +17,7 @@ class ProcessingConfig(BaseSettings):
         case_sensitive=False,
     )
 
-    # Основные настройки
+    # Main settings
     output_format: str = Field(
         default="mp4",
         description="Формат выходного видео",
@@ -35,7 +31,7 @@ class ProcessingConfig(BaseSettings):
         description="Аудио кодек",
     )
 
-    # Качество видео
+    # Video quality
     video_bitrate: str = Field(
         default_factory=lambda: settings.processing.video_bitrate,
         description="Битрейт видео",
@@ -54,7 +50,7 @@ class ProcessingConfig(BaseSettings):
         description="FPS (0 = не изменять)",
     )
 
-    # Обрезка по звуку
+    # Audio trimming
     audio_detection: bool = Field(
         default=True,
         description="Включить детекцию звука для автоматической обрезки",
@@ -62,106 +58,106 @@ class ProcessingConfig(BaseSettings):
     silence_threshold: float = Field(
         default_factory=lambda: settings.processing.silence_threshold,
         le=0.0,
-        description="Порог тишины в дБ (должен быть отрицательным)",
+        description="Silence threshold in dB (must be negative)",
     )
     min_silence_duration: float = Field(
         default_factory=lambda: settings.processing.min_silence_duration,
         gt=0.0,
-        description="Минимальная длительность тишины в секундах",
+        description="Minimum silence duration in seconds",
     )
     padding_before: float = Field(
         default_factory=lambda: settings.processing.padding_before,
         ge=0.0,
-        description="Отступ до звука в секундах",
+        description="Padding before sound in seconds",
     )
     padding_after: float = Field(
         default_factory=lambda: settings.processing.padding_after,
         ge=0.0,
-        description="Отступ после звука в секундах",
+        description="Padding after sound in seconds",
     )
 
-    # Обрезка (для ручной настройки)
+    # Trimming (for manual settings)
     trim_start: float | None = Field(
         default=None,
         ge=0.0,
-        description="Начало обрезки в секундах",
+        description="Trim start in seconds",
     )
     trim_end: float | None = Field(
         default=None,
         ge=0.0,
-        description="Конец обрезки в секундах",
+        description="Trim end in seconds",
     )
     max_duration: int | None = Field(
         default=None,
         gt=0,
-        description="Максимальная длительность в секундах",
+        description="Maximum duration in seconds",
     )
 
     # Сегментация
     segment_duration: int = Field(
         default=30,
         gt=0,
-        description="Длительность сегмента в секундах",
+        description="Segment duration in seconds",
     )
     overlap_duration: int = Field(
         default=1,
         ge=0,
-        description="Перекрытие между сегментами в секундах",
+        description="Overlap between segments in seconds",
     )
 
     # Папки
     input_dir: str = Field(
         default_factory=lambda: settings.processing.input_dir,
-        description="Директория входящих видео",
+        description="Input directory",
     )
     output_dir: str = Field(
         default_factory=lambda: settings.processing.output_dir,
-        description="Директория обработанных видео",
+        description="Output directory",
     )
     temp_dir: str = Field(
         default_factory=lambda: settings.processing.temp_dir,
-        description="Временная директория",
+        description="Temporary directory",
     )
 
-    # Дополнительные опции
+    # Additional options
     remove_intro: bool = Field(
         default_factory=lambda: settings.processing.remove_intro,
-        description="Удалять вступление",
+        description="Remove intro",
     )
     remove_outro: bool = Field(
         default_factory=lambda: settings.processing.remove_outro,
-        description="Удалять заключение",
+        description="Remove outro",
     )
     intro_duration: int = Field(
         default_factory=lambda: int(settings.processing.intro_duration),
         ge=0,
-        description="Длительность вступления в секундах",
+        description="Intro duration in seconds",
     )
     outro_duration: int = Field(
         default_factory=lambda: int(settings.processing.outro_duration),
         ge=0,
-        description="Длительность заключения в секундах",
+        description="Outro duration in seconds",
     )
 
-    # Логирование
+    # Logging
     keep_temp_files: bool = Field(
         default_factory=lambda: settings.processing.keep_temp_files,
-        description="Сохранять временные файлы",
+        description="Keep temporary files",
     )
 
     @model_validator(mode="after")
     def validate_config(self) -> ProcessingConfig:
-        """Валидация зависимостей между полями."""
-        # Проверка overlap_duration < segment_duration
+        """Validate field dependencies."""
+        # Check overlap_duration < segment_duration
         if self.overlap_duration >= self.segment_duration:
             raise ValueError(
-                f"overlap_duration ({self.overlap_duration}) должен быть меньше "
+                f"overlap_duration ({self.overlap_duration}) should be less than "
                 f"segment_duration ({self.segment_duration})"
             )
 
-        # Проверка trim_end > trim_start
+        # Check trim_end > trim_start
         if self.trim_start is not None and self.trim_end is not None:
             if self.trim_end <= self.trim_start:
-                raise ValueError(f"trim_end ({self.trim_end}) должен быть больше trim_start ({self.trim_start})")
+                raise ValueError(f"trim_end ({self.trim_end}) should be greater than trim_start ({self.trim_start})")
 
         return self

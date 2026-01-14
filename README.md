@@ -7,9 +7,9 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-12+-blue.svg)
 ![License](https://img.shields.io/badge/license-BSL%201.1-orange.svg)
 
-**LEAP** — это production-ready multi-tenant платформа с полным `REST API` для автоматизации end-to-end обработки образовательного видеоконтента — от загрузки до публикации с AI-транскрибацией, интеллектуальным структурированием и профессиональным оформлением.
+**LEAP** — это multi-tenant платформа с полным `REST API` для автоматизации end-to-end обработки образовательного видеоконтента — от загрузки до публикации с AI-транскрибацией, интеллектуальным структурированием и профессиональным оформлением.
 
-**Версия:** `v0.9.2.2` (Dev Status)  
+**Версия:** `v0.9.3` (Dev Status)  
 **Tech:** `Python 3.11+` • `FastAPI` • `Pydantic V2` • `PostgreSQL` • `Redis` • `Celery` • `AI` (Whisper, DeepSeek)
 
 ---
@@ -321,7 +321,13 @@ make api
 **API Keys:**
 - `Zoom` • `YouTube` • `VK` • `Fireworks AI` • `DeepSeek`
 
-📖 Подробные инструкции: [DEPLOYMENT.md](docs/DEPLOYMENT.md) • [OAUTH_SETUP.md](docs/OAUTH_SETUP.md)
+📖 **Полная документация:** [docs/INDEX.md](docs/INDEX.md)
+
+**Quick Links:**
+- 🚀 [DEPLOYMENT.md](docs/DEPLOYMENT.md) - Setup guide
+- 🔐 [OAUTH.md](docs/OAUTH.md) - OAuth setup (YouTube, VK, Zoom)
+- 📝 [TEMPLATES.md](docs/TEMPLATES.md) - Template-driven automation
+- 🔧 [API_GUIDE.md](docs/API_GUIDE.md) - API schemas & best practices
 
 ---
 
@@ -433,83 +439,105 @@ TRANSCRIBED → UPLOADING → READY
 
 ## 📚 Документация
 
+**📋 Навигация:** [docs/INDEX.md](docs/INDEX.md) - полный список документов
+
+### Core Documentation
+
 | Документ | Описание |
 |----------|----------|
-| 📖 [TECHNICAL.md](docs/TECHNICAL.md) | Полная техническая документация (API, Architecture, Security) |
-| 🚀 [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production deployment guide |
-| 🏛️ [ADR.md](docs/ADR.md) | Architecture Decision Records |
-| 📜 [WHAT_WAS_DONE.md](docs/WHAT_WAS_DONE.md) | Детальная история проекта |
-| 🎯 [PLAN.md](docs/PLAN.md) | Цели и задачи проекта |
+| 📖 [TECHNICAL.md](docs/TECHNICAL.md) | Complete technical docs (API, modules, security) |
+| 🚀 [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production deployment guide (dev → production) |
+| 🔐 [OAUTH.md](docs/OAUTH.md) | OAuth setup & troubleshooting (YouTube, VK, Zoom) |
+| 📝 [TEMPLATES.md](docs/TEMPLATES.md) | Template-driven automation system |
+| 🔧 [API_GUIDE.md](docs/API_GUIDE.md) | Pydantic schemas & API best practices |
 
-**OAuth & Automation:**
-- 🔐 [OAUTH_SETUP.md](docs/OAUTH_SETUP.md) — настройка за 30 минут
-- 🔧 [OAUTH_TECHNICAL.md](docs/OAUTH_TECHNICAL.md) — техническая спецификация
-- 🤖 [AUTOMATION_IMPLEMENTATION_PLAN.md](docs/AUTOMATION_IMPLEMENTATION_PLAN.md) — система автоматизации
+### Architecture & Design
+
+| Документ | Описание |
+|----------|----------|
+| 🏛️ [ADR_OVERVIEW.md](docs/ADR_OVERVIEW.md) | Architecture Decision Records (core) |
+| ✨ [ADR_FEATURES.md](docs/ADR_FEATURES.md) | Feature-specific ADRs |
+| 🗄️ [DATABASE_DESIGN.md](docs/DATABASE_DESIGN.md) | Database schema & migrations |
+| 🎯 [PLAN.md](docs/PLAN.md) | Project roadmap & thesis plan |
+
+### Additional Guides
+
+- 📦 [BULK_OPERATIONS_GUIDE.md](docs/BULK_OPERATIONS_GUIDE.md) - Batch processing
+- 🌐 [VK_INTEGRATION.md](docs/VK_INTEGRATION.md) - VK Implicit Flow (2026 policy)
+- 🔥 [FIREWORKS_BATCH_API.md](docs/FIREWORKS_BATCH_API.md) - 50% cost savings
+- 📜 [CHANGELOG.md](docs/CHANGELOG.md) - Project history
 
 ---
 
-## 🆕 Latest Release: v0.9.2.2
+## 🆕 Latest Release: v0.9.3 (January 2026)
 
-**Major Features:**
+**Multi-tenant SaaS in Development**
 
-🎯 **Production-Ready API (NEW)**
-- 84 REST endpoints, 100% типизированы Pydantic V2
-- Clean Architecture принципы (DRY, YAGNI, KISS)
-- Полная типизация вложенных конфигураций
-- OpenAPI схемы с 118+ моделями
+### 🎯 Core Features
 
-📝 **Pydantic V2 Best Practices (NEW)**
-- `model_config` вместо `class Config`
-- Field constraints вместо custom валидаторов
-- Общие валидаторы без дублирования
-- Сохранение порядка полей в Swagger UI
+**REST API (84 endpoints)**
+- ✅ 100% typed with Pydantic V2 (118+ models)
+- ✅ Clean Architecture (DRY, YAGNI, KISS)
+- ✅ Full OpenAPI documentation (Swagger + ReDoc)
+- ✅ Async-first with FastAPI
 
-🔄 **Bulk Operations (NEW)**
-- Унифицированные bulk endpoints для всех операций
-- Фильтры по статусу, template, source, датам
-- Dry-run режим для preview изменений
-- Template lifecycle management
+**Template-Driven Automation**
+- ✅ Auto-matching recordings to templates
+- ✅ Deep merge config hierarchy (user → template → override)
+- ✅ Re-match functionality with preview
+- ✅ Blank records filtering
 
-🔐 **OAuth 2.0 Integration**
-- Web-based flow для YouTube, VK & Zoom
-- Auto-refresh tokens • CSRF protection
-- Multi-tenant credential management
+**OAuth 2.0 Integration**
+- ✅ YouTube, VK, Zoom (all platforms)
+- ✅ Auto-refresh tokens with DB storage
+- ✅ CSRF protection via Redis
+- ✅ Multi-tenant credential management
 
-🤖 **Automation System**
-- Celery Beat scheduling
-- Declarative config (time/cron/weekdays)
-- Dry-run mode • Quota management
+**Bulk Operations**
+- ✅ Unified API for batch processing
+- ✅ Filters (status, template, source, dates)
+- ✅ Dry-run mode for previews
+- ✅ Template lifecycle management
 
-⭐ **Template-Driven Architecture**
-- Template-based automation with live updates
-- Auto-matching recordings to templates
-- Deep merge config hierarchy
-- Blank records filtering
+**Automation System**
+- ✅ Celery Beat scheduling
+- ✅ Declarative config (time/cron/weekdays)
+- ✅ Quota management (max 5 jobs/user)
+- ✅ Dry-run mode
 
-📊 **Enhanced Processing**
-- Decoupled pipeline (transcribe → topics → subtitles)
-- Topic versioning with timestamps (HH:MM:SS)
-- Cost tracking • Progress monitoring
-- Multi-tenant thumbnails system
+**AI Processing**
+- ✅ Fireworks AI (whisper-v3-turbo) - transcription
+- ✅ DeepSeek - topic extraction with timestamps
+- ✅ Subtitle generation (SRT, VTT)
+- ✅ Cost tracking & monitoring
 
-💎 **Subscription System**
-- 4 plans: Free/Plus/Pro/Enterprise
-- Quota management (recordings, storage, tasks)
-- Pay-as-you-go ready
-- Usage tracking & history
+**Subscription & Quotas**
+- ✅ 4 plans: Free/Plus/Pro/Enterprise
+- ✅ Quotas (recordings, storage, tasks, automation)
+- ✅ Usage tracking & history
+- ✅ Admin API for quota management
 
-**Statistics:**
+### 📊 Statistics
+
 ```
-API Endpoints:  84 (full production coverage)
-Pydantic Models: 118+ (полная типизация)
-Database:       12 tables, 19 migrations (auto-init)
-Architecture:   Template-driven pipeline + Clean Code
-OAuth:          YouTube, VK, Zoom (all platforms)
-Subscription:   4 plans with quotas
-Documentation:  15+ guides
+API Endpoints:       84 (fully implemented)
+Pydantic Models:     118+ (fully typed)
+Database Tables:     14 (multi-tenant)
+Migrations:          19 (auto-init)
+OAuth Platforms:     3 (YouTube, VK, Zoom)
+AI Models:           2 (Whisper, DeepSeek)
+Documentation:       14 guides (optimized from 29)
 ```
 
-📜 Полная история: [WHAT_WAS_DONE.md](docs/WHAT_WAS_DONE.md)
+### 📖 Documentation
+
+**14 comprehensive guides** (down from 29, -52%):
+- ✅ 0 duplicates
+- ✅ Complete OAuth guide (3→1)
+- ✅ Complete Templates guide (2→1)
+- ✅ Complete API guide (4→1)
+
+📜 **Full history:** [CHANGELOG.md](docs/CHANGELOG.md)
 
 ---
 
@@ -527,4 +555,5 @@ Documentation:  15+ guides
 
 ---
 
-**Версия:** `v0.9.2.2` • **Статус:** Dev Status
+**Version:** `v0.9.3` (January 2026) • **Status:** Dev Status  
+**Documentation:** [docs/INDEX.md](docs/INDEX.md) • 14 comprehensive guides

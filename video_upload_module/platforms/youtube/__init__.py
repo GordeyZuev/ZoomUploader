@@ -1,6 +1,4 @@
-"""
-YouTube платформа
-"""
+"""YouTube platform integration."""
 
 from .playlist_manager import YouTubePlaylistManager
 from .thumbnail_manager import YouTubeThumbnailManager

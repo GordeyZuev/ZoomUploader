@@ -1,3 +1,5 @@
+"""YouTube video uploader implementation."""
+
 import asyncio
 import json
 import os
@@ -20,7 +22,7 @@ logger = get_logger()
 
 
 class YouTubeUploader(BaseUploader):
-    """Загрузчик видео на YouTube."""
+    """YouTube video uploader."""
 
     def __init__(self, config: YouTubeConfig, credential_provider: CredentialProvider | None = None):
         super().__init__(config)
@@ -29,40 +31,32 @@ class YouTubeUploader(BaseUploader):
         self.credentials = None
         self.credential_provider = credential_provider
 
-        self.logger = logger
-
     async def authenticate(self) -> bool:
-        """Аутентификация в YouTube API."""
+        """Authenticate with YouTube API."""
         try:
-            # If no credential provider, create file-based provider for backward compatibility
             if not self.credential_provider:
                 self.credential_provider = FileCredentialProvider(self.config.credentials_file)
 
-            # Try to load existing credentials
             self.credentials = await self.credential_provider.get_google_credentials(self.config.scopes)
 
-            # Check if credentials are valid or need refresh
             if not self.credentials or not self.credentials.valid:
                 refreshed_successfully = False
 
-                # Try to refresh token if available
                 if self.credentials and self.credentials.refresh_token:
                     try:
-                        self.logger.info("Refreshing YouTube access token...")
+                        logger.info("Refreshing YouTube access token...")
                         self.credentials.refresh(Request())
                         refreshed_successfully = True
 
-                        # Save refreshed credentials back to storage
                         await self.credential_provider.update_google_credentials(self.credentials)
-                        self.logger.info("YouTube token refreshed and saved successfully")
+                        logger.info("YouTube token refreshed and saved successfully")
 
                     except Exception as e:
-                        self.logger.warning(f"Failed to refresh token: {e}")
+                        logger.warning(f"Failed to refresh token: {e}")
                         self.credentials = None
 
-                # If refresh failed and using file provider, try interactive flow
                 if not refreshed_successfully and isinstance(self.credential_provider, FileCredentialProvider):
-                    self.logger.warning("Refresh failed, attempting interactive authorization...")
+                    logger.warning("Refresh failed, attempting interactive authorization...")
 
                     flow = None
                     try:
@@ -77,31 +71,27 @@ class YouTubeUploader(BaseUploader):
                                 self.config.client_secrets_file, self.config.scopes
                             )
                     except FileNotFoundError:
-                        self.logger.error(f"Client secrets file not found: {self.config.client_secrets_file}")
+                        logger.error(f"Client secrets file not found: {self.config.client_secrets_file}")
                         return False
 
                     self.credentials = flow.run_local_server(port=0)
-
-                    # Save new credentials
                     await self.credential_provider.update_google_credentials(self.credentials)
 
                 elif not refreshed_successfully:
-                    # Using DB provider but no valid token - user needs to re-authorize via OAuth
-                    self.logger.error(
+                    logger.error(
                         "YouTube credentials expired and cannot be refreshed. "
                         "User must re-authorize via OAuth flow."
                     )
                     return False
 
-            # Build YouTube service
             self.service = build("youtube", "v3", credentials=self.credentials)
             self._authenticated = True
 
-            self.logger.info("YouTube authentication successful")
+            logger.info("YouTube authentication successful")
             return True
 
         except Exception as e:
-            self.logger.error(f"YouTube authentication error: {e}")
+            logger.error(f"YouTube authentication error: {e}")
             return False
 
     async def upload_video(
@@ -117,7 +107,7 @@ class YouTubeUploader(BaseUploader):
         **kwargs,
     ) -> UploadResult | None:
         """
-        Загрузка видео на YouTube.
+        Upload video to YouTube.
 
         Supported kwargs:
             - tags: list[str] - Video tags
@@ -134,10 +124,9 @@ class YouTubeUploader(BaseUploader):
                 return None
 
         try:
-            final_description = description if description else f"Загружено {self._get_timestamp()}"
-            self.logger.debug(f"Длина описания для YouTube: {len(final_description)} символов")
+            final_description = description if description else f"Uploaded {self._get_timestamp()}"
+            logger.debug(f"YouTube description length: {len(final_description)} characters")
 
-            # Build snippet with base fields
             snippet = {
                 "title": title,
                 "description": final_description,
@@ -145,31 +134,26 @@ class YouTubeUploader(BaseUploader):
                 "defaultAudioLanguage": self.config.default_language,
             }
 
-            # Add optional snippet fields from kwargs
             if "tags" in kwargs and kwargs["tags"]:
-                snippet["tags"] = kwargs["tags"][:500]  # YouTube limit
-                self.logger.debug(f"Added {len(snippet['tags'])} tags")
+                snippet["tags"] = kwargs["tags"][:500]
+                logger.debug(f"Added {len(snippet['tags'])} tags")
 
             if "category_id" in kwargs and kwargs["category_id"]:
                 snippet["categoryId"] = str(kwargs["category_id"])
-                self.logger.debug(f"Set category_id: {snippet['categoryId']}")
+                logger.debug(f"Set category_id: {snippet['categoryId']}")
 
-            # Build status with privacy
             status = {
                 "privacyStatus": privacy_status or self.config.default_privacy,
                 "selfDeclaredMadeForKids": kwargs.get("made_for_kids", False),
             }
 
-            # Add publishAt for scheduled publishing
             if "publish_at" in kwargs and kwargs["publish_at"]:
                 status["publishAt"] = kwargs["publish_at"]
-                # For scheduled videos, privacy must be "private"
                 if status["privacyStatus"] != "private":
-                    self.logger.warning("Setting privacy to 'private' for scheduled video")
+                    logger.warning("Setting privacy to 'private' for scheduled video")
                     status["privacyStatus"] = "private"
-                self.logger.info(f"Video will be published at: {kwargs['publish_at']}")
+                logger.info(f"Video will be published at: {kwargs['publish_at']}")
 
-            # Add optional status fields
             if "embeddable" in kwargs:
                 status["embeddable"] = bool(kwargs["embeddable"])
 
@@ -186,7 +170,7 @@ class YouTubeUploader(BaseUploader):
 
             media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/*")
 
-            self.logger.info(f"Загрузка видео на YouTube: {title}")
+            logger.info(f"Uploading video to YouTube: {title}")
 
             request = self.service.videos().insert(part=",".join(body.keys()), body=body, media_body=media)
 
@@ -200,13 +184,13 @@ class YouTubeUploader(BaseUploader):
                             if task_id in progress.task_ids:
                                 progress.update(task_id, completed=upload_progress, total=100)
                         except Exception:
-                            pass  # Игнорируем ошибки обновления прогресса
+                            pass
 
             if "id" in response:
                 video_id = response["id"]
                 video_url = f"https://www.youtube.com/watch?v={video_id}"
 
-                self.logger.info(f"Видео загружено: {video_url}")
+                logger.info(f"Video uploaded: {video_url}")
 
                 result = self._create_result(video_id=video_id, video_url=video_url, title=title, platform="youtube")
 
@@ -220,11 +204,11 @@ class YouTubeUploader(BaseUploader):
                         success = await playlist_manager.add_video_to_playlist(playlist_id, video_id)
                         if success:
                             result.metadata["playlist_id"] = playlist_id
-                            self.logger.info(f"Видео добавлено в плейлист: {playlist_id}")
+                            logger.info(f"Video added to playlist: {playlist_id}")
                         else:
-                            result.metadata["playlist_error"] = "Не удалось добавить в плейлист"
+                            result.metadata["playlist_error"] = "Failed to add to playlist"
                     except Exception as e:
-                        self.logger.error(f"Ошибка добавления в плейлист: {e}")
+                        logger.error(f"Playlist addition error: {e}")
                         result.metadata["playlist_error"] = str(e)
 
                 if thumbnail_path and os.path.exists(thumbnail_path):
@@ -237,21 +221,21 @@ class YouTubeUploader(BaseUploader):
                         if success:
                             result.metadata["thumbnail_set"] = True
                         else:
-                            result.metadata["thumbnail_error"] = "Не удалось установить миниатюру"
+                            result.metadata["thumbnail_error"] = "Failed to set thumbnail"
                     except Exception as e:
-                        self.logger.warning(f"Не удалось установить миниатюру: {e}")
+                        logger.warning(f"Failed to set thumbnail: {e}")
                         result.metadata["thumbnail_error"] = str(e)
 
                 return result
             else:
-                self.logger.error(f"Ошибка загрузки: {response}")
+                logger.error(f"Upload error: {response}")
                 return None
 
         except HttpError as e:
-            self.logger.error(f"Ошибка YouTube API: {e}")
+            logger.error(f"YouTube API error: {e}")
             return None
         except Exception as e:
-            self.logger.error(f"Ошибка загрузки видео: {e}")
+            logger.error(f"Video upload error: {e}")
             return None
 
     async def upload_caption(
@@ -261,14 +245,14 @@ class YouTubeUploader(BaseUploader):
         language: str = "ru",
         name: str | None = None,
     ) -> bool:
-        """Загрузка субтитров (SRT/VTT) на YouTube."""
+        """Upload captions (SRT/VTT) to YouTube."""
 
         if not self._authenticated:
             if not await self.authenticate():
                 return False
 
         if not os.path.exists(caption_path):
-            self.logger.error(f"Файл субтитров не найден: {caption_path}")
+            logger.error(f"Caption file not found: {caption_path}")
             return False
 
         mime_type = "application/octet-stream"
@@ -289,27 +273,27 @@ class YouTubeUploader(BaseUploader):
 
             media = MediaFileUpload(caption_path, mimetype=mime_type, resumable=True)
 
-            self.logger.info(f"Загрузка субтитров на YouTube для видео {video_id} ({language})")
+            logger.info(f"Uploading captions to YouTube for video {video_id} ({language})")
 
             request = self.service.captions().insert(part="snippet", body=body, media_body=media)
             response = request.execute()
 
             if response and response.get("id"):
-                self.logger.info(f"Субтитры загружены: caption_id={response['id']}")
+                logger.info(f"Captions uploaded: caption_id={response['id']}")
                 return True
 
-            self.logger.error(f"Не удалось загрузить субтитры: {response}")
+            logger.error(f"Failed to upload captions: {response}")
             return False
 
         except HttpError as e:
-            self.logger.error(f"Ошибка YouTube Captions API: {e}")
+            logger.error(f"YouTube Captions API error: {e}")
             return False
         except Exception as e:
-            self.logger.error(f"Ошибка загрузки субтитров: {e}")
+            logger.error(f"Caption upload error: {e}")
             return False
 
     async def get_video_info(self, video_id: str) -> dict[str, Any] | None:
-        """Получение информации о видео."""
+        """Get video information."""
         if not self._authenticated:
             return None
 
@@ -330,11 +314,11 @@ class YouTubeUploader(BaseUploader):
             return None
 
         except Exception as e:
-            self.logger.error(f"Ошибка получения информации о видео: {e}")
+            logger.error(f"Error getting video info: {e}")
             return None
 
     async def delete_video(self, video_id: str) -> bool:
-        """Удаление видео."""
+        """Delete video."""
         if not self._authenticated:
             return False
 
@@ -342,14 +326,13 @@ class YouTubeUploader(BaseUploader):
             request = self.service.videos().delete(id=video_id)
             request.execute()
 
-            self.logger.info(f"Видео удалено: {video_id}")
+            logger.info(f"Video deleted: {video_id}")
             return True
 
         except Exception as e:
-            self.logger.error(f"Ошибка удаления видео: {e}")
+            logger.error(f"Video deletion error: {e}")
             return False
 
     def _get_timestamp(self) -> str:
-        """Получение текущего времени в строковом формате."""
-
+        """Get current timestamp as string."""
         return datetime.now().strftime("%Y-%m-%d %H:%M")

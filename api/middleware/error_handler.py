@@ -1,4 +1,4 @@
-"""Глобальная обработка ошибок."""
+"""Global error handling"""
 
 import os
 

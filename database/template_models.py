@@ -1,4 +1,4 @@
-"""Модели для шаблонов, конфигураций, источников и пресетов."""
+"""Database models for templates, configs, sources and presets"""
 
 from datetime import datetime
 
@@ -10,7 +10,7 @@ from database.models import Base
 
 
 class BaseConfigModel(Base):
-    """Базовая конфигурация (глобальная или пользовательская)."""
+    """Base configuration (global or user-specific)"""
 
     __tablename__ = "base_configs"
 

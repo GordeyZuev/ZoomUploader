@@ -1,4 +1,4 @@
-"""Credentials validation helper."""
+"""Credentials validation helper"""
 
 from typing import Any
 

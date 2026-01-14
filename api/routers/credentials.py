@@ -1,4 +1,4 @@
-"""Endpoints для управления учетными данными пользователей (multi-tenancy)."""
+"""User credentials management endpoints (multi-tenancy)"""
 
 from typing import Any
 

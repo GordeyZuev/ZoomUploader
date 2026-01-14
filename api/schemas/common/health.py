@@ -1,4 +1,4 @@
-"""Схемы для health check endpoints."""
+"""Health check endpoint schemas"""
 
 from pydantic import BaseModel
 

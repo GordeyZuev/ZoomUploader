@@ -722,7 +722,7 @@ POST /api/v1/recordings/bulk/process
 ## См. также
 
 - [FIREWORKS_BATCH_API.md](./FIREWORKS_BATCH_API.md) - Экономия на транскрибации
-- [PRESET_METADATA_GUIDE.md](./PRESET_METADATA_GUIDE.md) - Настройка метаданных для upload
+- [TEMPLATES.md](./TEMPLATES.md) - Metadata configuration for templates
 - [TEMPLATE_REMATCH_FEATURE.md](./TEMPLATE_REMATCH_FEATURE.md) - Template mapping
 
 ---

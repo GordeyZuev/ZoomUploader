@@ -1,3 +1,5 @@
+"""VK album manager."""
+
 from typing import Any
 
 import aiohttp
@@ -10,14 +12,14 @@ logger = get_logger()
 
 
 class VKAlbumManager:
-    """Менеджер для работы с альбомами VK"""
+    """VK album manager."""
 
     def __init__(self, config: VKConfig):
         self.config = config
         self.base_url = "https://api.vk.com/method"
 
     async def create_album(self, title: str, description: str = "", privacy: int = 0) -> str | None:
-        """Создание альбома для видео"""
+        """Create video album."""
         try:
             params = {
                 "title": title,
@@ -35,22 +37,22 @@ class VKAlbumManager:
                     if response.status == 200:
                         data = await response.json()
                         if "error" in data:
-                            logger.error(f"❌ VK API Error: {data['error']}")
+                            logger.error(f"VK API Error: {data['error']}")
                             return None
 
                         album_id = data["response"]["album_id"]
-                        logger.info(f"📁 Альбом создан: {album_id}")
+                        logger.info(f"Album created: {album_id}")
                         return str(album_id)
                     else:
-                        logger.error(f"❌ HTTP Error: {response.status}")
+                        logger.error(f"HTTP Error: {response.status}")
                         return None
 
         except Exception as e:
-            logger.error(f"❌ Ошибка создания альбома: {e}")
+            logger.error(f"Album creation error: {e}")
             return None
 
     async def get_albums(self, count: int = 100) -> list[dict[str, Any]]:
-        """Получение списка альбомов"""
+        """Get list of albums."""
         try:
             params = {"count": count, "access_token": self.config.access_token, "v": "5.131"}
 
@@ -62,7 +64,7 @@ class VKAlbumManager:
                     if response.status == 200:
                         data = await response.json()
                         if "error" in data:
-                            logger.error(f"❌ VK API Error: {data['error']}")
+                            logger.error(f"VK API Error: {data['error']}")
                             return []
 
                         albums = []
@@ -77,18 +79,18 @@ class VKAlbumManager:
                                 }
                             )
 
-                        logger.info(f"📁 Получено альбомов: {len(albums)}")
+                        logger.info(f"Albums retrieved: {len(albums)}")
                         return albums
                     else:
-                        logger.error(f"❌ HTTP Error: {response.status}")
+                        logger.error(f"HTTP Error: {response.status}")
                         return []
 
         except Exception as e:
-            logger.error(f"❌ Ошибка получения альбомов: {e}")
+            logger.error(f"Error getting albums: {e}")
             return []
 
     async def get_album_videos(self, album_id: str, count: int = 200) -> list[dict[str, Any]]:
-        """Получение видео из альбома"""
+        """Get videos from album."""
         try:
             params = {
                 "album_id": album_id,
@@ -105,7 +107,7 @@ class VKAlbumManager:
                     if response.status == 200:
                         data = await response.json()
                         if "error" in data:
-                            logger.error(f"❌ VK API Error: {data['error']}")
+                            logger.error(f"VK API Error: {data['error']}")
                             return []
 
                         videos = []
@@ -122,14 +124,14 @@ class VKAlbumManager:
                                 }
                             )
 
-                        logger.info(f"🎥 Получено видео из альбома: {len(videos)}")
+                        logger.info(f"Videos retrieved from album: {len(videos)}")
                         return videos
                     else:
-                        logger.error(f"❌ HTTP Error: {response.status}")
+                        logger.error(f"HTTP Error: {response.status}")
                         return []
 
         except Exception as e:
-            logger.error(f"❌ Ошибка получения видео альбома: {e}")
+            logger.error(f"Error getting album videos: {e}")
             return []
 
     async def edit_album(
@@ -139,7 +141,7 @@ class VKAlbumManager:
         description: str | None = None,
         privacy: int | None = None,
     ) -> bool:
-        """Редактирование альбома"""
+        """Edit album."""
         try:
             params = {"album_id": album_id, "access_token": self.config.access_token, "v": "5.131"}
 
@@ -155,21 +157,21 @@ class VKAlbumManager:
                     if response.status == 200:
                         data = await response.json()
                         if "error" in data:
-                            logger.error(f"❌ VK API Error: {data['error']}")
+                            logger.error(f"VK API Error: {data['error']}")
                             return False
 
-                        logger.info(f"📁 Альбом отредактирован: {album_id}")
+                        logger.info(f"Album edited: {album_id}")
                         return True
                     else:
-                        logger.error(f"❌ HTTP Error: {response.status}")
+                        logger.error(f"HTTP Error: {response.status}")
                         return False
 
         except Exception as e:
-            logger.error(f"❌ Ошибка редактирования альбома: {e}")
+            logger.error(f"Album edit error: {e}")
             return False
 
     async def delete_album(self, album_id: str) -> bool:
-        """Удаление альбома"""
+        """Delete album."""
         try:
             params = {"album_id": album_id, "access_token": self.config.access_token, "v": "5.131"}
 
@@ -178,21 +180,21 @@ class VKAlbumManager:
                     if response.status == 200:
                         data = await response.json()
                         if "error" in data:
-                            logger.error(f"❌ VK API Error: {data['error']}")
+                            logger.error(f"VK API Error: {data['error']}")
                             return False
 
-                        logger.info(f"📁 Альбом удален: {album_id}")
+                        logger.info(f"Album deleted: {album_id}")
                         return True
                     else:
-                        logger.error(f"❌ HTTP Error: {response.status}")
+                        logger.error(f"HTTP Error: {response.status}")
                         return False
 
         except Exception as e:
-            logger.error(f"❌ Ошибка удаления альбома: {e}")
+            logger.error(f"Album deletion error: {e}")
             return False
 
     async def move_video_to_album(self, video_id: str, album_id: str, owner_id: str) -> bool:
-        """Перемещение видео в альбом"""
+        """Move video to album."""
         try:
             params = {
                 "video_id": video_id,
@@ -207,15 +209,15 @@ class VKAlbumManager:
                     if response.status == 200:
                         data = await response.json()
                         if "error" in data:
-                            logger.error(f"❌ VK API Error: {data['error']}")
+                            logger.error(f"VK API Error: {data['error']}")
                             return False
 
-                        logger.info(f"🎥 Видео перемещено в альбом: {album_id}")
+                        logger.info(f"Video moved to album: {album_id}")
                         return True
                     else:
-                        logger.error(f"❌ HTTP Error: {response.status}")
+                        logger.error(f"HTTP Error: {response.status}")
                         return False
 
         except Exception as e:
-            logger.error(f"❌ Ошибка перемещения видео: {e}")
+            logger.error(f"Video move error: {e}")
             return False

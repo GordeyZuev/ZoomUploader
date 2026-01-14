@@ -1,4 +1,4 @@
-"""Схемы для ошибок."""
+"""Error schemas"""
 
 from pydantic import BaseModel
 

@@ -1,4 +1,4 @@
-"""Схемы для управления профилем пользователя."""
+"""User profile management schemas"""
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 

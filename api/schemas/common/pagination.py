@@ -1,4 +1,4 @@
-"""Схемы для пагинации."""
+"""Pagination schemas"""
 
 from pydantic import BaseModel, Field
 

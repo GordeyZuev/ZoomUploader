@@ -1,4 +1,4 @@
-"""Схемы для статуса Celery задач."""
+"""Celery task status schemas"""
 
 from pydantic import BaseModel, Field
 

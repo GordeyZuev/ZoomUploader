@@ -1,4 +1,4 @@
-"""Кастомные исключения для API."""
+"""Custom API exceptions"""
 
 from fastapi import HTTPException, status
 

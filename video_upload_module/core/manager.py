@@ -1,3 +1,5 @@
+"""Universal upload manager for multiple platforms."""
+
 import asyncio
 from datetime import datetime
 from typing import Any
@@ -13,7 +15,7 @@ logger = get_logger()
 
 
 class UploadManager:
-    """Универсальный менеджер для загрузки видео на различные платформы."""
+    """Universal video upload manager for multiple platforms."""
 
     def __init__(self, config: UploadConfig):
         self.config = config
@@ -21,22 +23,22 @@ class UploadManager:
         self._initialize_uploaders()
 
     def _initialize_uploaders(self):
-        """Инициализация загрузчиков."""
+        """Initialize platform uploaders."""
         if self.config.youtube:
             self.uploaders["youtube"] = YouTubeUploader(self.config.youtube)
         if self.config.vk:
             self.uploaders["vk"] = VKUploader(self.config.vk)
 
     def add_uploader(self, platform: str, uploader: BaseUploader):
-        """Добавление загрузчика."""
+        """Add uploader for a platform."""
         self.uploaders[platform] = uploader
 
     def get_uploader(self, platform: str) -> BaseUploader | None:
-        """Получение загрузчика по платформе."""
+        """Get uploader by platform name."""
         return self.uploaders.get(platform)
 
     def get_available_platforms(self) -> list[str]:
-        """Получение списка доступных платформ."""
+        """Get list of available platforms."""
         return list(self.uploaders.keys())
 
     async def upload_to_platform(
@@ -49,21 +51,21 @@ class UploadManager:
         task_id=None,
         **kwargs,
     ) -> UploadResult | None:
-        """Загрузка видео на конкретную платформу."""
+        """Upload video to specific platform."""
 
         uploader = self.get_uploader(platform)
         if not uploader:
-            logger.error(f"❌ Загрузчик для платформы {platform} не найден")
+            logger.error(f"Uploader for platform {platform} not found")
             return None
 
         is_valid, message = uploader.validate_file(video_path)
         if not is_valid:
-            logger.error(f"❌ Файл не прошел валидацию: {message}")
+            logger.error(f"File validation failed: {message}")
             return None
 
         for attempt in range(self.config.retry_attempts):
             try:
-                logger.info(f"📤 Попытка {attempt + 1}/{self.config.retry_attempts} загрузки на {platform}")
+                logger.info(f"Upload attempt {attempt + 1}/{self.config.retry_attempts} to {platform}")
 
                 result = await uploader.upload_video(
                     video_path=video_path,
@@ -78,13 +80,13 @@ class UploadManager:
                     return result
 
             except Exception as e:
-                logger.error(f"❌ Ошибка загрузки на {platform} (попытка {attempt + 1}): {e}")
+                logger.error(f"Upload error to {platform} (attempt {attempt + 1}): {e}")
 
                 if attempt < self.config.retry_attempts - 1:
-                    logger.info(f"⏳ Ожидание {self.config.retry_delay} секунд перед повторной попыткой...")
+                    logger.info(f"Waiting {self.config.retry_delay} seconds before retry...")
                     await asyncio.sleep(self.config.retry_delay)
 
-        logger.error(f"❌ Не удалось загрузить видео на {platform} после {self.config.retry_attempts} попыток")
+        logger.error(f"Failed to upload video to {platform} after {self.config.retry_attempts} attempts")
         return None
 
     async def upload_caption(
@@ -95,14 +97,14 @@ class UploadManager:
         language: str = "ru",
         name: str | None = None,
     ) -> bool:
-        """Загрузка субтитров, если платформа поддерживает."""
+        """Upload captions if platform supports it."""
         uploader = self.get_uploader(platform)
         if not uploader:
-            logger.error(f"❌ Загрузчик для платформы {platform} не найден")
+            logger.error(f"Uploader for platform {platform} not found")
             return False
 
         if not hasattr(uploader, "upload_caption"):
-            logger.info(f"ℹ️ Платформа {platform} не поддерживает загрузку субтитров")
+            logger.info(f"Platform {platform} does not support caption upload")
             return False
 
         try:
@@ -115,19 +117,18 @@ class UploadManager:
                 )
             )
         except Exception as e:
-            logger.error(f"❌ Ошибка загрузки субтитров на {platform}: {e}")
+            logger.error(f"Caption upload error to {platform}: {e}")
             return False
 
     async def upload_to_all_platforms(
         self, video_path: str, title: str, description: str = "", **kwargs
     ) -> dict[str, UploadResult | None]:
-        """Загрузка видео на все настроенные платформы (параллельно)."""
+        """Upload video to all configured platforms (in parallel)."""
 
         platforms = self.get_available_platforms()
         if not platforms:
             return {}
 
-        # Создаем задачи для параллельной загрузки
         tasks = {
             platform: self.upload_to_platform(
                 platform=platform,
@@ -139,17 +140,15 @@ class UploadManager:
             for platform in platforms
         }
 
-        # Запускаем все загрузки параллельно
         results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
-        # Формируем словарь результатов
         return {
             platform: result if not isinstance(result, Exception) else None
             for platform, result in zip(platforms, results, strict=True)
         }
 
     async def batch_upload_to_platform(self, platform: str, video_files: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Пакетная загрузка видео на конкретную платформу."""
+        """Batch upload videos to specific platform."""
 
         results = []
 
@@ -159,10 +158,10 @@ class UploadManager:
             description = video_info.get("description", "")
 
             if not video_path:
-                logger.error(f"❌ Не указан путь к видео: {video_info}")
+                logger.error(f"Video path not specified: {video_info}")
                 continue
 
-            logger.info(f"📤 Загрузка {title} на {platform}...")
+            logger.info(f"Uploading {title} to {platform}...")
 
             kwargs = {k: v for k, v in video_info.items() if k not in ["path", "title", "description"]}
 
@@ -187,7 +186,7 @@ class UploadManager:
         return results
 
     def get_upload_statistics(self, results: list[dict[str, Any]], platform: str) -> dict[str, Any]:
-        """Получение статистики загрузки."""
+        """Get upload statistics."""
 
         total_videos = len(results)
         successful_uploads = 0
@@ -211,31 +210,31 @@ class UploadManager:
         }
 
     async def authenticate_all(self) -> dict[str, bool]:
-        """Аутентификация на всех платформах."""
+        """Authenticate on all platforms."""
         results = {}
 
         for platform, uploader in self.uploaders.items():
-            logger.info(f"🔐 Аутентификация на {platform}...")
+            logger.info(f"Authenticating on {platform}...")
             success = await uploader.authenticate()
             results[platform] = success
 
         return results
 
     async def authenticate_platforms(self, platforms: list[str]) -> dict[str, bool]:
-        """Аутентификация только на указанных платформах."""
+        """Authenticate only on specified platforms."""
         results = {}
 
         for platform in platforms:
             if platform in self.uploaders:
-                logger.info(f"🔐 Аутентификация на {platform}...")
+                logger.info(f"Authenticating on {platform}...")
                 success = await self.uploaders[platform].authenticate()
                 results[platform] = success
             else:
-                logger.error(f"❌ Платформа {platform} не настроена")
+                logger.error(f"Platform {platform} not configured")
                 results[platform] = False
 
         return results
 
     async def close_all(self):
-        """Закрытие всех соединений."""
-        logger.info("🔌 Все соединения закрыты")
+        """Close all connections."""
+        logger.info("All connections closed")

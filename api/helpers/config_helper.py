@@ -1,8 +1,4 @@
-"""Helper для получения конфигураций и credentials пользователя.
-
-Централизует логику доступа к конфигурациям и credentials,
-обеспечивая единую точку входа для всех модулей.
-"""
+"""Helper for user configurations and credentials"""
 
 from typing import Any
 
@@ -18,7 +14,7 @@ logger = get_logger()
 
 
 class ConfigHelper:
-    """Helper для работы с конфигурациями и credentials пользователя."""
+    """User configuration and credentials helper"""
 
     def __init__(self, session: AsyncSession, user_id: int):
         """

@@ -1,4 +1,4 @@
-"""Async repository для работы с recordings с multi-tenancy."""
+"""Async recording repository with multi-tenancy"""
 
 from datetime import datetime
 from typing import Any

@@ -1,4 +1,4 @@
-"""Repositories для работы с подписками и квотами."""
+"""Subscription and quota repositories"""
 
 from datetime import datetime
 

@@ -1,4 +1,4 @@
-"""Схемы для транскрибации и обработки топиков."""
+"""Transcription and topic processing schemas"""
 
 from pydantic import BaseModel, Field
 

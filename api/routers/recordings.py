@@ -1,4 +1,4 @@
-"""API endpoints для recordings с multi-tenancy support."""
+"""Recording endpoints with multi-tenancy support"""
 
 from __future__ import annotations
 

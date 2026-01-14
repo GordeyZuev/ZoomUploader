@@ -1,4 +1,4 @@
-"""Repositories для работы с аутентификацией и пользователями."""
+"""Authentication and user repositories"""
 
 from datetime import datetime
 

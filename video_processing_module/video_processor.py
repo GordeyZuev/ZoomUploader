@@ -19,7 +19,7 @@ logger = get_logger()
 
 
 class VideoProcessor:
-    """Процессор видео для обрезки и пост-обработки."""
+    """Video processor for trimming and post-processing"""
 
     def __init__(self, config: ProcessingConfig):
         self.config = config
@@ -31,12 +31,12 @@ class VideoProcessor:
         self._ensure_directories()
 
     def _ensure_directories(self):
-        """Создание необходимых директорий."""
+        """Create necessary directories."""
         for directory in [self.config.input_dir, self.config.output_dir, self.config.temp_dir]:
             Path(directory).mkdir(parents=True, exist_ok=True)
 
     def _sanitize_filename(self, filename: str) -> str:
-        """Создание безопасного имени файла."""
+        """Create a safe filename."""
         filename = re.sub(r'[<>:"/\\|?*]', "_", filename)
         filename = re.sub(r"\s+", "_", filename)
         filename = filename.strip("_")
@@ -45,7 +45,7 @@ class VideoProcessor:
         return filename
 
     async def get_video_info(self, video_path: str) -> dict[str, Any]:
-        """Получение информации о видео."""
+        """Get video information."""
         cmd = [
             "ffprobe",
             "-v",
@@ -83,10 +83,10 @@ class VideoProcessor:
             }
 
         except Exception as e:
-            raise RuntimeError(f"Ошибка получения информации о видео: {e}") from e
+            raise RuntimeError(f"Error getting video information: {e}") from e
 
     async def trim_video(self, input_path: str, output_path: str, start_time: float, end_time: float) -> bool:
-        """Обрезка видео по времени."""
+        """Trim video by time."""
         duration = end_time - start_time
 
         cmd = [
@@ -117,38 +117,36 @@ class VideoProcessor:
         try:
             logger.info(f"🔧 Команда FFmpeg: {' '.join(cmd)}")
 
-            # Простой спиннер для обработки (убираем для избежания конфликтов с основным progress bar)
-            # Логируем начало обработки вместо показа отдельного progress bar
-            logger.info("🔧 Запуск FFmpeg для обработки видео...")
+            logger.info("🔧 Starting FFmpeg for video processing...")
 
             process = await asyncio.create_subprocess_exec(
                 *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
 
-            # Ждем завершения процесса
+            # Wait for the process to complete
             await process.wait()
 
             if process.returncode != 0:
-                logger.error(f"❌ FFmpeg завершился с кодом {process.returncode}")
+                logger.error(f"❌ FFmpeg finished with code {process.returncode}")
                 stderr_output = await process.stderr.read()
-                logger.error(f"❌ Ошибка FFmpeg: {stderr_output.decode()}")
+                logger.error(f"❌ FFmpeg error: {stderr_output.decode()}")
                 return False
 
             if os.path.exists(output_path):
                 file_size = os.path.getsize(output_path)
-                logger.info(f"✅ Файл создан: {output_path} ({file_size} байт)")
+                logger.info(f"✅ File created: {output_path} ({file_size} bytes)")
                 return True
             else:
-                logger.error(f"❌ Файл не был создан: {output_path}")
+                logger.error(f"❌ File not created: {output_path}")
                 return False
 
         except Exception as e:
-            logger.error(f"❌ Исключение при обрезке видео: {e}")
-            logger.error(f"❌ Трассировка: {traceback.format_exc()}")
+            logger.error(f"❌ Exception during video trimming: {e}")
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return False
 
     async def process_segment(self, segment: VideoSegment, input_path: str) -> bool:
-        """Обработка одного сегмента."""
+        """Process a single segment."""
         try:
             start_time = segment.start_time
             end_time = segment.end_time
@@ -173,28 +171,28 @@ class VideoProcessor:
                 return False
 
         except Exception as e:
-            logger.info(f"Ошибка обработки сегмента {segment.title}: {e}")
+            logger.info(f"Error processing segment {segment.title}: {e}")
             return False
 
     async def process_video(
         self, video_path: str, title: str, custom_segments: list[tuple] | None = None
     ) -> list[VideoSegment]:
-        """Основная функция обработки видео."""
+        """Main video processing function."""
         try:
             video_info = await self.get_video_info(video_path)
             duration = video_info["duration"]
 
-            logger.info(f"📹 Обработка видео: {title}")
-            logger.info(f"   Длительность: {duration / 60:.1f} минут")
-            logger.info(f"   Размер: {video_info['size'] / 1024 / 1024:.1f} MB")
-            logger.info(f"   Разрешение: {video_info['width']}x{video_info['height']}")
+            logger.info(f"📹 Processing video: {title}")
+            logger.info(f"   Duration: {duration / 60:.1f} minutes")
+            logger.info(f"   Size: {video_info['size'] / 1024 / 1024:.1f} MB")
+            logger.info(f"   Resolution: {video_info['width']}x{video_info['height']}")
 
             if custom_segments:
                 segments = self.segment_processor.create_segments_from_timestamps(custom_segments, title)
             else:
                 segments = self.segment_processor.create_segments_from_duration(duration, title)
 
-            logger.info(f"   Создано сегментов: {len(segments)}")
+            logger.info(f"   Created segments: {len(segments)}")
 
             processed_segments = []
             for i, segment in enumerate(segments, 1):
@@ -203,11 +201,11 @@ class VideoProcessor:
                 success = await self.process_segment(segment, video_path)
                 if success:
                     processed_segments.append(segment)
-                    logger.info(f"   ✅ Сегмент обработан: {segment.output_path}")
+                    logger.info(f"   ✅ Segment processed: {segment.output_path}")
                 else:
-                    logger.info(f"   ❌ Ошибка обработки сегмента: {segment.title}")
+                    logger.info(f"   ❌ Error processing segment: {segment.title}")
 
-            logger.info(f"✅ Обработка завершена: {len(processed_segments)}/{len(segments)} сегментов")
+            logger.info(f"✅ Processing completed: {len(processed_segments)}/{len(segments)} segments")
             return processed_segments
 
         except Exception as e:
@@ -271,7 +269,7 @@ class VideoProcessor:
                     date_obj = datetime.fromisoformat(normalized_time)
                     date_suffix = f"_{date_obj.strftime('%y-%m-%d_%H-%M')}"
                 except Exception as e:
-                    logger.warning(f"⚠️ Ошибка парсинга даты '{start_time}' для имени файла: {e}")
+                    logger.warning(f"⚠️ Error parsing date '{start_time}' for filename: {e}")
 
             output_filename = f"{safe_title}{date_suffix}_processed.mp4"
             output_path = os.path.join(self.config.output_dir, output_filename)
@@ -280,25 +278,25 @@ class VideoProcessor:
             logger.info("🎬 Запуск FFmpeg для обрезки...")
             success = await self.trim_video(video_path, output_path, start_time_trim, end_time)
 
-            if success:
-                logger.info(f"✅ Видео обработано: {output_path}")
+            if success: 
+                logger.info(f"✅ Video processed: {output_path}")
                 return True, output_path
             else:
-                logger.error(f"❌ Ошибка обрезки видео: {title}")
+                logger.error(f"❌ Error trimming video: {title}")
                 return False, None
 
         except Exception as e:
-            logger.error(f"❌ Исключение при обработке видео {title}: {e}")
-            logger.error(f"❌ Трассировка: {traceback.format_exc()}")
+            logger.error(f"❌ Exception during video processing {title}: {e}")
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return False, None
 
     async def batch_process(self, video_files: list[str]) -> dict[str, list[VideoSegment]]:
-        """Пакетная обработка нескольких видео."""
+        """Batch processing multiple videos."""
         results = {}
 
         for video_path in video_files:
             if not os.path.exists(video_path):
-                logger.info(f"❌ Файл не найден: {video_path}")
+                logger.info(f"❌ File not found: {video_path}")
                 continue
 
             title = Path(video_path).stem
@@ -309,15 +307,15 @@ class VideoProcessor:
         return results
 
     def cleanup_temp_files(self):
-        """Очистка временных файлов."""
+        """Cleaning up temporary files."""
         if not self.config.keep_temp_files:
             temp_dir = Path(self.config.temp_dir)
             if temp_dir.exists():
                 shutil.rmtree(temp_dir)
-                logger.info(f"🧹 Временные файлы очищены: {temp_dir}")
+                logger.info(f"🧹 Temporary files cleaned up: {temp_dir}")
 
     def get_processing_statistics(self, results: dict[str, list[VideoSegment]]) -> dict[str, Any]:
-        """Получение статистики обработки."""
+        """Getting processing statistics."""
         total_videos = len(results)
         total_segments = sum(len(segments) for segments in results.values())
         processed_segments = sum(len([s for s in segments if s.processed]) for segments in results.values())
@@ -334,5 +332,5 @@ class VideoProcessor:
             "processed_segments": processed_segments,
             "success_rate": (processed_segments / total_segments * 100) if total_segments > 0 else 0,
             "total_processed_duration": total_duration,
-            "total_processed_duration_formatted": f"{total_duration / 60:.1f} минут",
+            "total_processed_duration_formatted": f"{total_duration / 60:.1f} minutes",
         }

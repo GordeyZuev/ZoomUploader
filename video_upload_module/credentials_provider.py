@@ -72,10 +72,8 @@ class FileCredentialProvider(CredentialProvider):
             return None
 
         try:
-            # Try loading from "token" key (bundle format)
             if isinstance(data, dict) and "token" in data:
                 return Credentials.from_authorized_user_info(data["token"], scopes)
-            # Try loading directly (simple format)
             else:
                 return Credentials.from_authorized_user_info(data, scopes)
         except Exception as e:
@@ -89,10 +87,8 @@ class FileCredentialProvider(CredentialProvider):
             token_data = json.loads(credentials.to_json())
 
             if isinstance(data, dict) and "token" in data:
-                # Bundle format - update token section
                 data["token"] = token_data
             else:
-                # Simple format - replace entire file
                 data = token_data
 
             return await self.save_credentials(data)
@@ -149,13 +145,11 @@ class DatabaseCredentialProvider(CredentialProvider):
             return None
 
         try:
-            # Extract token section from bundled format
             if isinstance(data, dict) and "token" in data:
                 token_data = data["token"]
             else:
                 token_data = data
 
-            # Create Credentials object
             return Credentials.from_authorized_user_info(token_data, scopes)
         except Exception as e:
             logger.error(f"Failed to create Google credentials from DB data: {e}")
@@ -164,23 +158,18 @@ class DatabaseCredentialProvider(CredentialProvider):
     async def update_google_credentials(self, credentials: Credentials) -> bool:
         """Update Google credentials in database after refresh."""
         try:
-            # Load existing data
             data = await self.load_credentials()
             if not data:
                 logger.error("Cannot update - no existing credentials found")
                 return False
 
-            # Update token section
             token_data = json.loads(credentials.to_json())
 
             if isinstance(data, dict) and "token" in data:
-                # Bundle format - update token section only
                 data["token"] = token_data
             else:
-                # Simple format - replace entire structure
                 data = token_data
 
-            # Save back to database
             return await self.save_credentials(data)
         except Exception as e:
             logger.error(f"Failed to update Google credentials in DB: {e}")
@@ -193,7 +182,6 @@ class DatabaseCredentialProvider(CredentialProvider):
             return None
 
         try:
-            # VK credentials structure: access_token, refresh_token, user_id, expires_in, expiry
             return {
                 "client_id": data.get("client_id"),
                 "client_secret": data.get("client_secret"),
@@ -212,25 +200,20 @@ class DatabaseCredentialProvider(CredentialProvider):
         try:
             from datetime import datetime, timedelta
 
-            # Load existing data
             data = await self.load_credentials()
             if not data:
                 logger.error("Cannot update - no existing VK credentials found")
                 return False
 
-            # Update token fields
             data["access_token"] = access_token
             data["expires_in"] = expires_in
 
-            # Update refresh token if provided (VK ID may rotate refresh tokens)
             if refresh_token:
                 data["refresh_token"] = refresh_token
 
-            # Update expiry
             expiry = datetime.utcnow() + timedelta(seconds=expires_in)
             data["expiry"] = expiry.isoformat() + "Z"
 
-            # Save back to database
             return await self.save_credentials(data)
         except Exception as e:
             logger.error(f"Failed to update VK credentials in DB: {e}")
@@ -241,13 +224,11 @@ class DatabaseCredentialProvider(CredentialProvider):
         try:
             import aiohttp
 
-            # Load credentials
             creds = await self.get_vk_credentials()
             if not creds or not creds.get("refresh_token"):
                 logger.error("No VK refresh token available")
                 return None
 
-            # Prepare refresh request
             data = {
                 "refresh_token": creds["refresh_token"],
                 "client_id": creds.get("client_id"),
@@ -255,7 +236,6 @@ class DatabaseCredentialProvider(CredentialProvider):
                 "grant_type": "refresh_token",
             }
 
-            # Call VK OAuth token endpoint
             url = "https://oauth.vk.com/access_token"
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, data=data) as response:
@@ -270,11 +250,10 @@ class DatabaseCredentialProvider(CredentialProvider):
                         logger.error(f"VK token refresh error: {token_data['error']}")
                         return None
 
-                    # Update credentials in DB
                     await self.update_vk_credentials(
                         access_token=token_data["access_token"],
                         expires_in=token_data.get("expires_in", 86400),
-                        refresh_token=token_data.get("refresh_token"),  # May be rotated
+                        refresh_token=token_data.get("refresh_token"),
                     )
 
                     logger.info("VK token refreshed and updated in database")

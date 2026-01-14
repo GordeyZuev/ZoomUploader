@@ -1,4 +1,4 @@
-"""Схемы для пресетов выгрузки (полностью типизированные)."""
+"""Output preset schemas (fully typed)"""
 
 from datetime import datetime
 from typing import Literal

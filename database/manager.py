@@ -37,9 +37,9 @@ logger = get_logger()
 
 
 def _parse_start_time(start_time_str: str) -> datetime:
-    """Парсинг строки start_time в datetime объект (формат Zoom: 2021-03-18T05:41:36Z)."""
+    """Parsing the start_time string to a datetime object (Zoom format: 2021-03-18T05:41:36Z)."""
     if not start_time_str:
-        raise ValueError("start_time не может быть пустым")
+        raise ValueError("start_time cannot be empty")
 
     try:
         if start_time_str.endswith("Z"):
@@ -57,15 +57,14 @@ def _parse_start_time(start_time_str: str) -> datetime:
 
 
 def _build_source_metadata_payload(recording: MeetingRecording) -> dict:
-    """Формирует JSONB метаданных источника из модели."""
+    """Builds the JSONB source metadata from the model."""
     meta = dict(recording.source_metadata or {})
 
-    # Основные поля Zoom (для обратной совместимости)
+    # Main Zoom fields
     zoom_fields = {
         "meeting_id": getattr(recording, "meeting_id", None),
         "account": getattr(recording, "account", None),
         "video_file_download_url": getattr(recording, "video_file_download_url", None),
-        "download_url": getattr(recording, "video_file_download_url", None),  # Алиас
         "download_access_token": getattr(recording, "download_access_token", None),
         "password": getattr(recording, "password", None),
         "recording_play_passcode": getattr(recording, "recording_play_passcode", None),
@@ -83,7 +82,7 @@ def _build_source_metadata_payload(recording: MeetingRecording) -> dict:
 
 
 class DatabaseManager:
-    """Менеджер для работы с базой данных."""
+    """Manager for working with the database."""
 
     def __init__(self, config: DatabaseConfig):
         self.config = config
@@ -91,7 +90,7 @@ class DatabaseManager:
         self.async_session = async_sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
 
     async def create_database_if_not_exists(self):
-        """Создание базы данных, если она не существует."""
+        """Create the database if it does not exist."""
         try:
             parsed = urlparse(self.config.url)
 
@@ -107,27 +106,27 @@ class DatabaseManager:
 
             if not result:
                 await conn.execute(f'CREATE DATABASE "{self.config.database}"')
-                logger.info(f"База данных создана: database={self.config.database}")
+                logger.info(f"Database created: database={self.config.database}")
 
             await conn.close()
 
         except Exception as e:
-            logger.error(f"Ошибка создания базы данных: database={self.config.database} | error={e}")
+            logger.error(f"Error creating database: database={self.config.database} | error={e}")
             raise
 
     async def recreate_database(self):
-        """Полное пересоздание базы данных: удаление и создание заново."""
+        """Full database recreation: deletion and creation again."""
         try:
             parsed = urlparse(self.config.url)
 
-            # Закрываем все активные соединения с текущей БД (если они есть)
+            # Close all active connections with the current database (if any)
             try:
                 await self.close()
             except Exception:
-                # Игнорируем ошибки при закрытии, если engine еще не использовался
+                # Ignore errors when closing, if the engine is not used yet
                 pass
 
-            # Подключаемся к системной базе данных postgres
+            # Connect to the system postgres database
             conn = await asyncpg.connect(
                 host=parsed.hostname,
                 port=parsed.port or 5432,
@@ -136,12 +135,12 @@ class DatabaseManager:
                 database="postgres",
             )
 
-            # Проверяем, существует ли база данных
+            # Check if the database exists
             db_exists = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", self.config.database)
 
             if db_exists:
-                # Завершаем все активные соединения к целевой БД
-                # Используем параметризованный запрос для безопасности
+                # End all active connections to the target database
+                # Use a parameterized query for security
                 try:
                     await conn.execute(
                         """
@@ -157,11 +156,11 @@ class DatabaseManager:
 
                 db_name_quoted = self.config.database.replace('"', '""')
                 await conn.execute(f'DROP DATABASE IF EXISTS "{db_name_quoted}"')
-                logger.info(f"База данных удалена: database={self.config.database}")
+                logger.info(f"Database deleted: database={self.config.database}")
 
             db_name_quoted = self.config.database.replace('"', '""')
             await conn.execute(f'CREATE DATABASE "{db_name_quoted}"')
-            logger.info(f"База данных создана: database={self.config.database}")
+            logger.info(f"Database created: database={self.config.database}")
 
             await conn.close()
 
@@ -170,24 +169,24 @@ class DatabaseManager:
 
             await self.create_tables()
 
-            logger.info(f"База данных полностью пересоздана: database={self.config.database}")
+            logger.info(f"Database fully recreated: database={self.config.database}")
 
         except Exception as e:
-            logger.error(f"Ошибка пересоздания базы данных: database={self.config.database} | error={e}")
+            logger.error(f"Error recreating database: database={self.config.database} | error={e}")
             raise
 
     async def create_tables(self):
-        """Создание таблиц в базе данных."""
+        """Create tables in the database."""
         try:
             async with self.engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-            logger.info("Таблицы созданы")
+            logger.info("Tables created")
         except Exception as e:
-            logger.error(f"Ошибка создания таблиц: error={e}")
+            logger.error(f"Error creating tables: error={e}")
             raise
 
     async def save_recordings(self, recordings: list[MeetingRecording]) -> int:
-        """Сохранение записей в базу данных."""
+        """Save recordings to the database."""
         if not recordings:
             return 0
 
@@ -204,30 +203,30 @@ class DatabaseManager:
                         saved_count += 1
                     except IntegrityError as e:
                         logger.warning(
-                            f"Запись уже существует: recording={recording.display_name} | recording_id={recording.db_id} | error={e}"
+                            f"Recording already exists: recording={recording.display_name} | recording_id={recording.db_id} | error={e}"
                         )
                         await session.rollback()
                         continue
                     except Exception as e:
                         logger.error(
-                            f"Ошибка сохранения записи: recording={recording.display_name} | recording_id={recording.db_id} | error={e}"
+                            f"Error saving recording: recording={recording.display_name} | recording_id={recording.db_id} | error={e}"
                         )
                         await session.rollback()
                         continue
 
                 await session.commit()
-                logger.info(f"Сохранено записей: {saved_count}/{len(recordings)}")
+                logger.info(f"Saved recordings: {saved_count}/{len(recordings)}")
                 return saved_count
 
             except Exception as e:
                 await session.rollback()
-                logger.error(f"Ошибка транзакции: error={e}")
+                logger.error(f"Transaction error: error={e}")
                 raise
 
     async def _find_existing_recording(
         self, session: AsyncSession, recording: MeetingRecording
     ) -> RecordingModel | None:
-        """Поиск существующей записи по (source_type, source_key, start_time)."""
+        """Search for an existing recording by source_type, source_key and start_time."""
         try:
             start_time = _parse_start_time(recording.start_time)
             source_type = _normalize_enum(recording.source_type, SourceType)
@@ -249,14 +248,14 @@ class DatabaseManager:
             return result.scalar_one_or_none()
         except Exception as e:
             logger.error(
-                f"Ошибка поиска существующей записи: source_type={recording.source_type} | source_key={recording.source_key} | error={e}"
+                f"Error searching for existing recording: source_type={recording.source_type} | source_key={recording.source_key} | error={e}"
             )
             return None
 
     async def _update_existing_recording(
         self, session: AsyncSession, existing: RecordingModel, recording: MeetingRecording
     ):
-        """Обновление существующей записи."""
+        """Update an existing recording."""
         existing.display_name = recording.display_name
         existing.duration = recording.duration
         existing.video_file_size = recording.video_file_size
@@ -361,7 +360,7 @@ class DatabaseManager:
         session.add(existing)
 
     async def _create_new_recording(self, session: AsyncSession, recording: MeetingRecording):
-        """Создание новой записи."""
+        """Create a new recording."""
         db_recording = RecordingModel(
             display_name=recording.display_name,
             start_time=_parse_start_time(recording.start_time),
@@ -413,7 +412,7 @@ class DatabaseManager:
                 )
             )
 
-        # Сохранение этапов обработки
+        # Save processing stages
         for stage in recording.processing_stages:
             session.add(
                 ProcessingStageModel(
@@ -430,7 +429,7 @@ class DatabaseManager:
             )
 
     async def get_recordings(self, status: ProcessingStatus | None = None) -> list[MeetingRecording]:
-        """Получение записей из базы данных."""
+        """Get recordings from the database."""
         async with self.async_session() as session:
             try:
                 query = select(RecordingModel).options(
@@ -452,16 +451,16 @@ class DatabaseManager:
                     recordings.append(recording)
 
                 logger.debug(
-                    f"Получено записей из БД: count={len(recordings)} | status={status.value if status else 'all'}"
+                    f"Got recordings from the database: count={len(recordings)} | status={status.value if status else 'all'}"
                 )
                 return recordings
 
             except Exception as e:
-                logger.error(f"Ошибка получения записей: status={status.value if status else 'all'} | error={e}")
+                logger.error(f"Error getting recordings: status={status.value if status else 'all'} | error={e}")
                 return []
 
     async def get_recordings_by_ids(self, recording_ids: list[int]) -> list[MeetingRecording]:
-        """Получение записей по ID."""
+        """Get recordings by IDs."""
         async with self.async_session() as session:
             try:
                 query = (
@@ -480,15 +479,15 @@ class DatabaseManager:
                     recording = self._convert_db_to_model(db_recording)
                     recordings.append(recording)
 
-                logger.debug(f"Получено записей по ID: count={len(recordings)} | requested={len(recording_ids)}")
+                logger.debug(f"Got recordings by IDs: count={len(recordings)} | requested={len(recording_ids)}")
                 return recordings
 
             except Exception as e:
-                logger.error(f"Ошибка получения записей по ID: recording_ids={recording_ids} | error={e}")
+                logger.error(f"Error getting recordings by IDs: recording_ids={recording_ids} | error={e}")
                 return []
 
     async def get_records_older_than(self, cutoff_date: datetime) -> list[MeetingRecording]:
-        """Получение записей, которые последний раз обновлялись раньше указанной даты (исключая EXPIRED)"""
+        """Get recordings that were last updated before the specified date (excluding EXPIRED)."""
         async with self.async_session() as session:
             try:
                 query = (
@@ -510,15 +509,15 @@ class DatabaseManager:
                     recording = self._convert_db_to_model(db_recording)
                     recordings.append(recording)
 
-                logger.debug(f"Получено старых записей: count={len(recordings)} | cutoff_date={cutoff_date}")
+                logger.debug(f"Got older recordings: count={len(recordings)} | cutoff_date={cutoff_date}")
                 return recordings
 
             except Exception as e:
-                logger.error(f"Ошибка получения старых записей: cutoff_date={cutoff_date} | error={e}")
+                logger.error(f"Error getting older recordings: cutoff_date={cutoff_date} | error={e}")
                 return []
 
     async def update_recording(self, recording: MeetingRecording):
-        """Обновление записи в базе данных."""
+        """Update a recording in the database."""
         async with self.async_session() as session:
             try:
                 db_recording = await session.get(
@@ -531,35 +530,32 @@ class DatabaseManager:
                     ],
                 )
                 if not db_recording:
-                    logger.error(f"Запись не найдена: recording_id={recording.db_id}")
+                    logger.error(f"Recording not found: recording_id={recording.db_id}")
                     return
 
                 await self._update_existing_recording(session, db_recording, recording)
 
                 await session.commit()
 
-                logger.debug(f"Запись обновлена: recording={recording.display_name} | recording_id={recording.db_id}")
+                logger.debug(f"Recording updated: recording={recording.display_name} | recording_id={recording.db_id}")
 
             except Exception as e:
                 await session.rollback()
                 logger.error(
-                    f"Ошибка обновления записи: recording={recording.display_name} | recording_id={recording.db_id} | error={e}"
+                    f"Error updating recording: recording={recording.display_name} | recording_id={recording.db_id} | error={e}"
                 )
                 raise
 
     def _convert_db_to_model(self, db_recording: RecordingModel) -> MeetingRecording:
-        """Преобразование записи из БД в модель."""
-        # Конвертируем datetime из БД в формат Zoom API (2021-03-18T05:41:36Z)
+        """Convert a recording from the database to a model."""
+        # Convert datetime from the database to the Zoom API format (2021-03-18T05:41:36Z)
         if isinstance(db_recording.start_time, datetime):
             dt = db_recording.start_time
-            # Конвертируем в UTC (PostgreSQL хранит в UTC, но может вернуть в timezone сессии)
             if dt.tzinfo is not None:
                 dt_utc = dt.astimezone(ZoneInfo("UTC"))
             else:
-                # Если timezone нет, считаем что это UTC
                 dt_utc = dt.replace(tzinfo=ZoneInfo("UTC"))
 
-            # Форматируем в формат Zoom API (с 'Z' в конце)
             start_time_str = dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
         else:
             # Если это не datetime (не должно быть), преобразуем в строку
@@ -636,8 +632,8 @@ class DatabaseManager:
             meeting_data["id"] = source_meta.get("meeting_id", "")
             meeting_data["account"] = source_meta.get("account", "default")
 
-            # Ссылки для скачивания (с поддержкой старого и нового формата)
-            meeting_data["video_file_download_url"] = source_meta.get("download_url") or source_meta.get("video_file_download_url")
+            # Ссылки для скачивания
+            meeting_data["video_file_download_url"] = source_meta.get("video_file_download_url")
             meeting_data["download_access_token"] = source_meta.get("download_access_token")
 
             # Пароли и доступ

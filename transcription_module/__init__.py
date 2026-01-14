@@ -1,4 +1,4 @@
-"""Модуль для транскрибации аудио"""
+"""Audio transcription module"""
 
 from .service import TranscriptionService
 

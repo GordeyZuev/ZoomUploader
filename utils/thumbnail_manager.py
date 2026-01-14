@@ -1,4 +1,4 @@
-"""Менеджер для работы с thumbnails пользователей."""
+"""User thumbnails manager"""
 
 import shutil
 from pathlib import Path
@@ -9,7 +9,7 @@ logger = get_logger()
 
 
 class ThumbnailManager:
-    """Менеджер для работы с thumbnails (глобальные templates + пользовательские)."""
+    """Thumbnail manager (global templates + user-specific)"""
 
     def __init__(self, base_media_dir: str = "media"):
         """

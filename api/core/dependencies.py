@@ -1,4 +1,4 @@
-"""Dependencies для ServiceContext (избегаем circular imports)."""
+"""ServiceContext dependencies"""
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession

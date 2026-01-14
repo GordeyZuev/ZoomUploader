@@ -1,4 +1,4 @@
-"""Конфигурация для Fireworks Audio Inference API с валидацией через Pydantic"""
+"""Fireworks Audio Inference API configuration"""
 
 from __future__ import annotations
 
@@ -15,23 +15,15 @@ logger = get_logger()
 
 
 class FireworksConfig(BaseSettings):
-    """
-    Параметры подключения и поведения модели Fireworks.
-
-    Все параметры соответствуют документации Fireworks AI Audio API:
-    https://docs.fireworks.ai/api-reference/audio-transcriptions
-    """
+    """Fireworks Audio API configuration. Docs: https://docs.fireworks.ai/api-reference/audio-transcriptions"""
 
     model_config = SettingsConfigDict(
-        env_file=None,  # Не используем .env файл
-        extra="ignore",  # Игнорируем лишние поля
+        env_file=None,
+        extra="ignore",
         case_sensitive=False,
     )
 
-    # Обязательные параметры
     api_key: str = Field(..., description="Fireworks API ключ")
-
-    # Параметры подключения
     model: Literal["whisper-v3", "whisper-v3-turbo"] = Field(
         default="whisper-v3-turbo",
         description="ASR модель для транскрибации",
@@ -40,8 +32,6 @@ class FireworksConfig(BaseSettings):
         default="https://audio-turbo.api.fireworks.ai",
         description="Base URL для API (зависит от модели)",
     )
-
-    # Batch API параметры (опционально, для экономии)
     account_id: str | None = Field(
         default=None,
         description="Account ID для Batch API (из Fireworks dashboard)",
@@ -51,7 +41,6 @@ class FireworksConfig(BaseSettings):
         description="Base URL для Batch API",
     )
 
-    # Параметры транскрибации из документации
     language: str | None = Field(
         default="ru",
         description="Язык транскрибации (код языка ISO 639-1)",
@@ -89,7 +78,6 @@ class FireworksConfig(BaseSettings):
         description="Режим предобработки аудио",
     )
 
-    # Параметры диаризации (требуются только если diarize=True)
     min_speakers: int | None = Field(
         default=None,
         ge=1,
@@ -101,7 +89,6 @@ class FireworksConfig(BaseSettings):
         description="Максимальное количество спикеров (требует diarize=true)",
     )
 
-    # Ограничения и ретраи (внутренние параметры)
     max_file_size_mb: int = Field(
         default=1024,
         ge=1,
@@ -131,14 +118,14 @@ class FireworksConfig(BaseSettings):
     @field_validator("timestamp_granularities", mode="before")
     @classmethod
     def validate_timestamp_granularities(cls, v: Any) -> list[str] | None:
-        """Валидация и нормализация timestamp_granularities."""
+        """Validation and normalization of timestamp_granularities."""
         if v is None:
             return None
         if isinstance(v, str):
-            # Поддержка строки "word" или "word,segment"
+            # Support string "word" or "word,segment"
             return [g.strip() for g in v.split(",") if g.strip()]
         if isinstance(v, list):
-            # Фильтруем только валидные значения
+            # Filter only valid values
             valid = {"word", "segment"}
             return [g for g in v if g in valid]
         return None
@@ -146,7 +133,7 @@ class FireworksConfig(BaseSettings):
     @field_validator("base_url", mode="after")
     @classmethod
     def validate_base_url(cls, v: str, info: Any) -> str:
-        """Автоматически устанавливает base_url в зависимости от модели."""
+        """Automatically sets base_url depending on the model."""
         model = info.data.get("model", "whisper-v3-turbo")
         if model == "whisper-v3-turbo":
             return "https://audio-turbo.api.fireworks.ai"
@@ -155,101 +142,79 @@ class FireworksConfig(BaseSettings):
     @model_validator(mode="after")
     def validate_config(self) -> FireworksConfig:
         """
-        Валидация зависимостей между полями согласно документации.
+        Validation of dependencies between fields according to the documentation.
 
         Правила:
         1. verbose_json требует timestamp_granularities
         2. diarize=true требует verbose_json и word в timestamp_granularities
         3. min_speakers/max_speakers требуют diarize=true
         """
-        # Правило 1: verbose_json требует timestamp_granularities
+        # Rule 1: verbose_json requires timestamp_granularities
         if self.response_format == "verbose_json":
             if not self.timestamp_granularities:
                 logger.warning(
-                    "⚠️ response_format = 'verbose_json', но timestamp_granularities не указан. "
-                    "Устанавливаю значение по умолчанию: ['segment']"
+                    "⚠️ response_format = 'verbose_json', but timestamp_granularities is not specified. "
+                    "Setting default value: ['segment']"
                 )
                 self.timestamp_granularities = ["segment"]
 
-        # Правило 2: diarize=true требует verbose_json и word
+        # Rule 2: diarize=true requires verbose_json and word
         if self.diarize:
             if self.response_format != "verbose_json":
                 raise ValueError(
-                    f"diarize=true требует response_format='verbose_json', но указан '{self.response_format}'"
+                    f"diarize=true requires response_format='verbose_json', but '{self.response_format}' is specified"
                 )
             if not self.timestamp_granularities or "word" not in self.timestamp_granularities:
                 raise ValueError(
-                    f"diarize=true требует, чтобы timestamp_granularities включал 'word', "
-                    f"но указано: {self.timestamp_granularities}"
+                    f"diarize=true requires timestamp_granularities to include 'word', "
+                    f"but {self.timestamp_granularities} is specified"
                 )
 
-        # Правило 3: min_speakers/max_speakers требуют diarize=true
+        # Rule 3: min_speakers/max_speakers require diarize=true
         if (self.min_speakers is not None or self.max_speakers is not None) and not self.diarize:
             logger.warning(
-                "⚠️ min_speakers/max_speakers указаны, но diarize=false. Эти параметры будут проигнорированы."
+                "min_speakers/max_speakers are specified, but diarize=false. These parameters will be ignored."
             )
 
-        # Правило 4: max_speakers должен быть >= min_speakers
+        # Rule 4: max_speakers must be >= min_speakers
         if self.min_speakers is not None and self.max_speakers is not None and self.max_speakers < self.min_speakers:
-            raise ValueError(f"max_speakers ({self.max_speakers}) должен быть >= min_speakers ({self.min_speakers})")
+            raise ValueError(f"max_speakers ({self.max_speakers}) must be greater than or equal to min_speakers ({self.min_speakers})")
 
         return self
 
     @classmethod
     def from_file(cls, config_file: str = "config/fireworks_creds.json") -> FireworksConfig:
-        """
-        Загрузка конфигурации Fireworks из JSON файла.
-
-        Поддерживает обратную совместимость со старыми ключами:
-        - output_format -> response_format
-        - timestamps -> timestamp_granularities
-        """
+        """Download Fireworks configuration from a JSON file."""
         if not os.path.exists(config_file):
             raise FileNotFoundError(
-                f"Файл конфигурации Fireworks не найден: {config_file}\n"
-                f"Создайте файл с содержимым:\n"
+                f"Fireworks configuration file not found: {config_file}\n"
+                f"Create a file with the following content:\n"
                 f'{{"api_key": "your-fireworks-api-key"}}'
             )
 
         with open(config_file, encoding="utf-8") as fp:
             data = json.load(fp)
 
-        # Извлекаем api_key
         api_key = data.pop("api_key", "")
         if not api_key:
-            raise ValueError("API ключ Fireworks не указан в конфигурации")
+            raise ValueError("Fireworks API key not specified in configuration")
 
-        # Совместимость с более ранними ключами
-        if "output_format" in data and "response_format" not in data:
-            data["response_format"] = data.pop("output_format")
-
-        # Совместимость: timestamps -> timestamp_granularities
-        timestamps_value = data.pop("timestamps", None)
-        if timestamps_value is not None and "timestamp_granularities" not in data:
-            if timestamps_value in ("none", None, ""):
-                data["timestamp_granularities"] = []
-            else:
-                data["timestamp_granularities"] = [timestamps_value]
-
-        # Создаем конфиг с валидацией Pydantic
         try:
             return cls(api_key=api_key, **data)
         except Exception as e:
-            logger.error(f"❌ Ошибка валидации конфигурации: {e}")
+            logger.error(f"Validation error: {e}")
             raise
 
     def to_request_params(self) -> dict[str, Any]:
         """
-        Формирование словаря параметров для Fireworks API.
-
-        Преобразует внутренние параметры в формат, ожидаемый API.
+        Generate a dictionary of parameters for the Fireworks API.
+        Converts internal parameters to the format expected by the API.
         """
         params: dict[str, Any] = {
             "language": self.language,
             "response_format": self.response_format,
         }
 
-        # timestamp_granularities обязателен для verbose_json
         if self.timestamp_granularities:
             params["timestamp_granularities"] = self.timestamp_granularities
 
@@ -259,12 +224,9 @@ class FireworksConfig(BaseSettings):
         if self.temperature is not None:
             params["temperature"] = self.temperature
 
-        # VAD параметры
         if self.vad_model:
             params["vad_model"] = self.vad_model
 
-        # Диаризация
-        # Согласно документации, diarize должен быть строкой "true" или "false"
         params["diarize"] = "true" if self.diarize else "false"
         if self.diarize:
             if self.min_speakers is not None:

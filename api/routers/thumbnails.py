@@ -1,4 +1,4 @@
-"""API endpoints для работы с thumbnails пользователей."""
+"""User thumbnail endpoints"""
 
 from pathlib import Path
 from typing import Annotated

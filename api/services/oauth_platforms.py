@@ -1,4 +1,4 @@
-"""OAuth platform configurations for YouTube and VK."""
+"""OAuth platform configurations"""
 
 import json
 import os

@@ -1,4 +1,4 @@
-"""Модуль для работы с DeepSeek API (обработка текста)"""
+"""DeepSeek API module (text processing)"""
 
 from .config import DeepSeekConfig
 from .topic_extractor import TopicExtractor

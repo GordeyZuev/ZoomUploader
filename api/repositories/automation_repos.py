@@ -1,4 +1,4 @@
-"""Repository for automation jobs database operations."""
+"""Automation job repository"""
 
 from datetime import datetime
 

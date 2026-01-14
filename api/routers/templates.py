@@ -1,4 +1,4 @@
-"""API endpoints для работы с шаблонами записей."""
+"""Recording template endpoints"""
 
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status

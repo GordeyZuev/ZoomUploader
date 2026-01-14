@@ -1,4 +1,4 @@
-"""Генератор субтитров из транскрипций в форматах SRT и VTT"""
+"""Subtitle generator from transcriptions (SRT and VTT formats)"""
 
 import os
 import re
@@ -11,7 +11,7 @@ logger = get_logger()
 
 
 class SubtitleEntry:
-    """Одна запись субтитра"""
+    """Single subtitle entry"""
 
     def __init__(self, start_time: timedelta, end_time: timedelta, text: str):
         self.start_time = start_time
@@ -23,7 +23,7 @@ class SubtitleEntry:
 
 
 class SubtitleGenerator:
-    """Генератор субтитров из файлов транскрипций"""
+    """Generate subtitles from transcription files"""
 
     # Регулярное выражение для парсинга временных меток: [HH:MM:SS - HH:MM:SS]
     TIMESTAMP_PATTERN = re.compile(r"\[(\d{2}):(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2}):(\d{2})\]\s*(.*)")

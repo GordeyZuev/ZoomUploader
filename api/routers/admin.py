@@ -1,4 +1,4 @@
-"""Admin endpoints для управления платформой."""
+"""Platform management admin endpoints"""
 
 from datetime import datetime
 from decimal import Decimal

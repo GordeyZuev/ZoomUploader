@@ -1,3 +1,5 @@
+"""VK video uploader implementation."""
+
 import asyncio
 import os
 from typing import Any
@@ -13,7 +15,7 @@ logger = get_logger()
 
 
 class VKUploader(BaseUploader):
-    """Загрузчик видео на VK."""
+    """VK video uploader."""
 
     def __init__(self, config: VKConfig, credential_provider=None):
         super().__init__(config)
@@ -22,82 +24,70 @@ class VKUploader(BaseUploader):
         self.base_url = "https://api.vk.com/method"
         self._authenticated = False
 
-        self.logger = logger
-
     async def authenticate(self) -> bool:
-        """Аутентификация в VK API."""
-        # If using credential_provider (DB mode), load and refresh if needed
+        """Authenticate with VK API."""
         if self.credential_provider:
             return await self._authenticate_with_provider()
 
-        # Legacy file mode or direct config mode
         return await self._authenticate_legacy()
 
     async def _authenticate_with_provider(self) -> bool:
         """Authenticate using credential provider (DB mode)."""
         try:
-            # Check if provider has VK-specific methods
             if hasattr(self.credential_provider, "get_vk_credentials"):
                 creds = await self.credential_provider.get_vk_credentials()
             else:
-                # Fallback to generic load
                 creds = await self.credential_provider.load_credentials()
 
             if not creds:
-                self.logger.error("No VK credentials found in database")
+                logger.error("No VK credentials found in database")
                 return False
 
-            # Check if token is expired
             access_token = creds.get("access_token")
             expiry_str = creds.get("expiry")
 
             if not access_token:
-                self.logger.error("No access_token in VK credentials")
+                logger.error("No access_token in VK credentials")
                 return False
 
-            # Check expiry
             needs_refresh = False
             if expiry_str:
                 try:
                     from datetime import datetime
                     expiry = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
                     now = datetime.utcnow()
-                    # Refresh if expired or expires in less than 5 minutes
                     if expiry <= now or (expiry - now).total_seconds() < 300:
                         needs_refresh = True
-                        self.logger.info("VK token expired or expiring soon, refreshing...")
+                        logger.info("VK token expired or expiring soon, refreshing...")
                 except Exception as e:
-                    self.logger.warning(f"Failed to parse expiry: {e}")
+                    logger.warning(f"Failed to parse expiry: {e}")
 
-            # Refresh token if needed
             if needs_refresh and creds.get("refresh_token"):
                 if hasattr(self.credential_provider, "refresh_vk_token"):
                     refreshed = await self.credential_provider.refresh_vk_token()
                     if refreshed:
                         access_token = refreshed.get("access_token")
-                        self.logger.info("VK token refreshed successfully")
+                        logger.info("VK token refreshed successfully")
                     else:
-                        self.logger.error("Failed to refresh VK token, using existing (may fail)")
+                        logger.error("Failed to refresh VK token, using existing (may fail)")
                 else:
-                    self.logger.warning("Credential provider doesn't support VK refresh")
+                    logger.warning("Credential provider doesn't support VK refresh")
 
-            # Update config with token
             self.config.access_token = access_token
-
-            # Validate token
             return await self._validate_token()
 
         except Exception as e:
-            self.logger.error(f"Error authenticating with credential provider: {e}")
+            logger.error(f"Error authenticating with credential provider: {e}")
             return False
 
     async def _authenticate_legacy(self) -> bool:
-        """Legacy authentication mode (file-based only).
-
+        """
+        Legacy authentication mode (file-based only).
+        
         Note: Interactive CLI setup has been removed. Use OAuth 2.0 flow via API instead.
         """
         if not self.config.access_token:
-            self.logger.error(
+            logger.error(
                 "VK access_token not found. Use OAuth 2.0 flow via API "
                 "(GET /oauth/vk/authorize) to obtain credentials."
             )
@@ -114,16 +104,16 @@ class VKUploader(BaseUploader):
                     if response.status == 200:
                         data = await response.json()
                         if "error" in data:
-                            self.logger.error(f"VK API Error: {data['error']}")
+                            logger.error(f"VK API Error: {data['error']}")
                             return False
                         self._authenticated = True
-                        self.logger.info("Аутентификация VK успешна")
+                        logger.info("VK authentication successful")
                         return True
                     else:
-                        self.logger.error(f"HTTP Error: {response.status}")
+                        logger.error(f"HTTP Error: {response.status}")
                         return False
         except Exception as e:
-            self.logger.error(f"Ошибка валидации VK токена: {e}")
+            logger.error(f"VK token validation error: {e}")
             return False
 
     async def upload_video(
@@ -138,7 +128,7 @@ class VKUploader(BaseUploader):
         **kwargs,
     ) -> UploadResult | None:
         """
-        Загрузка видео на VK.
+        Upload video to VK.
 
         Supported kwargs:
             - group_id: int - Group ID for uploading to group
@@ -154,16 +144,16 @@ class VKUploader(BaseUploader):
                 return None
 
         try:
-            self.logger.info(f"Загрузка видео на VK: {title}")
+            logger.info(f"Uploading video to VK: {title}")
 
             upload_url = await self._get_upload_url(title, description, album_id, **kwargs)
             if not upload_url:
-                self.logger.error("Не удалось получить URL для загрузки")
+                logger.error("Failed to get upload URL")
                 return None
 
             upload_result = await self._upload_video_file(upload_url, video_path, progress, task_id)
             if not upload_result:
-                self.logger.error("Ошибка загрузки файла")
+                logger.error("File upload error")
                 return None
 
             video_id = upload_result.get("video_id")
@@ -172,7 +162,7 @@ class VKUploader(BaseUploader):
             if video_id and owner_id:
                 video_url = f"https://vk.com/video{owner_id}_{video_id}"
 
-                self.logger.info(f"Видео загружено: {video_url}")
+                logger.info(f"Video uploaded: {video_url}")
 
                 result = self._create_result(video_id=video_id, video_url=video_url, title=title, platform="vk")
                 result.metadata["owner_id"] = owner_id
@@ -186,24 +176,24 @@ class VKUploader(BaseUploader):
                         success = await thumbnail_manager.set_video_thumbnail(video_id, owner_id, thumbnail_path)
                         if success:
                             result.metadata["thumbnail_set"] = True
-                            self.logger.info(f"🖼️ Миниатюра установлена для видео {video_id}")
+                            logger.info(f"Thumbnail set for video {video_id}")
                         else:
-                            result.metadata["thumbnail_error"] = "Не удалось установить миниатюру"
+                            result.metadata["thumbnail_error"] = "Failed to set thumbnail"
                     except Exception as e:
-                        self.logger.warning(f"Не удалось установить миниатюру: {e}")
+                        logger.warning(f"Failed to set thumbnail: {e}")
                         result.metadata["thumbnail_error"] = str(e)
 
                 return result
             else:
-                self.logger.error("Не удалось получить ID видео после загрузки")
+                logger.error("Failed to get video ID after upload")
                 return None
 
         except Exception as e:
-            self.logger.error(f"Ошибка загрузки видео на VK: {e}")
+            logger.error(f"VK video upload error: {e}")
             return None
 
     async def get_video_info(self, video_id: str) -> dict[str, Any] | None:
-        """Получение информации о видео."""
+        """Get video information."""
         if not self._authenticated:
             return None
 
@@ -229,7 +219,7 @@ class VKUploader(BaseUploader):
         return None
 
     async def delete_video(self, video_id: str) -> bool:
-        """Удаление видео."""
+        """Delete video."""
         if not self._authenticated:
             return False
 
@@ -241,15 +231,14 @@ class VKUploader(BaseUploader):
         response = await self._make_request("video.delete", params)
 
         if response:
-            self.logger.info(f"Видео удалено: {video_id}")
+            logger.info(f"Video deleted: {video_id}")
             return True
         else:
-            self.logger.error(f"Ошибка удаления видео: {video_id}")
+            logger.error(f"Video deletion error: {video_id}")
             return False
 
     async def _get_upload_url(self, name: str, description: str = "", album_id: str | None = None, **kwargs) -> str:
-        """Получение URL для загрузки видео."""
-        # Start with config defaults
+        """Get video upload URL."""
         params = {
             "name": name,
             "description": description,
@@ -259,20 +248,17 @@ class VKUploader(BaseUploader):
             "repeat": int(kwargs.get("repeat", self.config.repeat)),
         }
 
-        # Group ID from kwargs or config
         group_id = kwargs.get("group_id", self.config.group_id)
         if group_id:
             params["group_id"] = group_id
 
-        # Album ID
         target_album_id = album_id or kwargs.get("album_id", self.config.album_id)
         if target_album_id:
             params["album_id"] = target_album_id
 
-        # Wallpost parameter
         if "wallpost" in kwargs:
             params["wallpost"] = int(kwargs["wallpost"])
-            self.logger.debug(f"Wallpost enabled: {kwargs['wallpost']}")
+            logger.debug(f"Wallpost enabled: {kwargs['wallpost']}")
 
         response = await self._make_request("video.save", params)
 
@@ -284,11 +270,9 @@ class VKUploader(BaseUploader):
     async def _upload_video_file(
         self, upload_url: str, video_path: str, progress=None, task_id=None
     ) -> dict[str, Any] | None:
-        """Загрузка файла видео."""
+        """Upload video file."""
         video_file = None
         try:
-            # Открываем файл заранее и закрываем только после завершения запроса
-            # Это предотвращает ошибку Broken pipe
             video_file = open(video_path, "rb")
             files = {"video_file": video_file}
 
@@ -298,7 +282,7 @@ class VKUploader(BaseUploader):
                         if response.status == 200:
                             result_data = await response.json()
                             if "error" in result_data:
-                                self.logger.error(f"VK Upload Error: {result_data['error']}")
+                                logger.error(f"VK Upload Error: {result_data['error']}")
                                 return None
 
                             if progress and task_id is not None:
@@ -310,17 +294,16 @@ class VKUploader(BaseUploader):
 
                             return result_data
                         else:
-                            self.logger.error(f"HTTP Upload Error: {response.status}")
+                            logger.error(f"HTTP Upload Error: {response.status}")
                             return None
                 finally:
-                    # Закрываем файл после завершения запроса
                     if video_file:
                         try:
                             video_file.close()
                         except Exception:
                             pass
         except Exception as e:
-            self.logger.error(f"Ошибка загрузки файла: {e}")
+            logger.error(f"File upload error: {e}")
             if video_file:
                 try:
                     video_file.close()
@@ -329,7 +312,7 @@ class VKUploader(BaseUploader):
             return None
 
     async def _make_request(self, method: str, params: dict[str, Any]) -> dict[str, Any] | None:
-        """Выполнение запроса к VK API. Использует POST для всех запросов, чтобы избежать проблем с длинными URL."""
+        """Execute VK API request using POST to avoid issues with long URLs."""
         params["access_token"] = self.config.access_token
         params["v"] = "5.131"
 
@@ -339,13 +322,13 @@ class VKUploader(BaseUploader):
                     if response.status == 200:
                         data = await response.json()
                         if "error" in data:
-                            self.logger.error(f"VK API Error: {data['error']}")
+                            logger.error(f"VK API Error: {data['error']}")
                             return None
                         return data.get("response")
                     else:
                         error_text = await response.text()
-                        self.logger.error(f"HTTP Error: {response.status}, Response: {error_text[:500]}")
+                        logger.error(f"HTTP Error: {response.status}, Response: {error_text[:500]}")
                         return None
         except Exception as e:
-            self.logger.error(f"Ошибка запроса к VK API: {e}")
+            logger.error(f"VK API request error: {e}")
             return None

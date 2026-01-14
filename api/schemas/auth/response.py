@@ -1,4 +1,4 @@
-"""Схемы ответов для аутентификации."""
+"""Authentication response schemas"""
 
 from datetime import datetime
 from typing import TYPE_CHECKING

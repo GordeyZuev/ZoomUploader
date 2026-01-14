@@ -1,4 +1,4 @@
-"""Унифицированная конфигурация приложения с валидацией через Pydantic"""
+"""Unified application configuration"""
 
 import json
 import os
@@ -14,7 +14,7 @@ logger = get_logger()
 
 
 class PlatformConfig(BaseSettings, ABC):
-    """Базовый класс конфигурации платформы"""
+    """Base platform configuration"""
 
     model_config = SettingsConfigDict(
         extra="ignore",

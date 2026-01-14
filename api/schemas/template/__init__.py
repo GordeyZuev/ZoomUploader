@@ -1,8 +1,7 @@
-"""Схемы для шаблонов, конфигураций, источников и пресетов (полностью типизированные)."""
+"""Template, config, source and preset schemas (fully typed)"""
 
 from .config import BaseConfigCreate, BaseConfigResponse, BaseConfigUpdate
 from .input_source import (
-    BatchSyncRequest,
     BatchSyncResponse,
     BulkSyncRequest,
     InputSourceCreate,
@@ -50,7 +49,6 @@ __all__ = [
     "InputSourceUpdate",
     "InputSourceResponse",
     "BulkSyncRequest",
-    "BatchSyncRequest",
     "BatchSyncResponse",
     "SourceSyncResult",
     # ===== OUTPUT PRESETS (typed) =====

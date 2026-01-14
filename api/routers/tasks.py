@@ -1,4 +1,4 @@
-"""API endpoints для проверки статуса Celery задач."""
+"""Celery task status endpoints"""
 
 from celery.result import AsyncResult
 from fastapi import APIRouter, HTTPException, status

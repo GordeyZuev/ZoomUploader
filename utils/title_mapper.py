@@ -127,11 +127,7 @@ class TitleMapper:
         else:
             duration_str = f"{minutes}м"
 
-        # Подготовка темы: если есть, используем её, иначе пустая строка
         topic = main_topic if main_topic else ""
-
-        # Если тема есть, добавляем " - " перед ней для шаблона
-        # Если темы нет, оставляем пустую строку (шаблон должен обработать это)
         topic_suffix = f" - {topic}" if topic else ""
 
         return {
@@ -147,15 +143,9 @@ class TitleMapper:
         try:
             result = template.format(**variables)
 
-            # Если темы нет, убираем " - " и " | " из результата
-            # Это нужно для шаблонов типа "Прикладной Python - {topic} ({date})"
-            # или "(Л) Название | {topic} ({date})"
-            # Если {topic} пустой, получается "Прикладной Python -  ({date})"
-            # или "(Л) Название |  ({date})" - нужно убрать разделители
+            # Clean up separators when topic is empty
             if not variables.get("topic"):
-                # Заменяем " - " (с пробелами) на пустую строку
                 result = result.replace(" - ", "")
-                # Убираем " | " если топика нет (должен быть топик после |)
                 result = re.sub(r"\s*\|\s*", " ", result)
                 # Также убираем возможные двойные пробелы
                 result = " ".join(result.split())
@@ -213,7 +203,6 @@ class TitleMapper:
         return self.map_title(title, start_time, duration)
 
 
-# Глобальный экземпляр маппера для использования в других модулях
 _title_mapper = None
 
 

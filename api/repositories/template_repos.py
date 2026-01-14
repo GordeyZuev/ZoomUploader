@@ -1,4 +1,4 @@
-"""Repositories для работы с шаблонами, конфигами, источниками и пресетами."""
+"""Template, config, source and preset repositories"""
 
 from datetime import datetime
 from typing import Any

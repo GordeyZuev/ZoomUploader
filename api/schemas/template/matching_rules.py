@@ -1,4 +1,4 @@
-"""Типизированные схемы для template matching_rules."""
+"""Typed schemas for template matching_rules"""
 
 from typing import Literal
 

@@ -1,4 +1,4 @@
-"""Endpoints для управления профилем пользователя."""
+"""User profile management endpoints"""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select

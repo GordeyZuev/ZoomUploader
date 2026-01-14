@@ -1,3 +1,5 @@
+"""YouTube playlist manager."""
+
 from typing import Any
 
 from googleapiclient.errors import HttpError
@@ -10,24 +12,14 @@ logger = get_logger()
 
 
 class YouTubePlaylistManager:
-    """Менеджер для работы с плейлистами YouTube"""
+    """YouTube playlist manager."""
 
     def __init__(self, service, config: YouTubeConfig):
         self.service = service
         self.config = config
 
-        # Импортируем логгер только при необходимости
-        try:
-            from logger import get_logger
-
-            self.logger = get_logger()
-        except ImportError:
-            import logging
-
-            self.logger = logging.getLogger(__name__)
-
     async def create_playlist(self, title: str, description: str = "", privacy_status: str = "unlisted") -> str | None:
-        """Создание плейлиста"""
+        """Create playlist."""
         try:
             body = {
                 "snippet": {"title": title, "description": description},
@@ -40,15 +32,15 @@ class YouTubePlaylistManager:
             playlist_id = response["id"]
             playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
 
-            logger.info(f"📋 Плейлист создан: {playlist_url}")
+            logger.info(f"Playlist created: {playlist_url}")
             return playlist_id
 
         except HttpError as e:
-            logger.error(f"❌ Ошибка создания плейлиста: {e}")
+            logger.error(f"Playlist creation error: {e}")
             return None
 
     async def add_video_to_playlist(self, playlist_id: str, video_id: str) -> bool:
-        """Добавление видео в плейлист"""
+        """Add video to playlist."""
         try:
             body = {
                 "snippet": {
@@ -60,26 +52,26 @@ class YouTubePlaylistManager:
             request = self.service.playlistItems().insert(part="snippet", body=body)
             request.execute()
 
-            logger.info(f"📋 Видео добавлено в плейлист {playlist_id}")
+            logger.info(f"Video added to playlist {playlist_id}")
             return True
         except HttpError as e:
-            logger.error(f"❌ Ошибка добавления в плейлист: {e}")
+            logger.error(f"Error adding to playlist: {e}")
             return False
 
     async def remove_video_from_playlist(self, playlist_item_id: str) -> bool:
-        """Удаление видео из плейлиста"""
+        """Remove video from playlist."""
         try:
             request = self.service.playlistItems().delete(id=playlist_item_id)
             request.execute()
 
-            logger.info("📋 Видео удалено из плейлиста")
+            logger.info("Video removed from playlist")
             return True
         except HttpError as e:
-            logger.error(f"❌ Ошибка удаления из плейлиста: {e}")
+            logger.error(f"Error removing from playlist: {e}")
             return False
 
     async def get_playlist_info(self, playlist_id: str) -> dict[str, Any] | None:
-        """Получение информации о плейлисте"""
+        """Get playlist information."""
         try:
             request = self.service.playlists().list(part="snippet,contentDetails,status", id=playlist_id)
             response = request.execute()
@@ -96,11 +88,11 @@ class YouTubePlaylistManager:
             return None
 
         except HttpError as e:
-            logger.error(f"❌ Ошибка получения информации о плейлисте: {e}")
+            logger.error(f"Error getting playlist info: {e}")
             return None
 
     async def get_playlist_videos(self, playlist_id: str, max_results: int = 50) -> list[dict[str, Any]]:
-        """Получение списка видео в плейлисте"""
+        """Get list of videos in playlist."""
         try:
             videos = []
             next_page_token = None
@@ -132,11 +124,11 @@ class YouTubePlaylistManager:
             return videos[:max_results]
 
         except HttpError as e:
-            logger.error(f"❌ Ошибка получения видео плейлиста: {e}")
+            logger.error(f"Error getting playlist videos: {e}")
             return []
 
     async def update_playlist(self, playlist_id: str, title: str | None = None, description: str | None = None) -> bool:
-        """Обновление плейлиста"""
+        """Update playlist."""
         try:
             body = {"id": playlist_id, "snippet": {}}
 
@@ -148,28 +140,28 @@ class YouTubePlaylistManager:
             request = self.service.playlists().update(part="snippet", body=body)
             request.execute()
 
-            logger.info(f"📋 Плейлист обновлен: {playlist_id}")
+            logger.info(f"Playlist updated: {playlist_id}")
             return True
 
         except HttpError as e:
-            logger.error(f"❌ Ошибка обновления плейлиста: {e}")
+            logger.error(f"Playlist update error: {e}")
             return False
 
     async def delete_playlist(self, playlist_id: str) -> bool:
-        """Удаление плейлиста"""
+        """Delete playlist."""
         try:
             request = self.service.playlists().delete(id=playlist_id)
             request.execute()
 
-            logger.info(f"📋 Плейлист удален: {playlist_id}")
+            logger.info(f"Playlist deleted: {playlist_id}")
             return True
 
         except HttpError as e:
-            logger.error(f"❌ Ошибка удаления плейлиста: {e}")
+            logger.error(f"Playlist deletion error: {e}")
             return False
 
     async def get_user_playlists(self, max_results: int = 50) -> list[dict[str, Any]]:
-        """Получение плейлистов пользователя"""
+        """Get user playlists."""
         try:
             playlists = []
             next_page_token = None
@@ -202,5 +194,5 @@ class YouTubePlaylistManager:
             return playlists[:max_results]
 
         except HttpError as e:
-            logger.error(f"❌ Ошибка получения плейлистов пользователя: {e}")
+            logger.error(f"Error getting user playlists: {e}")
             return []

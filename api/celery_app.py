@@ -1,10 +1,8 @@
-"""Конфигурация Celery для асинхронной обработки задач."""
+"""Celery configuration for async task processing"""
 
 import sys
 from pathlib import Path
 
-# Добавляем корневую директорию проекта в sys.path
-# Это необходимо для импорта модулей из корня (transcription_module, video_processing_module и т.д.)
 project_root = Path(__file__).resolve().parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
@@ -16,14 +14,11 @@ from api.config import get_settings  # noqa: E402
 from config.settings import settings as app_settings  # noqa: E402
 
 settings = get_settings()
-
-# Construct database URL for Celery Beat scheduler
 database_url = (
     f"postgresql://{app_settings.database.username}:{app_settings.database.password}"
     f"@{app_settings.database.host}:{app_settings.database.port}/{app_settings.database.database}"
 )
 
-# Создание Celery приложения
 celery_app = Celery(
     "zoom_publishing",
     broker=settings.celery_broker_url,
@@ -31,7 +26,6 @@ celery_app = Celery(
     include=["api.tasks.processing", "api.tasks.upload", "api.tasks.automation", "api.tasks.maintenance", "api.tasks.sync_tasks", "api.tasks.template"],
 )
 
-# Конфигурация Celery
 celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],

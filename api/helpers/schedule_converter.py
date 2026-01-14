@@ -1,4 +1,4 @@
-"""Helper functions for schedule conversion and validation."""
+"""Schedule conversion and validation helpers"""
 
 from datetime import datetime
 

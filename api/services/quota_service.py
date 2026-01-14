@@ -1,4 +1,4 @@
-"""Сервис для работы с квотами и подписками."""
+"""Quota and subscription service"""
 
 from datetime import datetime
 from decimal import Decimal

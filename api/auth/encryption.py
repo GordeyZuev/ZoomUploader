@@ -1,4 +1,4 @@
-"""Утилиты для шифрования учетных данных пользователей."""
+"""User credentials encryption utilities"""
 
 import base64
 import json

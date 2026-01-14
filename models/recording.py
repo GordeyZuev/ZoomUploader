@@ -19,10 +19,10 @@ class ProcessingStatus(Enum):
     PROCESSING = "PROCESSING"  # В процессе обработки (runtime)
     PROCESSED = "PROCESSED"  # Обработано
     PREPARING = "PREPARING"  # Подготовка (транскрипция, топики, субтитры) - runtime
-    TRANSCRIBING = "TRANSCRIBING"  # В процессе транскрибации (runtime, legacy)
+    TRANSCRIBING = "TRANSCRIBING"  # В процессе транскрибации (runtime)
     TRANSCRIBED = "TRANSCRIBED"  # Транскрибировано (все stages completed)
     UPLOADING = "UPLOADING"  # В процессе выгрузки (runtime)
-    UPLOADED = "UPLOADED"  # Выгружено в API (legacy)
+    UPLOADED = "UPLOADED"  # Выгружено в API
     READY = "READY"  # Готово (все этапы завершены, включая загрузку)
     SKIPPED = "SKIPPED"  # Пропущено
     EXPIRED = "EXPIRED"  # Устарело (очищено)

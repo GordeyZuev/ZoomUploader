@@ -1,4 +1,4 @@
-"""Схемы запросов для аутентификации."""
+"""Authentication request schemas"""
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 

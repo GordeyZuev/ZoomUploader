@@ -1,4 +1,4 @@
-"""Схемы для админских эндпоинтов."""
+"""Admin endpoint schemas"""
 
 from .stats import (
     AdminOverviewStats,

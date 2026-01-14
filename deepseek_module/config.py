@@ -1,4 +1,4 @@
-"""Конфигурация DeepSeek API (как прямой, так и через Fireworks) с валидацией через Pydantic"""
+"""DeepSeek API configuration"""
 
 from __future__ import annotations
 
@@ -15,22 +15,15 @@ logger = get_logger()
 
 
 class DeepSeekConfig(BaseSettings):
-    """
-    Конфигурация DeepSeek / Fireworks-DeepSeek API.
-
-    Поддерживает как прямой DeepSeek API, так и через Fireworks.
-    """
+    """DeepSeek API configuration (direct or via Fireworks)"""
 
     model_config = SettingsConfigDict(
-        env_file=None,  # Не используем .env файл
-        extra="ignore",  # Игнорируем лишние поля
+        env_file=None,
+        extra="ignore",
         case_sensitive=False,
     )
 
-    # Обязательные параметры
     api_key: str = Field(..., description="DeepSeek API ключ")
-
-    # Параметры подключения
     model: str = Field(
         default="deepseek-chat",
         description="Модель DeepSeek для использования",
@@ -40,7 +33,6 @@ class DeepSeekConfig(BaseSettings):
         description="Base URL для API (DeepSeek или Fireworks endpoint)",
     )
 
-    # Базовые параметры генерации
     temperature: float = Field(
         default=0.0,
         ge=0.0,
@@ -54,7 +46,6 @@ class DeepSeekConfig(BaseSettings):
         description="Максимальное количество токенов (ограничение DeepSeek: 8192, используем 8000)",
     )
 
-    # Дополнительные параметры для Fireworks DeepSeek
     top_p: float | None = Field(
         default=None,
         ge=0.0,
@@ -87,7 +78,6 @@ class DeepSeekConfig(BaseSettings):
         description="Seed для детерминированных ответов",
     )
 
-    # Таймауты
     timeout: float = Field(
         default=120.0,
         ge=1.0,
@@ -104,14 +94,13 @@ class DeepSeekConfig(BaseSettings):
 
     @model_validator(mode="after")
     def validate_config(self) -> DeepSeekConfig:
-        """Валидация зависимостей между полями."""
-        # Проверка, что если используется Fireworks, то можно использовать Fireworks-специфичные параметры
+        """Validate field dependencies."""
         if self.top_k is not None or self.reasoning_effort is not None:
             base = (self.base_url or "").lower()
             if "fireworks.ai" not in base:
                 logger.warning(
-                    "⚠️ Fireworks-специфичные параметры (top_k, reasoning_effort) указаны, "
-                    "но base_url не указывает на Fireworks. Эти параметры могут не работать."
+                    "⚠️ Fireworks-specific parameters (top_k, reasoning_effort) set, "
+                    "but base_url doesn't point to Fireworks. These parameters may not work."
                 )
 
         return self
@@ -145,11 +134,10 @@ class DeepSeekConfig(BaseSettings):
         if not api_key:
             raise ValueError("API ключ DeepSeek не указан в конфигурации")
 
-        # Pydantic автоматически валидирует при создании экземпляра
         try:
             return cls(api_key=api_key, **{k: v for k, v in data.items() if k != "api_key"})
         except Exception as e:
-            logger.error(f"❌ Ошибка валидации конфигурации DeepSeek: {e}")
+            logger.error(f"❌ DeepSeek configuration validation error: {e}")
             raise
 
     def to_request_params(self, use_fireworks_extras: bool = False) -> dict[str, Any]:
@@ -171,7 +159,6 @@ class DeepSeekConfig(BaseSettings):
             "max_tokens": self.max_tokens,
         }
 
-        # Стандартные параметры OpenAI API
         if self.top_p is not None:
             params["top_p"] = self.top_p
         if self.presence_penalty is not None:
@@ -179,19 +166,16 @@ class DeepSeekConfig(BaseSettings):
         if self.frequency_penalty is not None:
             params["frequency_penalty"] = self.frequency_penalty
 
-        # Fireworks-специфичные параметры (только если явно запрошено)
-        # Они не поддерживаются стандартным OpenAI клиентом
+        # Fireworks-specific parameters (not supported by standard OpenAI client)
         if use_fireworks_extras:
             if self.top_k is not None:
                 params["top_k"] = self.top_k
             if self.reasoning_effort is not None:
                 params["reasoning_effort"] = self.reasoning_effort
 
-        # Seed для детерминированных ответов (поддерживается OpenAI API)
         if self.seed is not None:
             params["seed"] = self.seed
         else:
-            # Логируем предупреждение, если параметры заданы, но не используются
             if (self.top_k is not None or self.reasoning_effort is not None) and not use_fireworks_extras:
                 base = (self.base_url or "").lower()
                 if "fireworks.ai" in base:

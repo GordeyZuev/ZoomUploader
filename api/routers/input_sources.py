@@ -1,4 +1,4 @@
-"""API endpoints для работы с источниками данных."""
+"""Input source endpoints"""
 
 from datetime import datetime
 
@@ -11,7 +11,7 @@ from api.repositories.auth_repos import UserCredentialRepository
 from api.repositories.recording_repos import RecordingAsyncRepository
 from api.repositories.template_repos import InputSourceRepository, RecordingTemplateRepository
 from api.schemas.template import (
-    BatchSyncRequest,
+    BulkSyncRequest,
     InputSourceCreate,
     InputSourceResponse,
     InputSourceUpdate,
@@ -340,23 +340,6 @@ def _find_matching_template(
     return None
 
 
-def _check_recording_mapping(display_name: str, templates: list) -> bool:
-    """
-    Проверяет, соответствует ли запись хотя бы одному шаблону.
-
-    Deprecated: Use _find_matching_template instead.
-    Kept for backward compatibility.
-
-    Args:
-        display_name: Название записи
-        templates: Список активных шаблонов пользователя
-
-    Returns:
-        True если найдено совпадение, False иначе
-    """
-    return _find_matching_template(display_name, source_id=0, templates=templates) is not None
-
-
 @router.get("", response_model=list[InputSourceResponse])
 async def list_sources(
     active_only: bool = False,
@@ -423,7 +406,7 @@ async def create_source(
 
 @router.post("/bulk/sync", response_model=dict)
 async def bulk_sync_sources(
-    data: BatchSyncRequest,
+    data: BulkSyncRequest,
     session: AsyncSession = Depends(get_db_session),
     current_user: UserModel = Depends(get_current_active_user),
 ):

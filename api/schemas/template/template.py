@@ -1,4 +1,4 @@
-"""Схемы для шаблонов записей (полностью типизированные)."""
+"""Recording template schemas (fully typed)"""
 
 from datetime import datetime
 

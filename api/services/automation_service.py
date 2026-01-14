@@ -1,4 +1,4 @@
-"""Business logic service for automation jobs."""
+"""Automation job service"""
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession

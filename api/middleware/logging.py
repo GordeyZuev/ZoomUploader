@@ -1,4 +1,4 @@
-"""Middleware для логирования запросов."""
+"""Request logging middleware"""
 
 import time
 

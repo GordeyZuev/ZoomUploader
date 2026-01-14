@@ -1,4 +1,4 @@
-"""Dependencies для аутентификации и авторизации."""
+"""Authentication and authorization dependencies"""
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer

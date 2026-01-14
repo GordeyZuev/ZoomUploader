@@ -1,4 +1,4 @@
-"""Сервис для работы с записями."""
+"""Recording service"""
 
 from typing import Any
 

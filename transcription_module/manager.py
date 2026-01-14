@@ -1,4 +1,4 @@
-"""Менеджер для работы с файлами транскрибации и топиков."""
+"""Transcription and topics file manager"""
 
 import json
 from datetime import datetime
@@ -10,7 +10,7 @@ logger = get_logger(__name__)
 
 
 class TranscriptionManager:
-    """Управление файлами транскрибации (master.json, topics.json, cache)."""
+    """Manage transcription files (master.json, topics.json, cache)"""
 
     def __init__(self, base_dir: str | Path | None = None):
         """
@@ -31,10 +31,7 @@ class TranscriptionManager:
             Путь к директории транскрипции
         """
         if user_id is None:
-            # Fallback для обратной совместимости (deprecated)
-            if self.base_dir:
-                return self.base_dir / f"recording_{recording_id}"
-            return Path("media/transcriptions") / f"recording_{recording_id}"
+            raise ValueError("user_id is required for transcription directory")
 
         # Используем UserPathManager для изоляции по пользователям
         from utils.user_paths import get_path_manager

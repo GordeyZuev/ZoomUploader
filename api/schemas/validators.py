@@ -1,4 +1,4 @@
-"""Валидаторы и парсеры для API."""
+"""API validators and parsers"""
 
 from datetime import date, datetime, timedelta
 from typing import Any

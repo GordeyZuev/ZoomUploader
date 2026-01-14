@@ -1,4 +1,4 @@
-"""Схемы для настроек обработки."""
+"""Processing preferences schemas"""
 
 from pydantic import BaseModel, Field
 
