@@ -9,6 +9,7 @@ from api.schemas.automation import (
     AutomationJobCreate,
     AutomationJobResponse,
     AutomationJobUpdate,
+    TriggerJobResponse,
 )
 from api.services.automation_service import AutomationService
 from api.tasks.automation import dry_run_automation_job_task, run_automation_job_task
@@ -89,12 +90,12 @@ async def delete_job(
     await repo.delete(job)
 
 
-@router.post("/{job_id}/run")
+@router.post("/{job_id}/run", response_model=TriggerJobResponse)
 async def trigger_job(
     job_id: int,
     dry_run: bool = Query(False, description="Preview mode without execution"),
     ctx=Depends(get_service_context),
-):
+) -> TriggerJobResponse:
     """
     Manually trigger automation job.
     Use dry_run=true to preview what will happen without executing.
@@ -106,16 +107,16 @@ async def trigger_job(
 
     if dry_run:
         task = dry_run_automation_job_task.delay(job_id, ctx.user_id)
-        return {
-            "task_id": str(task.id),
-            "mode": "dry_run",
-            "message": "Preview mode - no changes will be made"
-        }
+        return TriggerJobResponse(
+            task_id=str(task.id),
+            mode="dry_run",
+            message="Preview mode - no changes will be made",
+        )
     else:
         task = run_automation_job_task.delay(job_id, ctx.user_id)
-        return {
-            "task_id": str(task.id),
-            "mode": "execute",
-            "message": "Job execution started"
-        }
+        return TriggerJobResponse(
+            task_id=str(task.id),
+            mode="execute",
+            message="Job execution started",
+        )
 

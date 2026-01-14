@@ -1,8 +1,152 @@
 # 🎯 Production-Ready Multi-tenant платформа
 
-**Период:** 2-12 января 2026  
-**Версия:** v0.9.2.1  
+**Период:** 2-14 января 2026  
+**Версия:** v0.9.4
 **Статус:** Dev Status
+
+---
+
+## 2026-01-14 (v2): Рефакторинг Pydantic схем - Clean Architecture + Pydantic V2 Best Practices
+
+### 🎯 Цель
+Привести схемы к чистой архитектуре: убрать дублирование (DRY), ненужный код (YAGNI), использовать встроенные возможности Pydantic V2.
+
+### ✨ Что сделано
+
+#### 1. **Чистые валидаторы** (`api/schemas/common/validators.py`)
+- ✅ Оставлены только специфичные валидаторы (нельзя сделать через Field):
+  - `validate_regex_pattern()` - проверяет что строка - валидный regex
+  - `validate_regex_patterns()` - для списков
+  - `clean_and_deduplicate_strings()` - очистка + дедупликация
+- ❌ Удалены валидаторы дублирующие Pydantic Field:
+  - `validate_name()` → `Field(min_length=3, max_length=255)`
+  - `validate_positive_int()` → `Field(gt=0)`
+
+#### 2. **Pydantic V2 ConfigDict** (`api/schemas/common/config.py`)
+```python
+# Создан BASE_MODEL_CONFIG для всех схем
+BASE_MODEL_CONFIG = ConfigDict(
+    json_schema_serialization_defaults_required=True,  # Сохранить порядок полей
+    populate_by_name=True,
+    strict=False,
+)
+
+# ORM_MODEL_CONFIG для Response схем
+ORM_MODEL_CONFIG = ConfigDict(
+    from_attributes=True,  # Вместо orm_mode
+    json_schema_serialization_defaults_required=True,
+)
+```
+
+#### 3. **Миграция на model_config** (все template/* схемы)
+**Было (Pydantic V1 style):**
+```python
+class MySchema(BaseModel):
+    name: str
+    
+    class Config:
+        from_attributes = True
+        json_schema_extra = {...}
+```
+
+**Стало (Pydantic V2 style):**
+```python
+class MySchema(BaseModel):
+    model_config = BASE_MODEL_CONFIG  # Общая конфигурация
+    
+    name: str = Field(..., min_length=3, max_length=255)
+```
+
+#### 4. **Field Constraints вместо custom валидаторов**
+**Было:**
+```python
+@field_validator("age")
+def check_age(cls, v):
+    if v <= 0: raise ValueError()
+    return v
+```
+
+**Стало:**
+```python
+age: int = Field(..., gt=0, le=150, description="Возраст")
+```
+
+**Было:**
+```python
+@field_validator("name")
+def validate_name(cls, v):
+    v = v.strip()
+    if len(v) < 3: raise ValueError()
+    return v
+```
+
+**Стало:**
+```python
+name: str = Field(..., min_length=3, max_length=255)
+
+@field_validator("name", mode="before")
+def strip_name(cls, v):
+    return v.strip() if isinstance(v, str) else v
+```
+
+#### 5. **Обновленные файлы**
+- ✅ `api/schemas/template/*` (13 файлов) - все схемы
+- ✅ `api/schemas/common/*` (responses, errors, health) - model_config
+- ✅ `api/schemas/task/status.py` - TaskResult, TaskStatusResponse
+- ✅ Удалены все `class Config:` блоки с `json_schema_extra`
+
+#### 6. **Порядок полей в Swagger UI**
+- ✅ Теперь порядок полей в Swagger = порядок определения в классе
+- ✅ Не сортируется по алфавиту (как было раньше)
+- ✅ Удобная навигация в документации API
+
+### 📊 Результаты
+
+**Код:**
+- ✅ 0 lint errors
+- ✅ API запустился успешно
+- ✅ Swagger UI работает (`/docs`, `/openapi.json`)
+- ✅ Нет дублирования валидации
+- ✅ Нет устаревших полей (`is_private`, `watch_directory`)
+
+**Принципы Clean Architecture:**
+- ✅ **DRY** - нет дублирования (общие валидаторы, BASE_MODEL_CONFIG)
+- ✅ **YAGNI** - удалены неиспользуемые поля и backward compatibility
+- ✅ **KISS** - используем встроенные Field constraints вместо custom логики
+- ✅ **Pydantic V2 Best Practices** - model_config, Field constraints, mode="before"
+
+**Файлы:**
+- `api/schemas/common/validators.py` - чистые валидаторы (3 функции)
+- `api/schemas/common/config.py` - конфигурации моделей (2 константы)
+- `docs/PYDANTIC_BEST_PRACTICES.md` - полный гайд по работе с Pydantic V2
+
+**См:** 
+- [PYDANTIC_BEST_PRACTICES.md](PYDANTIC_BEST_PRACTICES.md) - Best practices
+- [API_SCHEMAS_GUIDE.md](API_SCHEMAS_GUIDE.md) - Общий гайд по схемам
+
+---
+
+## 2026-01-14 (v1): Полная типизация API - Pydantic схемы для всех эндпоинтов
+
+### Добавлены Pydantic схемы для всех API (71/95 routes типизированы)
+
+**1. Базовые схемы (DRY):** common/responses.py, task/status.py, credentials/*, operations/*
+
+**2. Полная типизация Templates/Presets/Sources (Breaking Change):**
+- `matching_rules: MatchingRules` (keywords, patterns, source_ids)
+- `processing_config.transcription: TranscriptionProcessingConfig` (prompt, language, granularity, enable_*)
+- `metadata_config: TemplateMetadataConfig` (vk/youtube блоки, title_template, topics_display)
+- `output_config: TemplateOutputConfig` (preset_ids, auto_upload)
+- `preset_metadata: YouTubePresetMetadata | VKPresetMetadata` (типизированные настройки)
+- `source.config: ZoomSourceConfig | GoogleDriveSourceConfig | ...` (типизированные config)
+
+**3. Вложенные модели:** 15+ типизированных моделей, 6 Enum'ов, field validators
+
+**Статистика:** +29 эндпоинтов типизированы, 118 моделей в OpenAPI, +15 файлов схем, +1282/-476 строк
+
+**Принципы:** KISS/DRY/YAGNI соблюдены, минимальная валидация, переиспользуемые компоненты
+
+**См:** [API_SCHEMAS_GUIDE.md](API_SCHEMAS_GUIDE.md)
 
 ---
 
@@ -331,6 +475,34 @@ python utils/create_test_user.py
 ---
 
 ## 🔄 Changelog (основные вехи)
+
+### 14 января 2026 - Bulk Operations & Template Lifecycle
+**Bulk Operations Refactoring:**
+- ✅ Переименованы endpoints: `/batch/*` → `/bulk/*` для консистентности
+- ✅ Unified request schema `BulkOperationRequest` с поддержкой `recording_ids` OR `filters`
+- ✅ Добавлены bulk endpoints: `/bulk/download`, `/bulk/trim`, `/bulk/topics`, `/bulk/subtitles`, `/bulk/upload`
+- ✅ Переименованы operations: `process` (FFmpeg trim) → `trim`, `full-pipeline` → `process`
+- ✅ Dry-run support для single и bulk `process` endpoints
+- ✅ `RecordingFilters` расширены: `template_id`, `source_id`, `is_mapped`, `exclude_blank`, `failed`
+- ✅ Поддержка псевдо-статуса `"FAILED"` в фильтрах (маппится на `recording.failed = true`)
+- 📝 Документация: `BULK_OPERATIONS_GUIDE.md` (полный гайд по всем bulk операциям)
+
+**Template Lifecycle Management:**
+- ✅ Auto-unmap при удалении template: все recordings с удаленным template unmapped автоматически
+- ✅ Симметричное поведение: создание template → auto-rematch, удаление → auto-unmap
+- ✅ Status recordings сохраняется при unmap (UPLOADED остается UPLOADED)
+- 📝 Обновлена документация `TEMPLATE_REMATCH_FEATURE.md`
+
+**Bug Fixes:**
+- 🐛 **FIX:** `metadata_config` терялся при создании template → добавлен в `repo.create()` и `create_template_from_recording()`
+- 🐛 **FIX:** `/bulk/sync` возвращал 422 → исправлен порядок роутов (bulk перед параметризованным)
+- 🐛 **FIX:** Фильтр `status: ["FAILED"]` вызывал database error → добавлена обработка через `recording.failed`
+- ✅ Переименована Celery task: `batch_sync_sources_task` → `bulk_sync_sources_task`
+
+**Architecture Decisions:**
+- 📋 Проанализированы подходы к multiple template matching (ARRAY vs separate table)
+- 📋 Документированы плюсы/минусы каждого подхода для будущей реализации
+- 📝 Создан ADR документ: `TEMPLATE_MAPPING_ARCHITECTURE.md`
 
 ### 12 января 2026 - CLI Legacy Removal
 **Removed:** Legacy CLI support completely removed from codebase

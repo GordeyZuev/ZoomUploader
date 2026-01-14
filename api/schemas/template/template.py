@@ -1,122 +1,115 @@
-"""Схемы для шаблонов записей."""
+"""Схемы для шаблонов записей (полностью типизированные)."""
 
-import re
 from datetime import datetime
-from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from api.schemas.common import BASE_MODEL_CONFIG, ORM_MODEL_CONFIG
+
+from .matching_rules import MatchingRules
+from .metadata_config import TemplateMetadataConfig
+from .output_config import TemplateOutputConfig
+from .processing_config import TemplateProcessingConfig
+
+# ============================================================================
+# Recording Template Schemas (Fully Typed)
+# ============================================================================
 
 
 class RecordingTemplateBase(BaseModel):
-    """Базовая схема для шаблона."""
+    """Базовая схема для шаблона с полной типизацией."""
 
-    name: str = Field(..., min_length=1, max_length=255, description="Название шаблона")
+    model_config = BASE_MODEL_CONFIG
+
+    name: str = Field(..., min_length=3, max_length=255, description="Название шаблона")
     description: str | None = Field(None, max_length=1000, description="Описание шаблона")
-    matching_rules: dict[str, Any] | None = Field(None, description="Правила сопоставления")
-    processing_config: dict[str, Any] | None = Field(
+
+    # Типизированные конфигурации
+    matching_rules: MatchingRules | None = Field(
         None,
-        description="Processing settings (transcribe, extract_topics, etc)"
+        description="Правила сопоставления recordings с template",
     )
-    metadata_config: dict[str, Any] | None = Field(
+    processing_config: TemplateProcessingConfig | None = Field(
         None,
-        description="Content-specific metadata (title_template, playlist_id, thumbnail_path, tags). "
-        "Can also override preset defaults (e.g., privacy, topics_display format) via deep merge."
+        description="Настройки обработки: transcription, topics, subtitles",
     )
-    output_config: dict[str, Any] | None = Field(
+    metadata_config: TemplateMetadataConfig | None = Field(
         None,
-        description="Output configuration (preset_ids list)"
+        description="Content metadata: title_template, playlist_id",
+    )
+    output_config: TemplateOutputConfig | None = Field(
+        None,
+        description="Output настройки: preset_ids, auto_upload",
     )
 
-    @field_validator("name")
+    @field_validator("name", mode="before")
     @classmethod
-    def validate_name(cls, v: str) -> str:
-        """Валидация названия шаблона."""
-        v = v.strip()
-        if not v:
-            raise ValueError("Название не может быть пустым")
-        return v
-
-    @field_validator("matching_rules")
-    @classmethod
-    def validate_matching_rules(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Валидация правил сопоставления."""
-        if v is None:
-            return v
-
-        # Проверяем наличие хотя бы одного правила
-        valid_rules = ["exact_matches", "keywords", "patterns", "source_ids"]
-        has_rule = any(rule in v for rule in valid_rules)
-
-        if not has_rule:
-            raise ValueError(f"Должно быть хотя бы одно правило из: {', '.join(valid_rules)}")
-
-        # Валидируем patterns (regex)
-        if "patterns" in v:
-            if not isinstance(v["patterns"], list):
-                raise ValueError("patterns должен быть списком")
-            for pattern in v["patterns"]:
-                try:
-                    re.compile(pattern)
-                except re.error as e:
-                    raise ValueError(f"Неверный regex в patterns: {e}") from e
-
-        # Валидируем exact_matches
-        if "exact_matches" in v and not isinstance(v["exact_matches"], list):
-            raise ValueError("exact_matches должен быть списком")
-
-        # Валидируем keywords
-        if "keywords" in v and not isinstance(v["keywords"], list):
-            raise ValueError("keywords должен быть списком")
-
-        # Валидируем source_ids
-        if "source_ids" in v:
-            if not isinstance(v["source_ids"], list):
-                raise ValueError("source_ids должен быть списком")
-            if not all(isinstance(sid, int) for sid in v["source_ids"]):
-                raise ValueError("source_ids должен содержать целые числа")
-
-        return v
-
-    @field_validator("output_config")
-    @classmethod
-    def validate_output_config(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Валидация конфигурации выгрузки."""
-        if v is None:
-            return v
-
-        # Проверяем наличие preset_ids (должен быть list of integers)
-        if "preset_ids" in v:
-            if not isinstance(v["preset_ids"], list):
-                raise ValueError("preset_ids должен быть списком целых чисел")
-            if not v["preset_ids"]:
-                raise ValueError("preset_ids не может быть пустым списком")
-            if not all(isinstance(pid, int) and pid > 0 for pid in v["preset_ids"]):
-                raise ValueError("preset_ids должен содержать только положительные целые числа")
-
+    def strip_name(cls, v: str) -> str:
+        """Очистка названия от пробелов."""
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                raise ValueError("Название не может быть пустым")
         return v
 
 
 class RecordingTemplateCreate(RecordingTemplateBase):
-    """Схема для создания шаблона."""
+    """Схема для создания шаблона (полностью типизированная)."""
 
-    is_draft: bool = Field(False, description="Черновик")
+    is_draft: bool = Field(False, description="Черновик (не применяется автоматически)")
+
+    @model_validator(mode="after")
+    def validate_template(self) -> "RecordingTemplateCreate":
+        """Кросс-валидация template."""
+        # Если не draft, должны быть matching_rules
+        if not self.is_draft:
+            if not self.matching_rules:
+                raise ValueError("Non-draft template требует matching_rules")
+
+            # Проверим что есть хоть одно правило
+            rules = self.matching_rules
+            has_rule = (
+                (rules.exact_matches and len(rules.exact_matches) > 0)
+                or (rules.keywords and len(rules.keywords) > 0)
+                or (rules.patterns and len(rules.patterns) > 0)
+                or (rules.source_ids and len(rules.source_ids) > 0)
+            )
+
+            if not has_rule:
+                raise ValueError("matching_rules должны содержать хоть одно правило (exact_matches, keywords, patterns или source_ids)")
+
+        # Если есть output_config с auto_upload=True, нужен processing_config
+        if self.output_config and self.output_config.auto_upload:
+            if not self.processing_config:
+                raise ValueError("auto_upload=True требует processing_config")
+
+        # Если есть metadata_config с title_template, должен быть output_config
+        if self.metadata_config and self.metadata_config.title_template:
+            if not self.output_config:
+                raise ValueError("title_template требует output_config с preset_ids")
+
+        return self
+
 
 
 class RecordingTemplateUpdate(BaseModel):
-    """Схема для обновления шаблона."""
+    """Схема для обновления шаблона (полностью типизированная)."""
 
-    name: str | None = Field(None, min_length=1, max_length=255)
-    description: str | None = None
-    matching_rules: dict[str, Any] | None = None
-    processing_config: dict[str, Any] | None = None
-    metadata_config: dict[str, Any] | None = None
-    output_config: dict[str, Any] | None = None
+    name: str | None = Field(None, min_length=3, max_length=255)
+    description: str | None = Field(None, max_length=1000)
+    matching_rules: MatchingRules | None = None
+    processing_config: TemplateProcessingConfig | None = None
+    metadata_config: TemplateMetadataConfig | None = None
+    output_config: TemplateOutputConfig | None = None
     is_draft: bool | None = None
     is_active: bool | None = None
 
 
 class RecordingTemplateResponse(RecordingTemplateBase):
     """Схема ответа для шаблона."""
+
+    # ORM модель - используем специальную конфигурацию
+    model_config = ORM_MODEL_CONFIG
 
     id: int
     user_id: int
@@ -127,12 +120,12 @@ class RecordingTemplateResponse(RecordingTemplateBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
-
 
 class RecordingTemplateListResponse(BaseModel):
     """Схема для списка шаблонов."""
+
+    # ORM модель - используем специальную конфигурацию
+    model_config = ORM_MODEL_CONFIG
 
     id: int
     name: str
@@ -142,7 +135,3 @@ class RecordingTemplateListResponse(BaseModel):
     used_count: int
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
-

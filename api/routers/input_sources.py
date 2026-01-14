@@ -374,25 +374,6 @@ async def list_sources(
     return sources
 
 
-@router.get("/{source_id}", response_model=InputSourceResponse)
-async def get_source(
-    source_id: int,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: UserModel = Depends(get_current_active_user),
-):
-    """Получение источника по ID."""
-    repo = InputSourceRepository(session)
-    source = await repo.find_by_id(source_id, current_user.id)
-
-    if not source:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Source {source_id} not found"
-        )
-
-    return source
-
-
 @router.post("", response_model=InputSourceResponse, status_code=status.HTTP_201_CREATED)
 async def create_source(
     data: InputSourceCreate,
@@ -402,7 +383,7 @@ async def create_source(
     """Создание нового источника."""
     repo = InputSourceRepository(session)
 
-    source_type = data.platform.value.upper()
+    source_type = data.platform.upper()
 
     if data.credential_id:
         cred_repo = UserCredentialRepository(session)
@@ -432,11 +413,86 @@ async def create_source(
         name=data.name,
         source_type=source_type,
         credential_id=data.credential_id,
-        config=data.config,
+        config=data.config.model_dump(exclude_none=True) if data.config else None,
         description=data.description,
     )
 
     await session.commit()
+    return source
+
+
+@router.post("/bulk/sync", response_model=dict)
+async def bulk_sync_sources(
+    data: BatchSyncRequest,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: UserModel = Depends(get_current_active_user),
+):
+    """
+    Bulk синхронизация нескольких источников (async через Celery).
+
+    Args:
+        data: Запрос с source_ids, from_date, to_date
+
+    Returns:
+        task_id для отслеживания прогресса через GET /api/v1/tasks/{task_id}
+    """
+    # Валидация что все sources существуют и принадлежат пользователю
+    repo = InputSourceRepository(session)
+    invalid_sources = []
+    source_names = []
+
+    for source_id in data.source_ids:
+        source = await repo.find_by_id(source_id, current_user.id)
+        if not source:
+            invalid_sources.append(source_id)
+        else:
+            source_names.append(source.name)
+
+    if invalid_sources:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sources not found: {invalid_sources}"
+        )
+
+    # Запускаем Celery task
+    from api.tasks.sync_tasks import bulk_sync_sources_task
+
+    task = bulk_sync_sources_task.apply_async(
+        kwargs={
+            "source_ids": data.source_ids,
+            "user_id": current_user.id,
+            "from_date": data.from_date,
+            "to_date": data.to_date,
+        }
+    )
+
+    logger.info(f"Started batch sync task {task.id} for {len(data.source_ids)} sources (user {current_user.id})")
+
+    return {
+        "task_id": task.id,
+        "status": "queued",
+        "message": f"Batch sync task started for {len(data.source_ids)} sources",
+        "source_ids": data.source_ids,
+        "source_names": source_names,
+    }
+
+
+@router.get("/{source_id}", response_model=InputSourceResponse)
+async def get_source(
+    source_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: UserModel = Depends(get_current_active_user),
+):
+    """Получение источника по ID."""
+    repo = InputSourceRepository(session)
+    source = await repo.find_by_id(source_id, current_user.id)
+
+    if not source:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Source {source_id} not found"
+        )
+
     return source
 
 
@@ -542,61 +598,5 @@ async def sync_source(
         "message": f"Sync task started for source {source_id}",
         "source_id": source_id,
         "source_name": source.name,
-    }
-
-
-@router.post("/batch-sync", response_model=dict)
-async def batch_sync_sources(
-    data: BatchSyncRequest,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: UserModel = Depends(get_current_active_user),
-):
-    """
-    Батчевая синхронизация нескольких источников (async через Celery).
-
-    Args:
-        data: Запрос с source_ids, from_date, to_date
-
-    Returns:
-        task_id для отслеживания прогресса через GET /api/v1/tasks/{task_id}
-    """
-    # Валидация что все sources существуют и принадлежат пользователю
-    repo = InputSourceRepository(session)
-    invalid_sources = []
-    source_names = []
-
-    for source_id in data.source_ids:
-        source = await repo.find_by_id(source_id, current_user.id)
-        if not source:
-            invalid_sources.append(source_id)
-        else:
-            source_names.append(source.name)
-
-    if invalid_sources:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Sources not found: {invalid_sources}"
-        )
-
-    # Запускаем Celery task
-    from api.tasks.sync_tasks import batch_sync_sources_task
-
-    task = batch_sync_sources_task.apply_async(
-        kwargs={
-            "source_ids": data.source_ids,
-            "user_id": current_user.id,
-            "from_date": data.from_date,
-            "to_date": data.to_date,
-        }
-    )
-
-    logger.info(f"Started batch sync task {task.id} for {len(data.source_ids)} sources (user {current_user.id})")
-
-    return {
-        "task_id": task.id,
-        "status": "queued",
-        "message": f"Batch sync task started for {len(data.source_ids)} sources",
-        "source_ids": data.source_ids,
-        "source_names": source_names,
     }
 

@@ -383,46 +383,49 @@ class RecordingService:
 
     def _to_response(self, recording: MeetingRecording) -> RecordingResponse:
         """Конвертация MeetingRecording в RecordingResponse."""
-        # ... существующая логика конвертации ...
-        # (сохраняю для краткости, она корректна)
+        from api.schemas.recording.response import (
+            OutputTargetResponse,
+            ProcessingStageResponse,
+            SourceResponse,
+        )
 
         # Конвертируем source
         source = None
         if recording.source_type:
-            source = {
-                "source_type": recording.source_type,
-                "source_key": recording.source_key,
-                "metadata": recording.source_metadata or {},
-            }
+            source = SourceResponse(
+                source_type=recording.source_type,
+                source_key=recording.source_key,
+                metadata=recording.source_metadata or {},
+            )
 
         # Конвертируем outputs
         outputs = []
         for target in getattr(recording, "output_targets", []):
             outputs.append(
-                {
-                    "id": getattr(target, "id", 0),
-                    "target_type": target.target_type,
-                    "status": target.status,
-                    "target_meta": target.target_meta or {},
-                    "uploaded_at": getattr(target, "uploaded_at", None),
-                }
+                OutputTargetResponse(
+                    id=getattr(target, "id", 0),
+                    target_type=target.target_type,
+                    status=target.status,
+                    target_meta=target.target_meta or {},
+                    uploaded_at=getattr(target, "uploaded_at", None),
+                )
             )
 
         # Конвертируем processing_stages
         stages = []
         for stage in getattr(recording, "processing_stages", []):
             stages.append(
-                {
-                    "stage_type": (
+                ProcessingStageResponse(
+                    stage_type=(
                         stage.stage_type.value if hasattr(stage.stage_type, "value") else str(stage.stage_type)
                     ),
-                    "status": (stage.status.value if hasattr(stage.status, "value") else str(stage.status)),
-                    "failed": stage.failed,
-                    "failed_at": stage.failed_at,
-                    "failed_reason": stage.failed_reason,
-                    "retry_count": stage.retry_count,
-                    "completed_at": getattr(stage, "completed_at", None),
-                }
+                    status=(stage.status.value if hasattr(stage.status, "value") else str(stage.status)),
+                    failed=stage.failed,
+                    failed_at=stage.failed_at,
+                    failed_reason=stage.failed_reason,
+                    retry_count=stage.retry_count,
+                    completed_at=getattr(stage, "completed_at", None),
+                )
             )
 
         return RecordingResponse(
@@ -432,6 +435,7 @@ class RecordingService:
             duration=recording.duration,
             status=recording.status,
             is_mapped=recording.is_mapped,
+            blank_record=getattr(recording, "blank_record", False),
             processing_preferences=recording.processing_preferences,
             source=source,
             outputs=outputs,

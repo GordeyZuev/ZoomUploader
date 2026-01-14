@@ -94,7 +94,7 @@ def sync_single_source_task(
     max_retries=3,
     default_retry_delay=300,
 )
-def batch_sync_sources_task(
+def bulk_sync_sources_task(
     self,
     source_ids: list[int],
     user_id: int,

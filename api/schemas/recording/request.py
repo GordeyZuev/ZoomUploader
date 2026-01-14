@@ -2,9 +2,10 @@
 
 from datetime import date
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from api.schemas.processing.preferences import ProcessingPreferences
+from api.schemas.recording.filters import RecordingFilters
 from api.schemas.validators import DateRangeMixin
 
 
@@ -113,5 +114,211 @@ class UpdateRecordingRequest(BaseModel):
                     "enable_subtitles": True,
                     "enable_topics": True,
                 }
+            }
+        }
+
+
+# ============================================================================
+# Bulk Operations - Base Classes
+# ============================================================================
+
+
+class BulkOperationRequest(BaseModel):
+    """
+    Базовая схема для всех bulk операций.
+
+    Поддерживает два режима:
+    1. Явный список recording_ids
+    2. Автоматическая выборка по filters
+
+    Только один из режимов может быть использован одновременно.
+    """
+
+    recording_ids: list[int] | None = Field(
+        None,
+        description="Явный список ID записей для обработки",
+        min_length=1
+    )
+    filters: RecordingFilters | None = Field(
+        None,
+        description="Фильтры для автоматической выборки записей"
+    )
+    limit: int = Field(
+        50,
+        ge=1,
+        le=200,
+        description="Максимальное количество записей при использовании filters"
+    )
+
+    @model_validator(mode='after')
+    def validate_input(self):
+        """Валидация: должен быть указан либо recording_ids, либо filters."""
+        if not self.recording_ids and not self.filters:
+            raise ValueError("Укажите recording_ids или filters")
+        if self.recording_ids and self.filters:
+            raise ValueError("Укажите только recording_ids ИЛИ filters, не оба параметра")
+        return self
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "recording_ids": [1, 2, 3, 4, 5]
+                },
+                {
+                    "filters": {
+                        "template_id": 5,
+                        "status": ["INITIALIZED"],
+                        "is_mapped": True
+                    },
+                    "limit": 50
+                }
+            ]
+        }
+
+
+# ============================================================================
+# Bulk Operations - Specific Request Schemas
+# ============================================================================
+
+
+class BulkDownloadRequest(BulkOperationRequest):
+    """Bulk скачивание записей из Zoom."""
+
+    force: bool = Field(False, description="Пересохранить если уже скачано")
+    allow_skipped: bool = Field(False, description="Разрешить загрузку SKIPPED записей")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "filters": {
+                    "source_id": 10,
+                    "status": ["PENDING"]
+                },
+                "force": False,
+                "allow_skipped": False
+            }
+        }
+
+
+class BulkTrimRequest(BulkOperationRequest):
+    """Bulk обработка видео (FFmpeg - удаление тишины)."""
+
+    silence_threshold: float = Field(-40.0, description="Порог тишины в dB")
+    min_silence_duration: float = Field(2.0, description="Минимальная длительность тишины в секундах")
+    padding_before: float = Field(5.0, description="Отступ перед речью в секундах")
+    padding_after: float = Field(5.0, description="Отступ после речи в секундах")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "recording_ids": [1, 2, 3],
+                "silence_threshold": -35.0,
+                "min_silence_duration": 3.0
+            }
+        }
+
+
+class BulkTranscribeRequest(BulkOperationRequest):
+    """Bulk транскрибация записей."""
+
+    use_batch_api: bool = Field(
+        False,
+        description="Использовать Fireworks Batch API (экономия ~50%, но дольше)"
+    )
+    poll_interval: float = Field(10.0, description="Интервал polling для Batch API (секунды)")
+    max_wait_time: float = Field(3600.0, description="Максимальное время ожидания Batch API (секунды)")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "filters": {
+                    "template_id": 5,
+                    "status": ["DOWNLOADED", "PROCESSED"]
+                },
+                "use_batch_api": True,
+                "limit": 100
+            }
+        }
+
+
+class BulkTopicsRequest(BulkOperationRequest):
+    """Bulk извлечение тем из транскрибаций."""
+
+    granularity: str = Field("long", description="Режим извлечения ('short' - крупные темы | 'long' - детальные)")
+    version_id: str | None = Field(None, description="ID версии (если не указан, генерируется автоматически)")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "filters": {
+                    "status": ["TRANSCRIBED"],
+                    "template_id": 5
+                },
+                "granularity": "long",
+                "limit": 50
+            }
+        }
+
+
+class BulkSubtitlesRequest(BulkOperationRequest):
+    """Bulk генерация субтитров."""
+
+    formats: list[str] = Field(
+        default=["srt", "vtt"],
+        description="Форматы субтитров для генерации"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "recording_ids": [1, 2, 3],
+                "formats": ["srt", "vtt"]
+            }
+        }
+
+
+class BulkUploadRequest(BulkOperationRequest):
+    """Bulk загрузка записей на платформы."""
+
+    platforms: list[str] | None = Field(
+        None,
+        description="Платформы для загрузки (youtube, vk). Если None - из preset"
+    )
+    preset_id: int | None = Field(None, description="Override preset ID для всех записей")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "filters": {
+                    "status": ["TOPICS_EXTRACTED"],
+                    "is_mapped": True
+                },
+                "platforms": ["youtube", "vk"],
+                "limit": 30
+            }
+        }
+
+
+class BulkProcessRequest(BulkOperationRequest):
+    """Bulk полный пайплайн обработки (download → trim → transcribe → topics → upload)."""
+
+    processing_config: dict | None = Field(None, description="Override processing config для всех записей")
+    metadata_config: dict | None = Field(None, description="Override metadata config для всех записей")
+    output_config: dict | None = Field(None, description="Override output config для всех записей")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "filters": {
+                    "template_id": 5,
+                    "status": ["INITIALIZED", "FAILED"],
+                    "is_mapped": True
+                },
+                "output_config": {
+                    "auto_upload": True,
+                    "platforms": ["youtube"]
+                },
+                "limit": 50
             }
         }

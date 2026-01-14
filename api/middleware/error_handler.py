@@ -22,7 +22,7 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     except Exception:
         exc_str = repr(exc)
 
-    logger.error(f"Unhandled exception: {exc_str}", exc_info=exc)
+    logger.error("Unhandled exception: {}", exc_str, exc_info=exc)
 
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -66,7 +66,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 async def response_validation_exception_handler(request: Request, exc: ResponseValidationError) -> JSONResponse:
     """Обработчик ошибок валидации response (внутренние ошибки сервера)."""
-    logger.error("Response validation error: %s", exc, exc_info=exc)
+    logger.error("Response validation error: {}", exc, exc_info=exc)
 
     # Extract validation errors
     errors = []
@@ -95,7 +95,7 @@ async def response_validation_exception_handler(request: Request, exc: ResponseV
 
 async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError) -> JSONResponse:
     """Обработчик ошибок SQLAlchemy."""
-    logger.error("Database error: %s", exc, exc_info=exc)
+    logger.error("Database error: {}", exc, exc_info=exc)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={

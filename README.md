@@ -9,8 +9,8 @@
 
 **LEAP** — это production-ready multi-tenant платформа с полным `REST API` для автоматизации end-to-end обработки образовательного видеоконтента — от загрузки до публикации с AI-транскрибацией, интеллектуальным структурированием и профессиональным оформлением.
 
-**Версия:** `v0.9.2.1` (Dev Status)  
-**Tech:** `Python 3.11+` • `FastAPI` • `PostgreSQL` • `Redis` • `Celery` • `AI` (Whisper, DeepSeek)
+**Версия:** `v0.9.2.2` (Dev Status)  
+**Tech:** `Python 3.11+` • `FastAPI` • `Pydantic V2` • `PostgreSQL` • `Redis` • `Celery` • `AI` (Whisper, DeepSeek)
 
 ---
 
@@ -448,9 +448,27 @@ TRANSCRIBED → UPLOADING → READY
 
 ---
 
-## 🆕 Latest Release: v0.9.2.1
+## 🆕 Latest Release: v0.9.2.2
 
 **Major Features:**
+
+🎯 **Production-Ready API (NEW)**
+- 84 REST endpoints, 100% типизированы Pydantic V2
+- Clean Architecture принципы (DRY, YAGNI, KISS)
+- Полная типизация вложенных конфигураций
+- OpenAPI схемы с 118+ моделями
+
+📝 **Pydantic V2 Best Practices (NEW)**
+- `model_config` вместо `class Config`
+- Field constraints вместо custom валидаторов
+- Общие валидаторы без дублирования
+- Сохранение порядка полей в Swagger UI
+
+🔄 **Bulk Operations (NEW)**
+- Унифицированные bulk endpoints для всех операций
+- Фильтры по статусу, template, source, датам
+- Dry-run режим для preview изменений
+- Template lifecycle management
 
 🔐 **OAuth 2.0 Integration**
 - Web-based flow для YouTube, VK & Zoom
@@ -483,10 +501,12 @@ TRANSCRIBED → UPLOADING → READY
 **Statistics:**
 ```
 API Endpoints:  84 (full production coverage)
+Pydantic Models: 118+ (полная типизация)
 Database:       12 tables, 19 migrations (auto-init)
-Architecture:   Template-driven pipeline
+Architecture:   Template-driven pipeline + Clean Code
 OAuth:          YouTube, VK, Zoom (all platforms)
 Subscription:   4 plans with quotas
+Documentation:  15+ guides
 ```
 
 📜 Полная история: [WHAT_WAS_DONE.md](docs/WHAT_WAS_DONE.md)
@@ -507,4 +527,4 @@ Subscription:   4 plans with quotas
 
 ---
 
-**Версия:** `v0.9.2.1` • **Статус:** Dev Status
+**Версия:** `v0.9.2.2` • **Статус:** Dev Status

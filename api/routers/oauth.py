@@ -11,6 +11,7 @@ from api.auth.encryption import get_encryption
 from api.dependencies import get_db_session, get_redis
 from api.repositories.auth_repos import UserCredentialRepository
 from api.schemas.auth import UserCredentialCreate, UserInDB
+from api.schemas.oauth import OAuthImplicitFlowResponse
 from api.services.oauth_platforms import OAuthPlatformConfig, get_platform_config
 from api.services.oauth_service import OAuthService
 from api.services.oauth_state import OAuthStateManager
@@ -223,10 +224,10 @@ async def vk_authorize(
         )
 
 
-@router.get("/vk/authorize/implicit")
+@router.get("/vk/authorize/implicit", response_model=OAuthImplicitFlowResponse)
 async def vk_authorize_implicit(
     current_user: UserInDB = Depends(get_current_user),
-):
+) -> OAuthImplicitFlowResponse:
     """
     Generate VK Implicit Flow URL (legacy method, no refresh token).
 
@@ -265,26 +266,11 @@ async def vk_authorize_implicit(
 
     logger.info(f"VK Implicit Flow URL generated: user_id={current_user.id} app_id={implicit_app_id}")
 
-    return {
-        "method": "implicit_flow",
-        "app_id": implicit_app_id,
-        "authorization_url": implicit_url,
-        "instructions": [
-            "1. Open authorization_url in browser",
-            "2. Allow app permissions (video, groups, wall)",
-            "3. Copy access_token from redirected URL",
-            "4. POST to /api/v1/credentials/ with platform=vk_video",
-        ],
-        "example_credentials": {
-            "platform": "vk_video",
-            "account_name": "vk_manual",
-            "credentials": {
-                "access_token": "YOUR_COPIED_TOKEN",
-                "user_id": 123456,
-            },
-        },
-        "note": "Token expires in ~24h. No auto-refresh. Use VK ID OAuth for production.",
-    }
+    return OAuthImplicitFlowResponse(
+        method="implicit_flow",
+        app_id=implicit_app_id,
+        redirect_uri=implicit_url,
+    )
 
 
 @router.get("/vk/callback")

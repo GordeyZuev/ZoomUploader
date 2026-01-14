@@ -13,7 +13,13 @@ from api.repositories.auth_repos import (
 )
 from api.schemas.auth import QuotaStatusResponse, QuotaUsageResponse, UserInDB, UserResponse, UserUpdate
 from api.schemas.auth.response import UserMeResponse
-from api.schemas.user import ChangePasswordRequest, DeleteAccountRequest, UserProfileUpdate
+from api.schemas.user import (
+    AccountDeleteResponse,
+    ChangePasswordRequest,
+    DeleteAccountRequest,
+    PasswordChangeResponse,
+    UserProfileUpdate,
+)
 from api.services.quota_service import QuotaService
 from database.auth_models import (
     RefreshTokenModel,
@@ -228,12 +234,12 @@ async def update_profile(
     return UserResponse.model_validate(updated_user)
 
 
-@router.post("/me/password", status_code=status.HTTP_200_OK)
+@router.post("/me/password", response_model=PasswordChangeResponse, status_code=status.HTTP_200_OK)
 async def change_password(
     password_data: ChangePasswordRequest,
     current_user: UserInDB = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
-):
+) -> PasswordChangeResponse:
     """
     Сменить пароль текущего пользователя.
 
@@ -286,18 +292,18 @@ async def change_password(
 
     logger.info(f"Password changed for user: {current_user.email} (ID: {current_user.id})")
 
-    return {
-        "message": "Password changed successfully",
-        "detail": "All active sessions have been terminated. Please login again.",
-    }
+    return PasswordChangeResponse(
+        message="Password changed successfully",
+        detail="All active sessions have been terminated. Please login again.",
+    )
 
 
-@router.delete("/me", status_code=status.HTTP_200_OK)
+@router.delete("/me", response_model=AccountDeleteResponse, status_code=status.HTTP_200_OK)
 async def delete_account(
     delete_data: DeleteAccountRequest,
     current_user: UserInDB = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
-):
+) -> AccountDeleteResponse:
     """
     Удалить аккаунт текущего пользователя.
 
@@ -407,8 +413,8 @@ async def delete_account(
 
     logger.info(f"Account deleted: {user_email} (ID: {user_id})")
 
-    return {
-        "message": "Account successfully deleted",
-        "detail": "All your data has been permanently removed from our system.",
-    }
+    return AccountDeleteResponse(
+        message="Account successfully deleted",
+        detail="All your data has been permanently removed from our system.",
+    )
 

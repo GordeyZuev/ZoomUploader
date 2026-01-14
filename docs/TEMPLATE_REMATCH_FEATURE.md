@@ -18,6 +18,17 @@
 - Находит те, что matched к новому template
 - Обновляет `is_mapped=True`, `template_id`, `status=INITIALIZED`
 
+### 1.1. Автоматический Unmap при удалении
+
+При удалении template **автоматически** происходит unmap всех связанных recordings:
+- Все recordings с этим `template_id` → `template_id=NULL`, `is_mapped=False`
+- Status recordings НЕ меняется (DOWNLOADED остаётся DOWNLOADED, UPLOADED остаётся UPLOADED)
+- Recordings становятся доступны для нового matching
+
+**Симметричное поведение:**
+- ✅ **Создание template** → auto-rematch SKIPPED recordings
+- ✅ **Удаление template** → auto-unmap всех связанных recordings
+
 ```bash
 POST /api/v1/templates
 {
@@ -210,6 +221,24 @@ POST /api/v1/templates/from-recording/{id}
 POST /api/v1/templates/{id}/rematch
 ```
 
+### Workflow 5: Удаление template (auto-unmap)
+
+```bash
+# 1. Проверить сколько recordings mapped к template
+GET /api/v1/templates/1
+# Response: "used_count": 15
+
+# 2. Удалить template
+DELETE /api/v1/templates/1
+
+# 3. Автоматически unmapped 15 recordings
+# Логи: "Unmapped 15 recordings from template 1 'Course Name'"
+
+# 4. Проверить что recordings unmapped
+GET /api/v1/recordings?mapped=false
+# Должно быть +15 recordings
+```
+
 ## 🔐 Безопасность
 
 ### Safe by Default
@@ -325,6 +354,16 @@ Re-match обновляет **только unmapped recordings**:
 
 **Query params:**
 - `auto_rematch` (bool, default: `true`) - запустить автоматический re-match
+
+### DELETE /api/v1/templates/{id}
+
+**Behavior:**
+- Автоматически unmaps все recordings с этим template
+- Обновляет `template_id → NULL`, `is_mapped → False`
+- Status recordings не меняется
+- Логирует количество unmapped recordings
+
+**Response:** `204 No Content`
 
 ### POST /api/v1/templates/{id}/preview-rematch
 

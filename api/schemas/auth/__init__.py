@@ -7,6 +7,7 @@ from .credential import (
     UserCredentialResponse,
     UserCredentialUpdate,
 )
+from .operations import LogoutAllResponse, LogoutResponse
 from .request import (
     ChangePasswordRequest,
     LoginRequest,
@@ -74,4 +75,7 @@ __all__ = [
     # Responses
     "TokenResponse",
     "UserMeResponse",
+    # Operations
+    "LogoutResponse",
+    "LogoutAllResponse",
 ]

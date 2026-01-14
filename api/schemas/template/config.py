@@ -5,22 +5,27 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from api.schemas.common import BASE_MODEL_CONFIG, ORM_MODEL_CONFIG
+
 
 class BaseConfigBase(BaseModel):
     """Базовая схема для конфигурации."""
+
+    model_config = BASE_MODEL_CONFIG
 
     name: str = Field(..., min_length=1, max_length=255, description="Название конфигурации")
     description: str | None = Field(None, max_length=1000, description="Описание конфигурации")
     config_type: str | None = Field(None, description="Тип конфигурации (processing, transcription, etc)")
     config_data: dict[str, Any] = Field(..., description="Данные конфигурации")
 
-    @field_validator("name")
+    @field_validator("name", mode="before")
     @classmethod
-    def validate_name(cls, v: str) -> str:
-        """Валидация названия конфигурации."""
-        v = v.strip()
-        if not v:
-            raise ValueError("Название не может быть пустым")
+    def strip_name(cls, v: str) -> str:
+        """Очистка названия от пробелов."""
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                raise ValueError("Название не может быть пустым")
         return v
 
     @field_validator("config_data")
@@ -76,6 +81,8 @@ class BaseConfigUpdate(BaseModel):
 class BaseConfigResponse(BaseConfigBase):
     """Схема ответа для конфигурации."""
 
+    model_config = ORM_MODEL_CONFIG
+
     id: int
     user_id: int | None
     is_active: bool
@@ -98,7 +105,4 @@ class BaseConfigResponse(BaseConfigBase):
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
-
-    class Config:
-        from_attributes = True
 

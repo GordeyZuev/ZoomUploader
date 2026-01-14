@@ -2,8 +2,43 @@
 
 Полная техническая документация системы автоматизации обработки и публикации видеолекций.
 
-**Версия:** v0.9.2.1  
+**Версия:** v0.9.2.2
 **Статус:** Dev Status
+
+---
+
+## 🆕 Последние обновления (январь 2026)
+
+### Pydantic V2 Рефакторинг - Clean Architecture
+
+**Полная типизация API (118+ Pydantic моделей):**
+- ✅ 84 REST endpoints с типизированными request/response схемами
+- ✅ Вложенные конфигурации: `MatchingRules`, `TemplateProcessingConfig`, `TemplateMetadataConfig`
+- ✅ Platform-specific metadata: `YouTubePresetMetadata`, `VKPresetMetadata`
+- ✅ Source configs: `ZoomSourceConfig`, `GoogleDriveSourceConfig`
+
+**Pydantic V2 Best Practices:**
+- ✅ `model_config = BASE_MODEL_CONFIG` вместо `class Config`
+- ✅ `Field(min_length=3, max_length=255)` вместо custom валидаторов
+- ✅ `@field_validator` с `mode="before"` для pre-processing
+- ✅ Централизованные валидаторы в `api/schemas/common/validators.py`
+- ✅ Сохранение порядка полей в Swagger UI
+
+**Clean Architecture принципы:**
+- ✅ **DRY** - общие валидаторы, BASE_MODEL_CONFIG
+- ✅ **YAGNI** - удалены устаревшие поля (`is_private`, `watch_directory`)
+- ✅ **KISS** - встроенные Field constraints вместо custom логики
+
+**Bulk Operations:**
+- ✅ Унифицированный `BulkOperationRequest` с фильтрами
+- ✅ Endpoints: `/bulk/download`, `/bulk/trim`, `/bulk/transcribe`, `/bulk/upload`
+- ✅ Template lifecycle: auto-unmap при удалении template
+- ✅ Dry-run режим для preview без изменений
+
+**Документация:**
+- 📖 [API_SCHEMAS_GUIDE.md](API_SCHEMAS_GUIDE.md) - полный гайд по схемам
+- 📖 [PYDANTIC_BEST_PRACTICES.md](PYDANTIC_BEST_PRACTICES.md) - best practices
+- 📖 [BULK_OPERATIONS_GUIDE.md](BULK_OPERATIONS_GUIDE.md) - bulk операции
 
 ---
 
@@ -486,22 +521,28 @@ CELERY_RESULT_BACKEND=redis://localhost:6379/0
 
 ### 📈 Статистика API
 
-| Категория | Количество |
-|-----------|-----------|
-| **Authentication** | 5 |
-| **User Management** | 6 |
-| **Admin Stats** | 3 |
-| **Recordings** | 16 |
-| **Templates** | 8 |
-| **Credentials** | 6 |
-| **OAuth** | 6 |
-| **Automation** | 6 |
-| **Tasks** | 2 |
-| **Input Sources** | 6 |
-| **Output Presets** | 5 |
-| **Thumbnails** | 4 |
-| **Health** | 1 |
-| **TOTAL** | **84** |
+| Категория | Количество | Типизация |
+|-----------|-----------|-----------|
+| **Authentication** | 5 | ✅ Полная |
+| **User Management** | 6 | ✅ Полная |
+| **Admin Stats** | 3 | ✅ Полная |
+| **Recordings** | 16 | ✅ Полная |
+| **Templates** | 8 | ✅ Полная |
+| **Credentials** | 6 | ✅ Полная |
+| **OAuth** | 6 | ✅ Полная |
+| **Automation** | 6 | ✅ Полная |
+| **Tasks** | 2 | ✅ Полная |
+| **Input Sources** | 6 | ✅ Полная |
+| **Output Presets** | 5 | ✅ Полная |
+| **Thumbnails** | 4 | ✅ Полная |
+| **Health** | 1 | ✅ Полная |
+| **TOTAL** | **84** | **100%** |
+
+**Pydantic схемы:**
+- 118+ моделей в OpenAPI
+- 15+ вложенных типизированных конфигураций
+- 6 Enum'ов (`YouTubePrivacy`, `VKPrivacyLevel`, `TopicsDisplayFormat`, etc.)
+- 100% типизация на всех уровнях вложенности
 
 ---
 

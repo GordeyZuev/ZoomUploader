@@ -90,7 +90,7 @@ def run_automation_job_task(self, job_id: int, user_id: int):
                 processed_count = 0
 
                 if processing_config.get("auto_process", True):
-                    from api.tasks.processing import full_pipeline_task
+                    from api.tasks.processing import process_recording_task
 
                     # Process all INITIALIZED recordings (template-driven)
                     auto_upload = processing_config.get("auto_upload", True)
@@ -99,7 +99,7 @@ def run_automation_job_task(self, job_id: int, user_id: int):
                     } if auto_upload else None
 
                     for recording in new_recordings:
-                        task = full_pipeline_task.delay(
+                        task = process_recording_task.delay(
                             recording_id=recording.id,
                             user_id=user_id,
                             manual_override=manual_override,

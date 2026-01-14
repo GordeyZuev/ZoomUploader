@@ -1,5 +1,3 @@
-"""FastAPI приложение."""
-
 import subprocess
 
 from fastapi import FastAPI
@@ -84,11 +82,9 @@ async def startup_event():
             logger.info("✅ Миграции применены успешно")
         else:
             logger.error(f"❌ Ошибка применения миграций: {result.stderr}")
-            # Не падаем, чтобы приложение могло запуститься для диагностики
 
     except Exception as e:
         logger.error(f"❌ Ошибка инициализации БД: {e}")
-        # Не падаем, чтобы приложение могло запуститься для диагностики
 
 # CORS
 app.add_middleware(
@@ -118,29 +114,29 @@ app.add_exception_handler(Exception, global_exception_handler)
 
 # Routers
 app.include_router(health.router)
+
 app.include_router(auth.router)
+app.include_router(oauth.router)
+
 app.include_router(users.router)
 app.include_router(user_config.router)
 app.include_router(credentials.router)
-app.include_router(oauth.router)
+
 app.include_router(recordings.router)
-app.include_router(tasks.router)
-# New template system routers
 app.include_router(templates.router)
 app.include_router(input_sources.router)
 app.include_router(output_presets.router)
-app.include_router(thumbnails.router)
-# Automation router
 app.include_router(automation.router)
-# Admin router
-app.include_router(admin.router)
 
+app.include_router(thumbnails.router)
+app.include_router(admin.router)
+app.include_router(tasks.router)
 
 @app.get("/")
 async def root():
     """Корневой endpoint."""
     return {
-        "message": "LEAP API - Lecture Enhancement & Automation Platform",
+        "message": "LEAP API",
         "version": settings.api_version,
         "docs": settings.docs_url,
     }

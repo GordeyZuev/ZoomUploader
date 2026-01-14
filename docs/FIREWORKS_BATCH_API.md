@@ -2,6 +2,29 @@
 
 **Экономия ~50% на транскрибации** через Batch API.
 
+## ⚠️ Важно: Разница между терминами
+
+**Fireworks Batch API** и **Bulk Operations** - это РАЗНЫЕ концепции:
+
+| Концепция | Что это | Где используется |
+|-----------|---------|------------------|
+| **Fireworks Batch API** | Режим обработки Fireworks (отложенная vs немедленная) | Параметр `use_batch_api=true` в транскрибации |
+| **Bulk Operations** | Обработка нескольких записей за раз | Эндпоинты `/api/v1/recordings/bulk/*` |
+
+**Они могут комбинироваться:**
+```bash
+# Bulk транскрибация с Fireworks Batch API = много записей + экономия
+POST /api/v1/recordings/bulk/transcribe
+{
+  "recording_ids": [1, 2, 3],
+  "use_batch_api": true  # ← Fireworks Batch API для экономии
+}
+```
+
+Для bulk операций смотрите [BULK_OPERATIONS_GUIDE.md](./BULK_OPERATIONS_GUIDE.md).
+
+---
+
 ## Что это
 
 Fireworks предоставляет два API для транскрибации:

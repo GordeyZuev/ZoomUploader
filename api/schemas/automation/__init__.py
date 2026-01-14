@@ -8,6 +8,7 @@ from .job import (
     ProcessingConfig,
     SyncConfig,
 )
+from .operations import TriggerJobResponse
 from .schedule import (
     CronSchedule,
     HoursSchedule,
@@ -30,5 +31,5 @@ __all__ = [
     "SyncConfig",
     "TimeOfDaySchedule",
     "WeekdaysSchedule",
+    "TriggerJobResponse",
 ]
-

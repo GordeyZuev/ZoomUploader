@@ -1,5 +1,6 @@
 """Схемы для управления пользователями."""
 
+from .operations import AccountDeleteResponse, PasswordChangeResponse
 from .profile import (
     ChangePasswordRequest,
     DeleteAccountRequest,
@@ -10,5 +11,6 @@ __all__ = [
     "UserProfileUpdate",
     "ChangePasswordRequest",
     "DeleteAccountRequest",
+    "PasswordChangeResponse",
+    "AccountDeleteResponse",
 ]
-

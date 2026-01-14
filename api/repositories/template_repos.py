@@ -300,6 +300,7 @@ class RecordingTemplateRepository:
         name: str,
         matching_rules: dict[str, Any] | None = None,
         processing_config: dict[str, Any] | None = None,
+        metadata_config: dict[str, Any] | None = None,
         output_config: dict[str, Any] | None = None,
         description: str | None = None,
         is_draft: bool = False,
@@ -311,6 +312,7 @@ class RecordingTemplateRepository:
             description=description,
             matching_rules=matching_rules,
             processing_config=processing_config,
+            metadata_config=metadata_config,
             output_config=output_config,
             is_draft=is_draft,
         )

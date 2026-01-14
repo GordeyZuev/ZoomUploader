@@ -68,7 +68,7 @@ async def create_preset(
         name=data.name,
         platform=data.platform,
         credential_id=data.credential_id,
-        preset_metadata=data.preset_metadata,
+        preset_metadata=data.preset_metadata.model_dump(exclude_none=True),
         description=data.description,
     )
 

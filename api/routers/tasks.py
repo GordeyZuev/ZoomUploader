@@ -1,17 +1,16 @@
 """API endpoints для проверки статуса Celery задач."""
 
-from typing import Any
-
 from celery.result import AsyncResult
 from fastapi import APIRouter, HTTPException, status
 
 from api.celery_app import celery_app
+from api.schemas.task import TaskCancelResponse, TaskStatusResponse
 
 router = APIRouter(prefix="/api/v1/tasks", tags=["Tasks"])
 
 
-@router.get("/{task_id}")
-async def get_task_status(task_id: str) -> dict[str, Any]:
+@router.get("/{task_id}", response_model=TaskStatusResponse)
+async def get_task_status(task_id: str) -> TaskStatusResponse:
     """
     Получить статус задачи по ID.
 
@@ -32,77 +31,76 @@ async def get_task_status(task_id: str) -> dict[str, Any]:
 
     if task.state == "PENDING":
         # Задача в очереди
-        return {
-            "task_id": task_id,
-            "state": "PENDING",
-            "status": "Task is pending in queue",
-            "progress": 0,
-            "result": None,
-            "error": None,
-        }
+        return TaskStatusResponse(
+            task_id=task_id,
+            state="PENDING",
+            status="Task is pending in queue",
+            progress=0,
+            result=None,
+            error=None,
+        )
 
     elif task.state == "PROCESSING":
         # Задача выполняется
         info = task.info or {}
-        return {
-            "task_id": task_id,
-            "state": "PROCESSING",
-            "status": info.get("status", "Processing..."),
-            "progress": info.get("progress", 0),
-            "step": info.get("step", None),
-            "result": None,
-            "error": None,
-        }
+        return TaskStatusResponse(
+            task_id=task_id,
+            state="PROCESSING",
+            status=info.get("status", "Processing..."),
+            progress=info.get("progress", 0),
+            result=None,
+            error=None,
+        )
 
     elif task.state == "SUCCESS":
         # Задача завершена успешно
-        return {
-            "task_id": task_id,
-            "state": "SUCCESS",
-            "status": "Task completed successfully",
-            "progress": 100,
-            "result": task.result,
-            "error": None,
-        }
+        return TaskStatusResponse(
+            task_id=task_id,
+            state="SUCCESS",
+            status="Task completed successfully",
+            progress=100,
+            result=task.result,
+            error=None,
+        )
 
     elif task.state == "FAILURE":
         # Задача завершена с ошибкой
         error_info = str(task.info) if task.info else "Unknown error"
-        return {
-            "task_id": task_id,
-            "state": "FAILURE",
-            "status": "Task failed",
-            "progress": 0,
-            "result": None,
-            "error": error_info,
-        }
+        return TaskStatusResponse(
+            task_id=task_id,
+            state="FAILURE",
+            status="Task failed",
+            progress=0,
+            result=None,
+            error=error_info,
+        )
 
     elif task.state == "RETRY":
         # Задача будет повторена
         info = task.info or {}
-        return {
-            "task_id": task_id,
-            "state": "RETRY",
-            "status": "Task is retrying",
-            "progress": 0,
-            "result": None,
-            "error": str(info),
-        }
+        return TaskStatusResponse(
+            task_id=task_id,
+            state="RETRY",
+            status="Task is retrying",
+            progress=0,
+            result=None,
+            error=str(info),
+        )
 
     else:
         # Неизвестный статус
-        return {
-            "task_id": task_id,
-            "state": task.state,
-            "status": f"Unknown state: {task.state}",
-            "progress": 0,
-            "result": None,
-            "error": None,
-        }
+        return TaskStatusResponse(
+            task_id=task_id,
+            state=task.state,
+            status=f"Unknown state: {task.state}",
+            progress=0,
+            result=None,
+            error=None,
+        )
 
 
-@router.delete("/{task_id}")
-async def cancel_task(task_id: str) -> dict[str, Any]:
+@router.delete("/{task_id}", response_model=TaskCancelResponse)
+async def cancel_task(task_id: str) -> TaskCancelResponse:
     """
     Отменить задачу.
 
@@ -127,8 +125,8 @@ async def cancel_task(task_id: str) -> dict[str, Any]:
     # Отменяем задачу
     task.revoke(terminate=True, signal="SIGKILL")
 
-    return {
-        "task_id": task_id,
-        "status": "cancelled",
-        "message": "Task cancellation requested",
-    }
+    return TaskCancelResponse(
+        task_id=task_id,
+        status="cancelled",
+        message="Task cancellation requested",
+    )

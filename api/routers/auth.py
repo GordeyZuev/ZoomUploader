@@ -21,6 +21,8 @@ from api.repositories.subscription_repos import (
 )
 from api.schemas.auth import (
     LoginRequest,
+    LogoutAllResponse,
+    LogoutResponse,
     RefreshTokenCreate,
     RefreshTokenRequest,
     RegisterRequest,
@@ -241,8 +243,8 @@ async def refresh_token(request: RefreshTokenRequest, session: AsyncSession = De
     )
 
 
-@router.post("/logout")
-async def logout(request: RefreshTokenRequest, session: AsyncSession = Depends(get_db_session)):
+@router.post("/logout", response_model=LogoutResponse)
+async def logout(request: RefreshTokenRequest, session: AsyncSession = Depends(get_db_session)) -> LogoutResponse:
     """
     Выход из системы (отзыв refresh токена).
 
@@ -256,11 +258,11 @@ async def logout(request: RefreshTokenRequest, session: AsyncSession = Depends(g
     token_repo = RefreshTokenRepository(session)
     await token_repo.revoke(request.refresh_token)
     logger.info("User logged out")
-    return {"message": "Successfully logged out"}
+    return LogoutResponse(message="Successfully logged out")
 
 
-@router.post("/logout-all")
-async def logout_all(request: RefreshTokenRequest, session: AsyncSession = Depends(get_db_session)):
+@router.post("/logout-all", response_model=LogoutAllResponse)
+async def logout_all(request: RefreshTokenRequest, session: AsyncSession = Depends(get_db_session)) -> LogoutAllResponse:
     """
     Выход из всех устройств (отзыв всех refresh токенов пользователя).
 
@@ -293,9 +295,9 @@ async def logout_all(request: RefreshTokenRequest, session: AsyncSession = Depen
 
     logger.info(f"User {user_id} logged out from all devices ({count} tokens revoked)")
 
-    return {
-        "message": "Successfully logged out from all devices",
-        "revoked_tokens": count
-    }
+    return LogoutAllResponse(
+        message="Successfully logged out from all devices",
+        revoked_tokens=count,
+    )
 
 

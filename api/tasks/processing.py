@@ -207,18 +207,18 @@ async def _async_download_recording(
 @celery_app.task(
     bind=True,
     base=ProcessingTask,
-    name="api.tasks.processing.process_video",
+    name="api.tasks.processing.trim_video",
     max_retries=2,
     default_retry_delay=300,
 )
-def process_video_task(
+def trim_video_task(
     self,
     recording_id: int,
     user_id: int,
     manual_override: dict | None = None,
 ) -> dict:
     """
-    Обработать видео - FFmpeg (template-driven).
+    Обрезать видео - FFmpeg (удаление тишины, template-driven).
 
     Параметры берутся из resolved config (user_config < template < manual_override):
     - processing.silence_threshold
@@ -235,11 +235,11 @@ def process_video_task(
         Результат обработки
     """
     try:
-        logger.info(f"[Task {self.request.id}] Processing video {recording_id} for user {user_id}")
+        logger.info(f"[Task {self.request.id}] Trimming video {recording_id} for user {user_id}")
 
         self.update_state(
             state='PROCESSING',
-            meta={'progress': 10, 'status': 'Initializing video processing...', 'step': 'process'}
+            meta={'progress': 10, 'status': 'Initializing video trimming...', 'step': 'trim'}
         )
 
         result = asyncio.run(
@@ -670,18 +670,18 @@ async def _async_transcribe_recording(
 @celery_app.task(
     bind=True,
     base=ProcessingTask,
-    name="api.tasks.processing.full_pipeline",
+    name="api.tasks.processing.process_recording",
     max_retries=1,
     default_retry_delay=600,
 )
-def full_pipeline_task(
+def process_recording_task(
     self,
     recording_id: int,
     user_id: int,
     manual_override: dict | None = None,
 ) -> dict:
     """
-    Полный пайплайн обработки: download → process → transcribe → upload.
+    Полный пайплайн обработки: download → trim → transcribe → topics → upload.
 
     Template-driven: все параметры берутся из resolved config (user_config < template < manual_override).
 
@@ -694,7 +694,7 @@ def full_pipeline_task(
         Результаты полного пайплайна
     """
     try:
-        logger.info(f"[Task {self.request.id}] Full pipeline for recording {recording_id}, user {user_id}")
+        logger.info(f"[Task {self.request.id}] Processing recording {recording_id}, user {user_id}")
 
         from api.helpers.config_resolution_helper import resolve_full_config
         from api.tasks.upload import upload_recording_to_platform
