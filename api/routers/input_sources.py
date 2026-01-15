@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.dependencies import get_current_active_user
@@ -342,6 +342,7 @@ def _find_matching_template(
 
 @router.get("", response_model=list[InputSourceResponse])
 async def list_sources(
+    search: str | None = Query(None, description="Search substring in source name (case-insensitive)"),
     active_only: bool = False,
     session: AsyncSession = Depends(get_db_session),
     current_user: UserModel = Depends(get_current_active_user),
@@ -353,6 +354,11 @@ async def list_sources(
         sources = await repo.find_active_by_user(current_user.id)
     else:
         sources = await repo.find_by_user(current_user.id)
+
+    # Apply search filter
+    if search:
+        search_lower = search.lower()
+        sources = [s for s in sources if search_lower in s.name.lower()]
 
     return sources
 

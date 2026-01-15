@@ -278,7 +278,7 @@ class VideoProcessor:
             logger.info("🎬 Запуск FFmpeg для обрезки...")
             success = await self.trim_video(video_path, output_path, start_time_trim, end_time)
 
-            if success: 
+            if success:
                 logger.info(f"✅ Video processed: {output_path}")
                 return True, output_path
             else:

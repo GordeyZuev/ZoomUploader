@@ -83,7 +83,7 @@ class VKUploader(BaseUploader):
     async def _authenticate_legacy(self) -> bool:
         """
         Legacy authentication mode (file-based only).
-        
+
         Note: Interactive CLI setup has been removed. Use OAuth 2.0 flow via API instead.
         """
         if not self.config.access_token:

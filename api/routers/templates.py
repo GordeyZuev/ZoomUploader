@@ -22,6 +22,7 @@ logger = get_logger()
 
 @router.get("", response_model=list[RecordingTemplateResponse])
 async def list_templates(
+    search: str | None = Query(None, description="Search substring in template name (case-insensitive)"),
     include_drafts: bool = False,
     session: AsyncSession = Depends(get_db_session),
     current_user: UserModel = Depends(get_current_active_user),
@@ -29,6 +30,12 @@ async def list_templates(
     """Получение списка шаблонов пользователя."""
     repo = RecordingTemplateRepository(session)
     templates = await repo.find_by_user(current_user.id, include_drafts=include_drafts)
+
+    # Apply search filter
+    if search:
+        search_lower = search.lower()
+        templates = [t for t in templates if search_lower in t.name.lower()]
+
     return templates
 
 

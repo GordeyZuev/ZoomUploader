@@ -7,7 +7,7 @@ logger = get_logger()
 
 
 class AudioDetector:
-    """Audio detector for content boundary detection""" 
+    """Audio detector for content boundary detection"""
 
     def __init__(self, silence_threshold: float = -30.0, min_silence_duration: float = 2.0):
         self.silence_threshold = silence_threshold

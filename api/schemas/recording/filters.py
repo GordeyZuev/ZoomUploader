@@ -22,6 +22,8 @@ class RecordingFilters(BaseModel):
     failed: bool | None = Field(None, description="Filter by presence of error")
     exclude_blank: bool = Field(True, description="Exclude blank records (too short/small)")
 
+    search: str | None = Field(None, description="Search substring in display_name (case-insensitive)")
+
     # Dates (for backward compatibility)
     from_date: str | None = Field(None, description="Filter by start date (ISO 8601)")
     to_date: str | None = Field(None, description="Filter by end date (ISO 8601)")
@@ -38,6 +40,7 @@ class RecordingFilters(BaseModel):
                 "status": ["INITIALIZED", "FAILED"],
                 "is_mapped": True,
                 "exclude_blank": True,
+                "search": "lecture",
                 "order_by": "created_at",
                 "order": "asc"
             }
