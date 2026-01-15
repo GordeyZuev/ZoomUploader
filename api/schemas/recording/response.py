@@ -17,6 +17,13 @@ class SourceResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class PresetInfo(BaseModel):
+    """Output preset information."""
+
+    id: int
+    name: str
+
+
 class OutputTargetResponse(BaseModel):
     """Целевая платформа."""
 
@@ -25,6 +32,11 @@ class OutputTargetResponse(BaseModel):
     status: TargetStatus
     target_meta: dict[str, Any] = Field(default_factory=dict)
     uploaded_at: datetime | None = None
+    failed: bool = False
+    failed_at: datetime | None = None
+    failed_reason: str | None = None
+    retry_count: int = 0
+    preset: PresetInfo | None = None
 
 
 class ProcessingStageResponse(BaseModel):
@@ -39,8 +51,44 @@ class ProcessingStageResponse(BaseModel):
     completed_at: datetime | None = None
 
 
+class SourceInfo(BaseModel):
+    """Source information for list view."""
+
+    type: SourceType
+    name: str | None = None
+    input_source_id: int | None = None
+
+
+class UploadInfo(BaseModel):
+    """Upload information for single platform."""
+
+    status: str
+    url: str | None = None
+    uploaded_at: datetime | None = None
+    error: str | None = None
+
+
+class RecordingListItem(BaseModel):
+    """Recording item for list view (optimized for UI table)."""
+
+    id: int
+    display_name: str
+    start_time: datetime
+    duration: int
+    status: ProcessingStatus
+    failed: bool
+    failed_at_stage: str | None = None
+    is_mapped: bool
+    template_id: int | None = None
+    template_name: str | None = None
+    source: SourceInfo | None = None
+    uploads: dict[str, UploadInfo] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
 class RecordingResponse(BaseModel):
-    """Ответ с записью."""
+    """Full recording response with all details."""
 
     id: int
     display_name: str
@@ -66,9 +114,9 @@ class RecordingResponse(BaseModel):
 
 
 class RecordingListResponse(PaginatedResponse):
-    """Ответ со списком записей."""
+    """Response with list of recordings (optimized for UI)."""
 
-    items: list[RecordingResponse]
+    items: list[RecordingListItem]
 
 
 class ProcessRecordingResponse(BaseModel):

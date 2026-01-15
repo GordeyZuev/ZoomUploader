@@ -15,10 +15,10 @@ logger = logging.getLogger(__name__)
 
 
 class TemplateTask(Task):
-    """Base class для template tasks."""
+    """Base class for template tasks."""
 
     def on_failure(self, exc, task_id, args, kwargs, einfo):
-        """Обработка ошибок."""
+        """Handling task failure."""
         logger.error(f"[Task {task_id}] Template task failed: {exc!r}", exc_info=True)
 
 
@@ -36,23 +36,23 @@ def rematch_recordings_task(
     only_unmapped: bool = True,
 ) -> dict:
     """
-    Re-match recordings после создания/обновления template.
+    Re-match recordings after creation/update of template.
 
-    Проверяет все SKIPPED recordings и обновляет те, что matched к template.
-    Обновляет is_mapped=True, template_id и status=INITIALIZED.
+    Checks all SKIPPED recordings and updates those that matched to template.
+    Updates is_mapped=True, template_id and status=INITIALIZED.
 
     Args:
-        template_id: ID template для matching
-        user_id: ID пользователя
-        only_unmapped: Проверять только unmapped (SKIPPED) recordings (default: True)
+        template_id: ID of template for matching
+        user_id: ID of user
+        only_unmapped: Check only unmapped (SKIPPED) recordings (default: True)
 
     Returns:
-        Dict с результатами:
+        Dictionary with results:
         - success: bool
-        - checked: количество проверенных recordings
-        - matched: количество matched recordings
-        - updated: количество обновленных recordings
-        - recordings: список ID обновленных recordings
+        - checked: number of checked recordings
+        - matched: number of matched recordings
+        - updated: number of updated recordings
+        - recordings: list of IDs of updated recordings
     """
     try:
         logger.info(
@@ -125,7 +125,7 @@ async def _async_rematch_recordings(
             meta={"progress": 20, "status": "Loading template...", "step": "rematch"},
         )
 
-        # Получаем template
+        # Get template
         template = await template_repo.find_by_id(template_id, user_id)
         if not template:
             raise ValueError(f"Template {template_id} not found for user {user_id}")
@@ -145,11 +145,11 @@ async def _async_rematch_recordings(
             },
         )
 
-        # Получаем recordings для проверки
+        # Get recordings for checking
         query = select(RecordingModel).where(RecordingModel.user_id == user_id)
 
         if only_unmapped:
-            # Только unmapped (SKIPPED) recordings
+            # Only unmapped (SKIPPED) recordings
             query = query.where(
                 RecordingModel.is_mapped == False,  # noqa: E712
                 RecordingModel.status == ProcessingStatus.SKIPPED,
@@ -173,7 +173,7 @@ async def _async_rematch_recordings(
             },
         )
 
-        # Импортируем функцию matching
+        # Import function for matching
         from api.routers.input_sources import _find_matching_template
 
         matched_count = 0
@@ -181,7 +181,7 @@ async def _async_rematch_recordings(
         updated_recording_ids = []
 
         for idx, recording in enumerate(recordings):
-            # Проверяем matching
+            # Check matching
             matched_template = _find_matching_template(
                 display_name=recording.display_name,
                 source_id=recording.input_source_id or 0,
@@ -191,7 +191,7 @@ async def _async_rematch_recordings(
             if matched_template:
                 matched_count += 1
 
-                # Обновляем recording только если он unmapped
+                # Update recording only if it is unmapped
                 if not recording.is_mapped:
                     old_status = recording.status
                     recording.is_mapped = True
@@ -206,7 +206,7 @@ async def _async_rematch_recordings(
                         f"{old_status} → INITIALIZED (template={template.id})"
                     )
 
-            # Обновляем progress
+            # Update progress
             if idx % 10 == 0:
                 progress = 40 + int((idx / len(recordings)) * 50)
                 task_self.update_state(
@@ -219,7 +219,7 @@ async def _async_rematch_recordings(
                     },
                 )
 
-        # Сохраняем изменения
+        # Save changes
         if updated_count > 0:
             task_self.update_state(
                 state="PROCESSING",

@@ -1,4 +1,4 @@
-"""Celery tasks для синхронизации источников с multi-tenancy support."""
+"""Celery tasks for syncing sources with multi-tenancy support."""
 
 import asyncio
 
@@ -13,21 +13,21 @@ logger = get_logger()
 
 
 class SyncTask(Task):
-    """Базовый класс для задач синхронизации с multi-tenancy."""
+    """Base class for sync tasks with multi-tenancy support."""
 
     def on_failure(self, exc, task_id, args, kwargs, einfo):
-        """Обработка ошибки задачи."""
+        """Handling task failure."""
         user_id = kwargs.get("user_id", "unknown")
         source_ids = kwargs.get("source_ids", kwargs.get("source_id", "unknown"))
         logger.error(f"Sync task {task_id} for user {user_id}, sources {source_ids} failed: {exc!r}")
 
     def on_retry(self, exc, task_id, args, kwargs, einfo):
-        """Обработка повторной попытки."""
+        """Handling retry."""
         user_id = kwargs.get("user_id", "unknown")
         logger.warning(f"Sync task {task_id} for user {user_id} retrying: {exc}")
 
     def on_success(self, retval, task_id, args, kwargs):
-        """Обработка успешного завершения."""
+        """Handling successful completion."""
         user_id = kwargs.get("user_id", "unknown")
         logger.info(f"Sync task {task_id} for user {user_id} completed successfully")
 
@@ -47,16 +47,16 @@ def sync_single_source_task(
     to_date: str | None = None,
 ) -> dict:
     """
-    Синхронизация одного источника (Celery task).
+    Syncing one source (Celery task).
 
     Args:
-        source_id: ID источника
-        user_id: ID пользователя
-        from_date: Дата начала в формате YYYY-MM-DD
-        to_date: Дата окончания в формате YYYY-MM-DD (опционально)
+        source_id: ID of source
+        user_id: ID of user
+        from_date: Start date in format YYYY-MM-DD
+        to_date: End date in format YYYY-MM-DD (optional)
 
     Returns:
-        Результат синхронизации
+        Result of syncing
     """
     try:
         logger.info(f"[Task {self.request.id}] Syncing source {source_id} for user {user_id}")
@@ -102,16 +102,16 @@ def bulk_sync_sources_task(
     to_date: str | None = None,
 ) -> dict:
     """
-    Батчевая синхронизация нескольких источников (Celery task).
+    Batch syncing multiple sources (Celery task).
 
     Args:
-        source_ids: Список ID источников
-        user_id: ID пользователя
-        from_date: Дата начала в формате YYYY-MM-DD
-        to_date: Дата окончания в формате YYYY-MM-DD (опционально)
+        source_ids: List of source IDs
+        user_id: ID of user
+        from_date: Start date in format YYYY-MM-DD
+        to_date: End date in format YYYY-MM-DD (optional)
 
     Returns:
-        Результаты синхронизации всех источников
+        Results of syncing all sources
     """
     try:
         logger.info(f"[Task {self.request.id}] Batch syncing {len(source_ids)} sources for user {user_id}")
@@ -149,7 +149,7 @@ async def _async_sync_single_source(
     from_date: str,
     to_date: str | None,
 ) -> dict:
-    """Async обертка для синхронизации одного источника."""
+    """Async wrapper for syncing one source."""
     from database.config import DatabaseConfig
 
     db_config = DatabaseConfig.from_env()
@@ -161,7 +161,7 @@ async def _async_sync_single_source(
             meta={'progress': 20, 'status': f'Loading source {source_id}...', 'step': 'sync'}
         )
 
-        # Import здесь чтобы избежать circular imports
+        # Import here to avoid circular imports
         from api.routers.input_sources import _sync_single_source
 
         result = await _sync_single_source(source_id, from_date, to_date, session, user_id)
@@ -174,7 +174,7 @@ async def _async_sync_single_source(
                 meta={'progress': 90, 'status': 'Sync completed', 'step': 'sync'}
             )
 
-            # Получаем source для дополнительной информации
+            # Get source for additional information
             repo = InputSourceRepository(session)
             source = await repo.find_by_id(source_id, user_id)
 
@@ -182,7 +182,7 @@ async def _async_sync_single_source(
                 "status": "success",
                 "source_id": source_id,
                 "source_name": source.name if source else None,
-                "source_type": source.source_type if source else "UNKNOWN",
+                "source_type": source.source_type.value if source else "UNKNOWN",
                 "recordings_found": result.get("recordings_found", 0),
                 "recordings_saved": result.get("recordings_saved", 0),
                 "recordings_updated": result.get("recordings_updated", 0),
@@ -202,7 +202,7 @@ async def _async_batch_sync_sources(
     from_date: str,
     to_date: str | None,
 ) -> dict:
-    """Async обертка для батчевой синхронизации источников."""
+    """Async wrapper for batch syncing sources."""
     from database.config import DatabaseConfig
 
     db_config = DatabaseConfig.from_env()
@@ -226,12 +226,12 @@ async def _async_batch_sync_sources(
                 }
             )
 
-            # Получаем source для имени
+            # Get source for name
             source = await repo.find_by_id(source_id, user_id)
             source_name = source.name if source else None
 
             try:
-                # Import здесь чтобы избежать circular imports
+                # Import here to avoid circular imports
                 from api.routers.input_sources import _sync_single_source
 
                 result = await _sync_single_source(source_id, from_date, to_date, session, user_id)

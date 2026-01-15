@@ -239,7 +239,7 @@ async def _sync_single_source(
     else:
         return {
             "status": "error",
-            "error": f"Unknown source type: {source.source_type}",
+            "error": f"Unknown source type: {source.source_type.value}",
         }
 
     # Обновляем last_sync_at

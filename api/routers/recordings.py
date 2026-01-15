@@ -14,6 +14,7 @@ from api.core.dependencies import get_service_context
 from api.repositories.recording_repos import RecordingAsyncRepository
 from api.schemas.recording.filters import RecordingFilters as RecordingFiltersSchema
 from api.schemas.recording.operations import (
+    BulkProcessDryRunResponse,
     ConfigSaveResponse,
     DryRunResponse,
     MappingStatusResponse,
@@ -32,13 +33,18 @@ from api.schemas.recording.request import (
 )
 from api.schemas.recording.response import (
     OutputTargetResponse,
+    PresetInfo,
     ProcessingStageResponse,
+    RecordingListItem,
     RecordingListResponse,
     RecordingResponse,
+    SourceInfo,
     SourceResponse,
+    UploadInfo,
 )
 from logger import get_logger
 from models import ProcessingStatus
+from models.recording import TargetStatus
 
 router = APIRouter(prefix="/api/v1/recordings", tags=["Recordings"])
 logger = get_logger()
@@ -282,6 +288,7 @@ async def _execute_dry_run_single(
     return DryRunResponse(
         dry_run=True,
         recording_id=recording_id,
+        steps=steps,
     )
 
 
@@ -290,11 +297,11 @@ async def _execute_dry_run_bulk(
     filters: "RecordingFiltersSchema" | None,
     limit: int,
     ctx: ServiceContext,
-) -> dict:
+) -> BulkProcessDryRunResponse:
     """
     Dry-run для bulk process endpoint.
 
-    Показывает какие записи попадут под обработку.
+    Показывает какие записи попадут под обработку с проверкой blank_record.
 
     Args:
         recording_ids: Явный список ID
@@ -303,16 +310,48 @@ async def _execute_dry_run_bulk(
         ctx: Service context
 
     Returns:
-        Информация о записях которые будут обработаны
+        BulkProcessDryRunResponse с детальной информацией о записях
     """
     resolved_ids = await _resolve_recording_ids(recording_ids, filters, limit, ctx)
 
-    return {
-        "dry_run": True,
-        "matched_count": len(resolved_ids),
-        "recording_ids": resolved_ids,
-        "limit_applied": limit if filters else None,
-    }
+    recording_repo = RecordingAsyncRepository(ctx.session)
+    recordings_info = []
+    skipped_count = 0
+
+    for rec_id in resolved_ids:
+        recording = await recording_repo.get_by_id(rec_id, ctx.user_id)
+        
+        if not recording:
+            recordings_info.append({
+                "recording_id": rec_id,
+                "will_be_processed": False,
+                "skip_reason": "Recording not found or no access"
+            })
+            skipped_count += 1
+            continue
+        
+        if recording.blank_record:
+            recordings_info.append({
+                "recording_id": rec_id,
+                "will_be_processed": False,
+                "skip_reason": "Blank record (too short or too small)"
+            })
+            skipped_count += 1
+            continue
+        
+        recordings_info.append({
+            "recording_id": rec_id,
+            "will_be_processed": True,
+            "display_name": recording.display_name,
+            "current_status": recording.status.value,
+        })
+
+    return BulkProcessDryRunResponse(
+        matched_count=len(resolved_ids) - skipped_count,
+        skipped_count=skipped_count,
+        total=len(resolved_ids),
+        recordings=recordings_info,
+    )
 
 
 # ============================================================================
@@ -392,81 +431,82 @@ async def list_recordings(
     # Calculate total pages
     total_pages = (total + per_page - 1) // per_page if total > 0 else 1
 
-    return RecordingListResponse(
-        total=total,
-        page=page,
-        per_page=per_page,
-        total_pages=total_pages,
-        items=[
-            RecordingResponse(
+    items = []
+    for r in paginated_recordings:
+        source_info = None
+        if r.source:
+            source_info = SourceInfo(
+                type=r.source.source_type,
+                name=r.source.input_source.name if r.source.input_source else None,
+                input_source_id=r.source.input_source_id,
+            )
+        
+        uploads = {}
+        for output in r.outputs:
+            platform = output.target_type.value.lower()
+            
+            url = None
+            if output.target_meta:
+                url = (
+                    output.target_meta.get("video_url")
+                    or output.target_meta.get("target_link")
+                    or output.target_meta.get("url")
+                )
+            
+            uploads[platform] = UploadInfo(
+                status=output.status.value.lower(),
+                url=url,
+                uploaded_at=output.uploaded_at,
+                error=output.failed_reason if output.failed else None,
+            )
+        
+        items.append(
+            RecordingListItem(
                 id=r.id,
                 display_name=r.display_name,
                 start_time=r.start_time,
                 duration=r.duration,
                 status=r.status,
-                is_mapped=r.is_mapped,
-                blank_record=r.blank_record,
-                processing_preferences=r.processing_preferences,
-                source=(
-                    SourceResponse(
-                        source_type=r.source.source_type,
-                        source_key=r.source.source_key,
-                        metadata=r.source.meta or {},
-                    )
-                    if r.source
-                    else None
-                ),
-                outputs=[
-                    OutputTargetResponse(
-                        id=output.id,
-                        target_type=output.target_type,
-                        status=output.status,
-                        target_meta=output.target_meta or {},
-                        uploaded_at=output.uploaded_at,
-                    )
-                    for output in r.outputs
-                ],
-                processing_stages=[
-                    ProcessingStageResponse(
-                        stage_type=stage.stage_type.value,
-                        status=stage.status.value,
-                        failed=stage.failed,
-                        failed_at=stage.failed_at,
-                        failed_reason=stage.failed_reason,
-                        retry_count=stage.retry_count,
-                        completed_at=stage.completed_at,
-                    )
-                    for stage in r.processing_stages
-                ],
                 failed=r.failed,
-                failed_at=r.failed_at,
-                failed_reason=r.failed_reason,
                 failed_at_stage=r.failed_at_stage,
-                video_file_size=r.video_file_size,
+                is_mapped=r.is_mapped,
+                template_id=r.template_id,
+                template_name=r.template.name if r.template else None,
+                source=source_info,
+                uploads=uploads,
                 created_at=r.created_at,
                 updated_at=r.updated_at,
             )
-            for r in paginated_recordings
-        ],
+        )
+
+    return RecordingListResponse(
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        items=items,
     )
 
 
-@router.get("/{recording_id}", response_model=Union[RecordingResponse, DetailedRecordingResponse])
+@router.get("/{recording_id}")
 async def get_recording(
     recording_id: int,
-    detailed: bool = Query(False, description="Включить детальную информацию (файлы, транскрипция, топики, загрузки)"),
+    detailed: bool = Query(False, description="Include detailed information (files, transcription, topics, uploads)"),
     ctx: ServiceContext = Depends(get_service_context),
-):
+) -> RecordingListItem | DetailedRecordingResponse:
     """
-    Получить одну запись по ID.
+    Get single recording by ID.
+
+    Default: Returns lightweight schema (same as list view)
+    With detailed=true: Returns full details with files, transcription, topics
 
     Args:
-        recording_id: ID записи
-        detailed: Если True, включает детальную информацию о файлах, транскрипции, топиках, субтитрах и загрузках
+        recording_id: Recording ID
+        detailed: If True, includes detailed information about files, transcription, topics, subtitles and uploads
         ctx: Service context
 
     Returns:
-        Recording (базовая или детальная информация)
+        RecordingListItem (default) or DetailedRecordingResponse (detailed=true)
     """
     recording_repo = RecordingAsyncRepository(ctx.session)
     recording = await recording_repo.get_by_id(recording_id, ctx.user_id)
@@ -477,53 +517,47 @@ async def get_recording(
             detail=f"Recording {recording_id} not found or you don't have access",
         )
 
-    # Если не нужна детальная информация, возвращаем базовую через Pydantic модель
     if not detailed:
-        return RecordingResponse(
+        source_info = None
+        if recording.source:
+            source_info = SourceInfo(
+                type=recording.source.source_type,
+                name=recording.source.input_source.name if recording.source.input_source else None,
+                input_source_id=recording.source.input_source_id,
+            )
+        
+        uploads = {}
+        for output in recording.outputs:
+            platform = output.target_type.value.lower()
+            
+            url = None
+            if output.target_meta:
+                url = (
+                    output.target_meta.get("video_url")
+                    or output.target_meta.get("target_link")
+                    or output.target_meta.get("url")
+                )
+            
+            uploads[platform] = UploadInfo(
+                status=output.status.value.lower(),
+                url=url,
+                uploaded_at=output.uploaded_at,
+                error=output.failed_reason if output.failed else None,
+            )
+        
+        return RecordingListItem(
             id=recording.id,
             display_name=recording.display_name,
             start_time=recording.start_time,
             duration=recording.duration,
             status=recording.status,
-            is_mapped=recording.is_mapped,
-            blank_record=recording.blank_record,
-            processing_preferences=recording.processing_preferences,
-            source=(
-                SourceResponse(
-                    source_type=recording.source.source_type,
-                    source_key=recording.source.source_key,
-                    metadata=recording.source.meta or {},
-                )
-                if recording.source
-                else None
-            ),
-            outputs=[
-                OutputTargetResponse(
-                    id=output.id,
-                    target_type=output.target_type,
-                    status=output.status,
-                    target_meta=output.target_meta or {},
-                    uploaded_at=output.uploaded_at,
-                )
-                for output in recording.outputs
-            ],
-            processing_stages=[
-                ProcessingStageResponse(
-                    stage_type=stage.stage_type.value,
-                    status=stage.status.value,
-                    failed=stage.failed,
-                    failed_at=stage.failed_at,
-                    failed_reason=stage.failed_reason,
-                    retry_count=stage.retry_count,
-                    completed_at=stage.completed_at,
-                )
-                for stage in recording.processing_stages
-            ],
             failed=recording.failed,
-            failed_at=recording.failed_at,
-            failed_reason=recording.failed_reason,
             failed_at_stage=recording.failed_at_stage,
-            video_file_size=recording.video_file_size,
+            is_mapped=recording.is_mapped,
+            template_id=recording.template_id,
+            template_name=recording.template.name if recording.template else None,
+            source=source_info,
+            uploads=uploads,
             created_at=recording.created_at,
             updated_at=recording.updated_at,
         )
@@ -559,6 +593,15 @@ async def get_recording(
                 status=output.status,
                 target_meta=output.target_meta or {},
                 uploaded_at=output.uploaded_at,
+                failed=output.failed,
+                failed_at=output.failed_at,
+                failed_reason=output.failed_reason,
+                retry_count=output.retry_count,
+                preset=(
+                    PresetInfo(id=output.preset.id, name=output.preset.name)
+                    if output.preset
+                    else None
+                ),
             )
             for output in recording.outputs
         ],
@@ -999,12 +1042,12 @@ async def trim_recording(
     }
 
 
-@router.post("/bulk/process", response_model=RecordingBulkOperationResponse)
+@router.post("/bulk/process")
 async def bulk_process_recordings(
     data: "BulkProcessRequest",
     dry_run: bool = Query(False, description="Dry-run: показать какие записи будут обработаны"),
     ctx: ServiceContext = Depends(get_service_context),
-) -> RecordingBulkOperationResponse | DryRunResponse:
+) -> RecordingBulkOperationResponse | BulkProcessDryRunResponse:
     """
     Bulk обработка нескольких записей (асинхронные задачи) - полный пайплайн.
 
@@ -1110,14 +1153,14 @@ async def bulk_process_recordings(
             })
 
     queued_count = len([t for t in tasks if t["status"] == "queued"])
-    error_count = len([t for t in tasks if t["status"] == "error"])
+    skipped_count = len([t for t in tasks if t["status"] == "skipped"])
 
-    return {
-        "total": len(recording_ids),
-        "queued": queued_count,
-        "errors": error_count,
-        "tasks": tasks,
-    }
+    return RecordingBulkOperationResponse(
+        total=len(recording_ids),
+        queued_count=queued_count,
+        skipped_count=skipped_count,
+        tasks=tasks,
+    )
 
 
 @router.post("/{recording_id}/process", response_model=RecordingOperationResponse)
@@ -1791,10 +1834,10 @@ async def retry_failed_uploads(
     # Получить failed output_targets
     failed_targets = []
     for output in recording.outputs:
-        if output.failed or output.status == "FAILED":
+        if output.failed or output.status == TargetStatus.FAILED.value:
             # Если указаны конкретные платформы, фильтруем
             if platforms:
-                if output.target_type.lower() in [p.lower() for p in platforms]:
+                if output.target_type.value.lower() in [p.lower() for p in platforms]:
                     failed_targets.append(output)
             else:
                 failed_targets.append(output)
@@ -1813,26 +1856,26 @@ async def retry_failed_uploads(
             task = upload_recording_to_platform.delay(
                 recording_id=recording_id,
                 user_id=ctx.user_id,
-                platform=target.target_type.lower(),
+                platform=target.target_type.value.lower(),
                 preset_id=target.preset_id,
             )
 
             tasks.append({
-                "platform": target.target_type,
+                "platform": target.target_type.value,
                 "task_id": str(task.id),
                 "status": "queued",
                 "previous_attempts": target.retry_count,
             })
 
             logger.info(
-                f"Queued retry upload for recording {recording_id} to {target.target_type} "
+                f"Queued retry upload for recording {recording_id} to {target.target_type.value} "
                 f"(attempt {target.retry_count + 1})"
             )
 
         except Exception as e:
-            logger.error(f"Failed to queue retry for {target.target_type}: {e}")
+            logger.error(f"Failed to queue retry for {target.target_type.value}: {e}")
             tasks.append({
-                "platform": target.target_type,
+                "platform": target.target_type.value,
                 "status": "error",
                 "error": str(e),
             })
@@ -2274,8 +2317,12 @@ async def bulk_trim_recordings(
         except Exception as e:
             logger.error(f"Failed to queue trim for recording {recording_id}: {e}")
 
+    queued_count = len([t for t in tasks if t["status"] == "queued"])
+    skipped_count = len([t for t in tasks if t["status"] == "skipped"])
+
     return {
-        "queued_count": len(tasks),
+        "queued_count": queued_count,
+        "skipped_count": skipped_count,
         "tasks": tasks,
     }
 
@@ -2322,8 +2369,12 @@ async def bulk_extract_topics(
         except Exception as e:
             logger.error(f"Failed to queue topics for recording {recording_id}: {e}")
 
+    queued_count = len([t for t in tasks if t["status"] == "queued"])
+    skipped_count = len([t for t in tasks if t["status"] == "skipped"])
+
     return {
-        "queued_count": len(tasks),
+        "queued_count": queued_count,
+        "skipped_count": skipped_count,
         "tasks": tasks,
     }
 
@@ -2368,8 +2419,12 @@ async def bulk_generate_subtitles(
         except Exception as e:
             logger.error(f"Failed to queue subtitles for recording {recording_id}: {e}")
 
+    queued_count = len([t for t in tasks if t["status"] == "queued"])
+    skipped_count = len([t for t in tasks if t["status"] == "skipped"])
+
     return {
-        "queued_count": len(tasks),
+        "queued_count": queued_count,
+        "skipped_count": skipped_count,
         "tasks": tasks,
     }
 
@@ -2420,8 +2475,12 @@ async def bulk_upload_recordings(
         except Exception as e:
             logger.error(f"Failed to queue upload for recording {recording_id}: {e}")
 
+    queued_count = len([t for t in tasks if t["status"] == "queued"])
+    skipped_count = len([t for t in tasks if t["status"] == "skipped"])
+
     return {
-        "queued_count": len(tasks),
+        "queued_count": queued_count,
+        "skipped_count": skipped_count,
         "tasks": tasks,
     }
 

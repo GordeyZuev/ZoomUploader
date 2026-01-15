@@ -159,8 +159,6 @@ def dry_run_automation_job_task(job_id: int, user_id: int):
                 return {"status": "error", "error": "Job not found"}
 
             try:
-                # For dry-run, we estimate based on recent history
-                # This is a simplified estimation without actual API calls
                 estimated_new = 3  # Conservative estimate
 
                 # Estimate current INITIALIZED recordings count

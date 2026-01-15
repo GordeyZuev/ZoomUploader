@@ -11,9 +11,9 @@ logger = get_logger()
 @celery_app.task(name="maintenance.cleanup_expired_tokens")
 def cleanup_expired_tokens_task():
     """
-    Периодическая задача для очистки истекших refresh токенов.
+    Periodic task for cleaning expired refresh tokens.
 
-    Запускается раз в день (настраивается в Celery Beat).
+    Runs daily (configured in Celery Beat).
     """
     try:
         import asyncio
@@ -22,7 +22,7 @@ def cleanup_expired_tokens_task():
 
         logger.info("Starting cleanup of expired refresh tokens...")
 
-        # Запускаем async очистку
+        # Start async cleanup
         async def cleanup():
             db_config = DatabaseConfig.from_env()
             db_manager = DatabaseManager(db_config)
@@ -33,14 +33,14 @@ def cleanup_expired_tokens_task():
 
             return deleted_count
 
-        # Выполняем async функцию
+        # Execute async function
         try:
             loop = asyncio.get_event_loop()
             if loop.is_closed():
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
         except RuntimeError:
-            # Python 3.13+: get_event_loop() raises RuntimeError if no loop
+
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 

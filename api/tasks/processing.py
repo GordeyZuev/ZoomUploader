@@ -1,4 +1,4 @@
-"""Celery tasks для обработки записей с multi-tenancy support."""
+"""Celery tasks for processing recordings with multi-tenancy support."""
 
 import asyncio
 from pathlib import Path
@@ -19,21 +19,21 @@ logger = get_logger()
 
 
 class ProcessingTask(Task):
-    """Базовый класс для задач обработки с multi-tenancy."""
+    """Base class for processing tasks with multi-tenancy support."""
 
     def on_failure(self, exc, task_id, args, kwargs, einfo):
-        """Обработка ошибки задачи."""
+        """Handling task failure."""
         user_id = kwargs.get("user_id", "unknown")
         recording_id = kwargs.get("recording_id", "unknown")
         logger.error(f"Task {task_id} for user {user_id}, recording {recording_id} failed: {exc!r}")
 
     def on_retry(self, exc, task_id, args, kwargs, einfo):
-        """Обработка повторной попытки."""
+        """Handling retry."""
         user_id = kwargs.get("user_id", "unknown")
         logger.warning(f"Task {task_id} for user {user_id} retrying: {exc}")
 
     def on_success(self, retval, task_id, args, kwargs):
-        """Обработка успешного завершения."""
+        """Handling successful completion."""
         user_id = kwargs.get("user_id", "unknown")
         logger.info(f"Task {task_id} for user {user_id} completed successfully")
 
@@ -53,16 +53,16 @@ def download_recording_task(
     manual_override: dict | None = None,
 ) -> dict:
     """
-    Скачать запись из Zoom (template-driven).
+    Download recording from Zoom (template-driven).
 
     Args:
-        recording_id: ID записи
-        user_id: ID пользователя
-        force: Пересохранить если уже скачано
-        manual_override: Опциональное переопределение конфигурации
+        recording_id: ID of recording
+        user_id: ID of user
+        force: Force download if already downloaded
+        manual_override: Optional configuration override
 
     Returns:
-        Результат скачивания
+        Result of download
     """
     try:
         logger.info(f"[Task {self.request.id}] Downloading recording {recording_id} for user {user_id}")
@@ -99,7 +99,7 @@ async def _async_download_recording(
     force: bool,
     manual_override: dict | None = None,
 ) -> dict:
-    """Async функция для скачивания (template-driven)."""
+    """Async function for downloading (template-driven)."""
     from api.helpers.config_resolution_helper import resolve_full_config
 
     db_config = DatabaseConfig.from_env()
@@ -124,7 +124,7 @@ async def _async_download_recording(
 
         recording_repo = RecordingAsyncRepository(session)
 
-        # Проверяем download_url
+        # Check download_url
         download_url = None
         if recording.source and recording.source.meta:
             download_url = recording.source.meta.get("download_url")
@@ -132,7 +132,7 @@ async def _async_download_recording(
         if not download_url:
             raise ValueError("No download URL available. Please sync from Zoom first.")
 
-        # Проверяем, что не скачано уже
+        # Check if not already downloaded
         if not force and recording.status == ProcessingStatus.DOWNLOADED and recording.local_video_path:
             if Path(recording.local_video_path).exists():
                 return {
@@ -146,11 +146,11 @@ async def _async_download_recording(
             meta={'progress': 30, 'status': 'Downloading from Zoom...', 'step': 'download'}
         )
 
-        # Создаем downloader
+        # Create downloader
         user_download_dir = f"media/user_{user_id}/video/unprocessed"
         downloader = ZoomDownloader(download_dir=user_download_dir)
 
-        # Преобразуем в MeetingRecording
+        # Convert to MeetingRecording
         meeting_id = recording.source.source_key if recording.source else str(recording.id)
         file_size = recording.source.meta.get("file_size", 0) if recording.source and recording.source.meta else 0
         download_access_token = recording.source.meta.get("download_access_token") if recording.source and recording.source.meta else None
@@ -182,7 +182,7 @@ async def _async_download_recording(
             meta={'progress': 50, 'status': 'Saving video file...', 'step': 'download'}
         )
 
-        # Скачиваем
+        # Download
         success = await downloader.download_recording(meeting_recording, force_download=force)
 
         if success:
@@ -218,21 +218,21 @@ def trim_video_task(
     manual_override: dict | None = None,
 ) -> dict:
     """
-    Обрезать видео - FFmpeg (удаление тишины, template-driven).
+    Trim video - FFmpeg (silence removal, template-driven).
 
-    Параметры берутся из resolved config (user_config < template < manual_override):
+    Parameters are taken from resolved config (user_config < template < manual_override):
     - processing.silence_threshold
     - processing.min_silence_duration
     - processing.padding_before
     - processing.padding_after
 
     Args:
-        recording_id: ID записи
-        user_id: ID пользователя
-        manual_override: Опциональное переопределение конфигурации
+        recording_id: ID of recording
+        user_id: ID of user
+        manual_override: Optional configuration override
 
     Returns:
-        Результат обработки
+        Result of processing
     """
     try:
         logger.info(f"[Task {self.request.id}] Trimming video {recording_id} for user {user_id}")
@@ -268,7 +268,7 @@ async def _async_process_video(
     user_id: int,
     manual_override: dict | None = None,
 ) -> dict:
-    """Async функция для обработки видео (template-driven)."""
+    """Async function for processing video (template-driven)."""
     from api.helpers.config_resolution_helper import resolve_full_config
 
     db_config = DatabaseConfig.from_env()
@@ -306,7 +306,7 @@ async def _async_process_video(
             meta={'progress': 20, 'status': 'Analyzing video...', 'step': 'process'}
         )
 
-        # Создаем processor с ProcessingConfig
+        # Create processor with ProcessingConfig
         from video_processing_module.config import ProcessingConfig
 
         user_processed_dir = f"media/user_{user_id}/video/processed"
@@ -324,7 +324,7 @@ async def _async_process_video(
             meta={'progress': 40, 'status': 'Processing with FFmpeg...', 'step': 'process'}
         )
 
-        # Обрабатываем видео с детекцией звука
+        # Process video with audio detection
         success, processed_path = await processor.process_video_with_audio_detection(
             video_path=recording.local_video_path,
             title=recording.display_name,
@@ -337,7 +337,7 @@ async def _async_process_video(
                 meta={'progress': 60, 'status': 'Extracting audio from processed video...', 'step': 'extract_audio'}
             )
 
-            # Извлекаем аудио из обработанного видео
+            # Extract audio from processed video
             import subprocess
 
             from utils.file_utils import sanitize_filename
@@ -345,30 +345,30 @@ async def _async_process_video(
             audio_dir = f"media/user_{user_id}/audio/processed"
             Path(audio_dir).mkdir(parents=True, exist_ok=True)
 
-            # Генерируем имя файла как в старой реализации
+            # Generate filename as in old implementation
             safe_title = sanitize_filename(recording.display_name)
             date_suffix = ""
             try:
                 date_obj = recording.start_time
                 date_suffix = f"_{date_obj.strftime('%y-%m-%d_%H-%M')}"
             except Exception as e:
-                logger.warning(f"⚠️ Ошибка форматирования даты для аудио: {e}")
+                logger.warning(f"⚠️ Error formatting date for audio: {e}")
 
             audio_filename = f"{safe_title}{date_suffix}_processed.mp3"
             audio_path = str(Path(audio_dir) / audio_filename)
 
-            logger.info(f"🎵 Извлечение аудио из обработанного видео: {recording.display_name}")
+            logger.info(f"🎵 Extracting audio from processed video: {recording.display_name}")
 
-            # FFmpeg команда для извлечения аудио (64k, 16kHz, mono)
+            # FFmpeg command for extracting audio (64k, 16kHz, mono)
             extract_cmd = [
                 "ffmpeg",
                 "-i", processed_path,
-                "-vn",  # без видео
+                "-vn",  # without video
                 "-acodec", "libmp3lame",
                 "-ab", "64k",
                 "-ar", "16000",
                 "-ac", "1",  # mono
-                "-y",  # перезаписать если существует
+                "-y",  # overwrite if exists
                 audio_path,
             ]
 
@@ -382,11 +382,11 @@ async def _async_process_video(
 
                 if extract_process.returncode == 0 and Path(audio_path).exists():
                     recording.processed_audio_path = str(audio_path)
-                    logger.info(f"✅ Аудио извлечено: {audio_path}")
+                    logger.info(f"✅ Audio extracted: {audio_path}")
                 else:
-                    logger.warning(f"⚠️ Не удалось извлечь аудио: {stderr.decode()}")
+                    logger.warning(f"⚠️ Failed to extract audio: {stderr.decode()}")
             except Exception as e:
-                logger.warning(f"⚠️ Ошибка при извлечении аудио: {e}")
+                logger.warning(f"⚠️ Error extracting audio: {e}")
 
             task_self.update_state(
                 state='PROCESSING',
@@ -395,7 +395,7 @@ async def _async_process_video(
 
             recording.processed_video_path = processed_path
             recording.status = ProcessingStatus.PROCESSED
-            # VIDEO_PROCESSING - это часть общего ProcessingStatus.PROCESSED, не детализируем
+            # VIDEO_PROCESSING - this is part of general ProcessingStatus.PROCESSED, not detailed
             await recording_repo.update(recording)
             await session.commit()
 
@@ -422,10 +422,10 @@ def transcribe_recording_task(
     manual_override: dict | None = None,
 ) -> dict:
     """
-    Транскрибация записи с АДМИНСКИМИ кредами (template-driven).
+    Transcription of recording with ADMIN credentials (template-driven).
 
-    ВАЖНО: Только транскрибация (Fireworks), БЕЗ извлечения тем.
-    Для извлечения тем используйте extract_topics_task.
+    IMPORTANT: Only transcription (Fireworks), WITHOUT topic extraction.
+    For topic extraction, use extract_topics_task.
 
     Config parameters used:
     - transcription.language (default: "ru")
@@ -433,12 +433,12 @@ def transcribe_recording_task(
     - transcription.temperature (default: 0.0)
 
     Args:
-        recording_id: ID записи
-        user_id: ID пользователя
-        manual_override: Опциональное переопределение конфигурации
+        recording_id: ID of recording
+        user_id: ID of user
+        manual_override: Optional configuration override
 
     Returns:
-        Результаты транскрибации (без топиков)
+        Results of transcription (without topics)
     """
     try:
         logger.info(f"[Task {self.request.id}] Transcribing recording {recording_id} for user {user_id}")
@@ -475,10 +475,10 @@ async def _async_transcribe_recording(
     manual_override: dict | None = None,
 ) -> dict:
     """
-    Async функция для транскрибации с АДМИНСКИМИ КРЕДАМИ (template-driven).
+    Async function for transcription with ADMIN credentials (template-driven).
 
-    ВАЖНО: Только транскрибация (Fireworks), без извлечения тем.
-    Извлечение тем делается отдельно через /topics endpoint.
+    IMPORTANT: Only transcription (Fireworks), WITHOUT topic extraction.
+    Topic extraction is done separately through /topics endpoint.
 
     Config parameters used:
     - transcription.language (default: "ru")
@@ -512,10 +512,10 @@ async def _async_transcribe_recording(
 
         recording_repo = RecordingAsyncRepository(session)
 
-        # Приоритет: обработанное аудио > обработанное видео > оригинальное видео
+        # Priority: processed audio > processed video > original video
         audio_path = None
 
-        # 1. Используем сохраненный путь к аудиофайлу
+        # 1. Use saved audio file path
         if recording.processed_audio_path:
             audio_path = Path(recording.processed_audio_path)
             if audio_path.exists():
@@ -523,7 +523,7 @@ async def _async_transcribe_recording(
             else:
                 audio_files = []
         else:
-            # Fallback: ищем в директории (для старых записей без processed_audio_path)
+            # Fallback: search in directory (for old records without processed_audio_path)
             audio_dir = Path(recording.transcription_dir).parent.parent / "audio" / "processed" if recording.transcription_dir else None
             audio_files = []
             if audio_dir and audio_dir.exists():
@@ -531,14 +531,14 @@ async def _async_transcribe_recording(
                     audio_files = sorted(audio_dir.glob(ext))
                     if audio_files:
                         audio_path = str(audio_files[0])
-                        logger.info(f"🎵 Используем обработанное аудио: {audio_path}")
+                        logger.info(f"🎵 Use processed audio: {audio_path}")
                         break
 
-        # 2. Fallback на обработанное или оригинальное видео
+        # 2. Fallback on processed or original video
         if not audio_path:
             audio_path = recording.processed_video_path or recording.local_video_path
             if audio_path:
-                logger.info(f"🎬 Используем видео файл (аудио не найдено): {audio_path}")
+                logger.info(f"🎬 Use video file (audio not found): {audio_path}")
 
         if not audio_path:
             raise ValueError("No audio or video file available for transcription")
@@ -551,7 +551,7 @@ async def _async_transcribe_recording(
             meta={'progress': 20, 'status': 'Loading transcription service...', 'step': 'transcribe'}
         )
 
-        # Загружаем АДМИНСКИЕ креды (только Fireworks)
+        # Load ADMIN credentials (only Fireworks)
         fireworks_config = FireworksConfig.from_file("config/fireworks_creds.json")
         fireworks_service = FireworksTranscriptionService(fireworks_config)
 
@@ -560,15 +560,15 @@ async def _async_transcribe_recording(
             meta={'progress': 30, 'status': 'Transcribing audio...', 'step': 'transcribe'}
         )
 
-        # Формируем промпт: user_prompt (из config) + display_name
+        # Compose prompt: user_prompt (from config) + display_name
         from transcription_module.service import TranscriptionService
 
         fireworks_prompt = TranscriptionService._compose_fireworks_prompt(
             user_prompt, recording.display_name
         )
 
-        # Транскрибация через Fireworks API (ТОЛЬКО транскрибация, без извлечения тем)
-        # Используем language и temperature из resolved config
+        # Transcription through Fireworks API (ONLY transcription, WITHOUT topic extraction)
+        # Use language and temperature from resolved config
         transcription_result = await fireworks_service.transcribe_audio(
             audio_path=audio_path,
             language=language,  # ← from resolved config
@@ -580,22 +580,22 @@ async def _async_transcribe_recording(
             meta={'progress': 70, 'status': 'Saving transcription...', 'step': 'transcribe'}
         )
 
-        # Сохраняем только master.json (БЕЗ topics.json)
+        # Save only master.json (WITHOUT topics.json)
         transcription_manager = get_transcription_manager()
-        transcription_dir = transcription_manager.get_dir(recording_id)
+        transcription_dir = transcription_manager.get_dir(recording_id, user_id)
 
-        # Подготавливаем данные
+        # Prepare data for admin
         words = transcription_result.get("words", [])
         segments = transcription_result.get("segments", [])
         detected_language = transcription_result.get("language", language)
 
-        # Вычисляем длительность из последнего сегмента
+        # Calculate duration from last segment
         duration = 0.0
         if segments and len(segments) > 0:
             last_segment = segments[-1]
             duration = last_segment.get("end", 0.0)
 
-        # Собираем метаданные для админа (для расчета стоимости)
+        # Collect metadata for admin (for cost calculation)
         usage_metadata = {
             "model": fireworks_config.model,
             "prompt_used": fireworks_prompt,
@@ -611,11 +611,11 @@ async def _async_transcribe_recording(
                 "path": str(audio_path),  # Convert Path to string for JSON serialization
                 "duration_seconds": duration,
             },
-            # Если Fireworks API возвращает usage, добавляем сюда
+            # If Fireworks API returns usage, add here
             "usage": transcription_result.get("usage"),
         }
 
-        # Сохраняем master.json
+        # Save master.json
         transcription_manager.save_master(
             recording_id=recording_id,
             words=words,
@@ -628,7 +628,7 @@ async def _async_transcribe_recording(
             raw_response=transcription_result,
         )
 
-        # Генерируем кэш-файлы (segments.txt, words.txt)
+        # Generate cache files (segments.txt, words.txt)
         transcription_manager.generate_cache_files(recording_id, user_id=user_id)
 
         task_self.update_state(
@@ -636,17 +636,17 @@ async def _async_transcribe_recording(
             meta={'progress': 90, 'status': 'Updating database...', 'step': 'transcribe'}
         )
 
-        # Обновляем запись в БД (без топиков)
+        # Update recording in DB (without topics)
         recording.transcription_dir = str(transcription_dir)
         recording.transcription_info = transcription_result
 
-        # Помечаем этап транскрибации как завершённый
+        # Mark transcription stage as completed
         recording.mark_stage_completed(
             ProcessingStageType.TRANSCRIBE,
             meta={"transcription_dir": str(transcription_dir), "language": language, "model": "fireworks"},
         )
 
-        # Обновляем агрегированный статус на основе processing_stages
+        # Update aggregated status based on processing_stages (aggregate status)
         from api.helpers.status_manager import update_aggregate_status
         update_aggregate_status(recording)
 
@@ -654,7 +654,7 @@ async def _async_transcribe_recording(
         await session.commit()
 
         logger.info(
-            f"✅ Transcription completed for recording {recording_id}: "
+            f"✅ Transcription completed for recording {recording_id} (aggregate status): "
             f"words={len(words)}, segments={len(segments)}, language={language}"
         )
 
@@ -681,17 +681,17 @@ def process_recording_task(
     manual_override: dict | None = None,
 ) -> dict:
     """
-    Полный пайплайн обработки: download → trim → transcribe → topics → upload.
+    Full processing pipeline: download -> trim -> transcribe -> topics -> upload.
 
-    Template-driven: все параметры берутся из resolved config (user_config < template < manual_override).
+    Template-driven: all parameters are taken from resolved config (user_config < template < manual_override).
 
     Args:
-        recording_id: ID записи
-        user_id: ID пользователя
-        manual_override: Опциональное переопределение конфигурации (любые поля)
+        recording_id: ID of recording
+        user_id: ID of user
+        manual_override: Optional configuration override (any fields)
 
     Returns:
-        Результаты полного пайплайна
+        Results of full pipeline
     """
     try:
         logger.info(f"[Task {self.request.id}] Processing recording {recording_id}, user {user_id}")
@@ -972,7 +972,7 @@ def process_recording_task(
                 }
                 current_step += 1
 
-        # Финальный статус
+        # Final status
         if not results["errors"]:
             results["status"] = "completed"
         elif results["steps_completed"]:
@@ -1007,20 +1007,20 @@ def extract_topics_task(
     version_id: str | None = None,
 ) -> dict:
     """
-    Извлечь темы из существующей транскрибации (только админские креды).
+    Extract topics from existing transcription (only admin credentials).
 
-    Модель выбирается автоматически с ретраями и фоллбэками:
-    1. Сначала deepseek (основная модель)
-    2. Fallback на fireworks_deepseek при ошибке
+    Model is selected automatically with retries and fallbacks:
+    1. First deepseek (primary model)
+    2. Fallback on fireworks_deepseek on error
 
     Args:
-        recording_id: ID записи
-        user_id: ID пользователя
-        granularity: Режим извлечения ("short" | "long")
-        version_id: ID версии (если None, генерируется автоматически)
+        recording_id: ID of recording
+        user_id: ID of user
+        granularity: Extraction mode ("short" | "long")
+        version_id: ID of version (if None, generated automatically)
 
     Returns:
-        Результаты извлечения тем
+        Results of topic extraction
     """
     try:
         logger.info(f"[Task {self.request.id}] Extracting topics for recording {recording_id}, user {user_id}")
@@ -1054,11 +1054,11 @@ async def _async_extract_topics(
     task_self, recording_id: int, user_id: int, granularity: str, version_id: str | None
 ) -> dict:
     """
-    Async функция для извлечения тем с автоматическим выбором модели.
+    Async function for extracting topics with automatic model selection.
 
-    Стратегия:
-    1. Попытка с deepseek (основная модель)
-    2. Fallback на fireworks_deepseek при ошибке
+    Strategy:
+    1. Try with deepseek (primary model)
+    2. Fallback on fireworks_deepseek on error
     """
     from deepseek_module import DeepSeekConfig, TopicExtractor
     from transcription_module.manager import get_transcription_manager
@@ -1073,7 +1073,7 @@ async def _async_extract_topics(
         if not recording:
             raise ValueError(f"Recording {recording_id} not found for user {user_id}")
 
-        # Проверяем наличие транскрибации
+        # Check presence of transcription
         transcription_manager = get_transcription_manager()
         if not transcription_manager.has_master(recording_id, user_id=user_id):
             raise ValueError(
@@ -1085,15 +1085,15 @@ async def _async_extract_topics(
             meta={'progress': 20, 'status': 'Loading transcription...', 'step': 'extract_topics'}
         )
 
-        # Гарантируем наличие segments.txt
+        # Ensure presence of segments.txt
         segments_path = transcription_manager.ensure_segments_txt(recording_id, user_id=user_id)
 
-        # Попытка извлечения тем с fallback стратегией
+        # Try extracting topics with fallback strategy
         topics_result = None
         model_used = None
         last_error = None
 
-        # Стратегия 1: DeepSeek (основная модель)
+        # Strategy 1: DeepSeek (primary model)
         try:
             logger.info(f"[Topics] Trying primary model: deepseek for recording {recording_id}")
             task_self.update_state(
@@ -1116,7 +1116,7 @@ async def _async_extract_topics(
             logger.warning(f"[Topics] DeepSeek failed for recording {recording_id}: {e}. Trying fallback...")
             last_error = e
 
-            # Стратегия 2: Fireworks DeepSeek (fallback)
+            # Strategy 2: Fireworks DeepSeek (fallback)
             try:
                 logger.info(f"[Topics] Trying fallback model: fireworks_deepseek for recording {recording_id}")
                 task_self.update_state(
@@ -1147,11 +1147,11 @@ async def _async_extract_topics(
             meta={'progress': 80, 'status': 'Saving topics...', 'step': 'extract_topics'}
         )
 
-        # Генерируем version_id если не задан
+        # Generate version_id if not specified
         if not version_id:
             version_id = transcription_manager.generate_version_id(recording_id, user_id=user_id)
 
-        # Собираем метаданные для админа
+        # Collect metadata for admin
         usage_metadata = {
             "model": model_used,
             "prompt_used": "See TopicExtractor code for prompt generation",
@@ -1159,10 +1159,10 @@ async def _async_extract_topics(
                 "temperature": deepseek_config.temperature if deepseek_config else None,
                 "max_tokens": deepseek_config.max_tokens if deepseek_config else None,
             },
-            # Здесь можно добавить usage из API response, если доступно
+            # Here you can add usage from API response, if available
         }
 
-        # Сохраняем в topics.json
+        # Save in topics.json
         transcription_manager.add_topics_version(
             recording_id=recording_id,
             version_id=version_id,
@@ -1176,24 +1176,24 @@ async def _async_extract_topics(
             user_id=user_id,
         )
 
-        # Обновляем запись в БД (активная версия)
+        # Update recording in DB (active version)
         recording.topic_timestamps = topics_result.get("topic_timestamps", [])
         recording.main_topics = topics_result.get("main_topics", [])
 
-        # Помечаем этап извлечения тем как завершённый
+        # Mark topic extraction stage as completed
         recording.mark_stage_completed(
             ProcessingStageType.EXTRACT_TOPICS,
             meta={"version_id": version_id, "granularity": granularity, "model": model_used},
         )
 
-        # Обновляем агрегированный статус
+        # Update aggregated status
         from api.helpers.status_manager import update_aggregate_status
         update_aggregate_status(recording)
 
         await recording_repo.update(recording)
         await session.commit()
 
-        # Не показываем модель пользователю, только результаты
+        # Don't show model to user, only results
         return {
             "success": True,
             "version_id": version_id,
@@ -1216,15 +1216,15 @@ def generate_subtitles_task(
     formats: list[str] | None = None,
 ) -> dict:
     """
-    Генерировать субтитры из существующей транскрибации.
+    Generate subtitles from existing transcription.
 
     Args:
-        recording_id: ID записи
-        user_id: ID пользователя
-        formats: Список форматов ('srt', 'vtt')
+        recording_id: ID of recording
+        user_id: ID of user
+        formats: List of formats ('srt', 'vtt')
 
     Returns:
-        Результаты генерации субтитров
+        Results of subtitle generation
     """
     try:
         logger.info(f"[Task {self.request.id}] Generating subtitles for recording {recording_id}, user {user_id}")
@@ -1253,7 +1253,7 @@ def generate_subtitles_task(
 
 
 async def _async_generate_subtitles(task_self, recording_id: int, user_id: int, formats: list[str]) -> dict:
-    """Async функция для генерации субтитров."""
+    """Async function for generating subtitles."""
     from transcription_module.manager import get_transcription_manager
 
     db_config = DatabaseConfig.from_env()
@@ -1266,7 +1266,7 @@ async def _async_generate_subtitles(task_self, recording_id: int, user_id: int, 
         if not recording:
             raise ValueError(f"Recording {recording_id} not found for user {user_id}")
 
-        # Проверяем наличие транскрибации
+        # Check presence of transcription
         transcription_manager = get_transcription_manager()
         if not transcription_manager.has_master(recording_id, user_id=user_id):
             raise ValueError(
@@ -1278,7 +1278,7 @@ async def _async_generate_subtitles(task_self, recording_id: int, user_id: int, 
             meta={'progress': 40, 'status': 'Generating subtitles...', 'step': 'generate_subtitles'}
         )
 
-        # Генерируем субтитры
+        # Generate subtitles
         subtitle_paths = transcription_manager.generate_subtitles(
             recording_id=recording_id,
             formats=formats,
@@ -1290,13 +1290,13 @@ async def _async_generate_subtitles(task_self, recording_id: int, user_id: int, 
             meta={'progress': 90, 'status': 'Saving results...', 'step': 'generate_subtitles'}
         )
 
-        # Обновляем запись в БД
+        # Update recording in DB
         recording.mark_stage_completed(
             ProcessingStageType.GENERATE_SUBTITLES,
             meta={"formats": formats, "files": subtitle_paths},
         )
 
-        # Обновляем агрегированный статус
+        # Update aggregated status
         from api.helpers.status_manager import update_aggregate_status
         update_aggregate_status(recording)
 
@@ -1326,20 +1326,20 @@ def batch_transcribe_recording_task(
     max_wait_time: float = 3600.0,
 ) -> dict:
     """
-    Polling для Fireworks Batch API transcription.
+    Polling for Fireworks Batch API transcription.
 
-    Этот task создается после submit_batch_transcription() и ждет завершения batch job.
-    Использует polling для проверки статуса каждые poll_interval секунд.
+    This task is created after submit_batch_transcription() and waits for completion of batch job.
+    Uses polling to check status every poll_interval seconds.
 
     Args:
-        recording_id: ID записи
-        user_id: ID пользователя
-        batch_id: ID batch job от Fireworks
-        poll_interval: Интервал проверки статуса (секунды)
-        max_wait_time: Максимальное время ожидания (секунды)
+        recording_id: ID of recording
+        user_id: ID of user
+        batch_id: ID of batch job from Fireworks
+        poll_interval: Status check interval (seconds)
+        max_wait_time: Maximum waiting time (seconds)
 
     Returns:
-        Результат транскрибации
+        Result of transcription
     """
     try:
         logger.info(
@@ -1393,7 +1393,7 @@ async def _async_poll_batch_transcription(
     poll_interval: float,
     max_wait_time: float,
 ) -> dict:
-    """Async функция для polling batch transcription."""
+    """Async function for polling batch transcription."""
     import time
 
     from fireworks_module import FireworksConfig, FireworksTranscriptionService
@@ -1412,7 +1412,7 @@ async def _async_poll_batch_transcription(
 
         recording = MeetingRecording.from_db_model(recording_db)
 
-        # Инициализируем Fireworks service
+        # Initialize Fireworks service
         fireworks_config = FireworksConfig.from_file("config/fireworks_creds.json")
         fireworks_service = FireworksTranscriptionService(fireworks_config)
 
@@ -1426,14 +1426,14 @@ async def _async_poll_batch_transcription(
 
             if elapsed > max_wait_time:
                 raise TimeoutError(
-                    f"Batch transcription {batch_id} не завершился за {max_wait_time}s (попыток: {attempt})"
+                    f"Batch transcription {batch_id} not completed after {max_wait_time}s (attempts: {attempt})"
                 )
 
-            # Проверяем статус
+            # Check status
             status_response = await fireworks_service.check_batch_status(batch_id)
             status = status_response.get("status", "unknown")
 
-            # Обновляем progress (примерно)
+            # Update progress (approximately)
             progress = min(20 + int((elapsed / max_wait_time) * 60), 80)
             task_self.update_state(
                 state='PROCESSING',
@@ -1456,10 +1456,10 @@ async def _async_poll_batch_transcription(
                     meta={'progress': 85, 'status': 'Parsing batch result...', 'step': 'batch_transcribe'}
                 )
 
-                # Получаем результат
+                # Get result
                 transcription_result = await fireworks_service.get_batch_result(batch_id)
 
-                # Сохраняем транскрипцию (как обычно)
+                # Save transcription (as usual)
                 transcription_manager = TranscriptionManager()
 
                 task_self.update_state(
@@ -1467,7 +1467,7 @@ async def _async_poll_batch_transcription(
                     meta={'progress': 90, 'status': 'Saving transcription...', 'step': 'batch_transcribe'}
                 )
 
-                # Сохраняем master.json
+                # Save master.json
                 words = transcription_result.get("words", [])
                 segments = transcription_result.get("segments", [])
                 language = transcription_result.get("language", "ru")
@@ -1485,7 +1485,7 @@ async def _async_poll_batch_transcription(
                     user_id=user_id,
                 )
 
-                # Обновляем запись в БД
+                # Update recording in DB
                 recording.transcription_path = transcription_manager.get_dir(recording_id, user_id=user_id)
                 recording.mark_stage_completed(
                     ProcessingStageType.TRANSCRIBE,
@@ -1498,7 +1498,7 @@ async def _async_poll_batch_transcription(
                     },
                 )
 
-                # Обновляем агрегированный статус
+                # Update aggregated status
                 from api.helpers.status_manager import update_aggregate_status
                 update_aggregate_status(recording)
 

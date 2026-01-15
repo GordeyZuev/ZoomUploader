@@ -4,16 +4,15 @@ from pydantic import BaseModel
 
 
 class DryRunResponse(BaseModel):
-    """Результат dry-run проверки."""
+    """Result of dry-run check for single recording."""
 
     dry_run: bool = True
     recording_id: int | None = None
-    matched_count: int | None = None
-    recordings: list[dict] | None = None
+    steps: list[dict] | None = None
 
 
 class RecordingOperationResponse(BaseModel):
-    """Результат операции над recording."""
+    """Result of operation over recording."""
 
     success: bool
     recording_id: int | None = None
@@ -22,7 +21,7 @@ class RecordingOperationResponse(BaseModel):
 
 
 class RecordingBulkOperationResponse(BaseModel):
-    """Результат bulk операции."""
+    """Result of bulk operation."""
 
     queued_count: int
     skipped_count: int
@@ -30,8 +29,19 @@ class RecordingBulkOperationResponse(BaseModel):
     tasks: list[dict]
 
 
+class BulkProcessDryRunResponse(BaseModel):
+    """
+    Result of dry-run for bulk operation.
+    """
+
+    matched_count: int
+    skipped_count: int
+    total: int
+    recordings: list[dict]
+
+
 class RetryUploadResponse(BaseModel):
-    """Результат retry upload."""
+    """Result of retry upload."""
 
     message: str
     recording_id: int
@@ -39,7 +49,7 @@ class RetryUploadResponse(BaseModel):
 
 
 class MappingStatusResponse(BaseModel):
-    """Статус mapping recording."""
+    """Status of mapping recording."""
 
     recording_id: int
     is_mapped: bool
@@ -48,14 +58,14 @@ class MappingStatusResponse(BaseModel):
 
 
 class ConfigSaveResponse(BaseModel):
-    """Результат сохранения конфигурации."""
+    """Result of saving configuration."""
 
     recording_id: int
     message: str
 
 
 class TemplateInfoResponse(BaseModel):
-    """Информация о шаблоне."""
+    """Information about template."""
 
     template_id: int
     name: str
