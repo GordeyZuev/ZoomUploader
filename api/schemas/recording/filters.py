@@ -41,7 +41,9 @@ class RecordingFilters(BaseModel):
                 "is_mapped": True,
                 "exclude_blank": True,
                 "search": "lecture",
+                "from_date": "2024-01-01",
+                "to_date": "2024-12-31",
                 "order_by": "created_at",
-                "order": "asc"
+                "order": "desc",
             }
         }

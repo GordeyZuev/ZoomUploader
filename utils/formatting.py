@@ -1,7 +1,22 @@
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from config.settings import settings
+
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Create a safe filename.
+
+    Removes invalid characters and spaces, replacing them with underscores.
+    """
+    filename = re.sub(r'[<>:"/\\|?*]', "_", filename)
+    filename = re.sub(r"\s+", "_", filename)
+    filename = filename.strip("_")
+    if len(filename) > 200:
+        filename = filename[:200]
+    return filename
 
 
 def normalize_datetime_string(date_string: str) -> str:
@@ -29,10 +44,8 @@ def format_duration(minutes: int) -> str:
     if hours > 0:
         if mins > 0:
             return f"{hours}ч {mins}м"
-        else:
-            return f"{hours}ч"
-    else:
-        return f"{mins}м"
+        return f"{hours}ч"
+    return f"{mins}м"
 
 
 def format_file_size(size_bytes: int) -> str:
@@ -49,8 +62,7 @@ def format_file_size(size_bytes: int) -> str:
 
     if i == 0:
         return f"{size_bytes:.0f} {size_names[i]}"
-    else:
-        return f"{size_bytes:.1f} {size_names[i]}"
+    return f"{size_bytes:.1f} {size_names[i]}"
 
 
 def format_date(date_input: str | datetime) -> str:
@@ -69,10 +81,9 @@ def format_date(date_input: str | datetime) -> str:
             # Заменяем 'Z' на '+00:00' для правильного парсинга UTC
             if date_str.endswith("Z"):
                 date_str = date_str[:-1] + "+00:00"
-            else:
-                # Если нет 'Z', добавляем UTC (для обратной совместимости)
-                if "T" in date_str and "+" not in date_str and "-" not in date_str[-6:]:
-                    date_str = date_str + "+00:00"
+            # Если нет 'Z', добавляем UTC (для обратной совместимости)
+            elif "T" in date_str and "+" not in date_str and "-" not in date_str[-6:]:
+                date_str = date_str + "+00:00"
 
             dt = datetime.fromisoformat(date_str)
 

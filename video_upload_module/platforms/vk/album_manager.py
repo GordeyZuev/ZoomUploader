@@ -43,9 +43,8 @@ class VKAlbumManager:
                         album_id = data["response"]["album_id"]
                         logger.info(f"Album created: {album_id}")
                         return str(album_id)
-                    else:
-                        logger.error(f"HTTP Error: {response.status}")
-                        return None
+                    logger.error(f"HTTP Error: {response.status}")
+                    return None
 
         except Exception as e:
             logger.error(f"Album creation error: {e}")
@@ -81,9 +80,8 @@ class VKAlbumManager:
 
                         logger.info(f"Albums retrieved: {len(albums)}")
                         return albums
-                    else:
-                        logger.error(f"HTTP Error: {response.status}")
-                        return []
+                    logger.error(f"HTTP Error: {response.status}")
+                    return []
 
         except Exception as e:
             logger.error(f"Error getting albums: {e}")
@@ -126,9 +124,8 @@ class VKAlbumManager:
 
                         logger.info(f"Videos retrieved from album: {len(videos)}")
                         return videos
-                    else:
-                        logger.error(f"HTTP Error: {response.status}")
-                        return []
+                    logger.error(f"HTTP Error: {response.status}")
+                    return []
 
         except Exception as e:
             logger.error(f"Error getting album videos: {e}")
@@ -162,9 +159,8 @@ class VKAlbumManager:
 
                         logger.info(f"Album edited: {album_id}")
                         return True
-                    else:
-                        logger.error(f"HTTP Error: {response.status}")
-                        return False
+                    logger.error(f"HTTP Error: {response.status}")
+                    return False
 
         except Exception as e:
             logger.error(f"Album edit error: {e}")
@@ -185,9 +181,8 @@ class VKAlbumManager:
 
                         logger.info(f"Album deleted: {album_id}")
                         return True
-                    else:
-                        logger.error(f"HTTP Error: {response.status}")
-                        return False
+                    logger.error(f"HTTP Error: {response.status}")
+                    return False
 
         except Exception as e:
             logger.error(f"Album deletion error: {e}")
@@ -214,9 +209,8 @@ class VKAlbumManager:
 
                         logger.info(f"Video moved to album: {album_id}")
                         return True
-                    else:
-                        logger.error(f"HTTP Error: {response.status}")
-                        return False
+                    logger.error(f"HTTP Error: {response.status}")
+                    return False
 
         except Exception as e:
             logger.error(f"Video move error: {e}")

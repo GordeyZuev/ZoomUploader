@@ -23,7 +23,7 @@ async def list_presets(
     session: AsyncSession = Depends(get_db_session),
     current_user: UserModel = Depends(get_current_active_user),
 ):
-    """Получение списка пресетов пользователя."""
+    """Get list of user's output presets."""
     repo = OutputPresetRepository(session)
 
     if platform:
@@ -42,15 +42,12 @@ async def get_preset(
     session: AsyncSession = Depends(get_db_session),
     current_user: UserModel = Depends(get_current_active_user),
 ):
-    """Получение пресета по ID."""
+    """Get output preset by ID."""
     repo = OutputPresetRepository(session)
     preset = await repo.find_by_id(preset_id, current_user.id)
 
     if not preset:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Preset {preset_id} not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Preset {preset_id} not found")
 
     return preset
 
@@ -61,7 +58,7 @@ async def create_preset(
     session: AsyncSession = Depends(get_db_session),
     current_user: UserModel = Depends(get_current_active_user),
 ):
-    """Создание нового пресета."""
+    """Create new output preset."""
     repo = OutputPresetRepository(session)
     preset = await repo.create(
         user_id=current_user.id,
@@ -83,14 +80,26 @@ async def update_preset(
     session: AsyncSession = Depends(get_db_session),
     current_user: UserModel = Depends(get_current_active_user),
 ):
-    """Обновление пресета."""
+    """
+    Update output preset.
+
+    Security:
+        - Validates preset ownership
+        - Validates credential ownership if credential_id is being updated
+    """
+    from api.services.resource_access_validator import ResourceAccessValidator
+
     repo = OutputPresetRepository(session)
     preset = await repo.find_by_id(preset_id, current_user.id)
 
     if not preset:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Preset {preset_id} not found"
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Preset {preset_id} not found")
+
+    # Validate credential ownership if credential_id is being updated
+    if data.credential_id is not None:
+        validator = ResourceAccessValidator(session)
+        await validator.validate_credential_for_update(
+            data.credential_id, current_user.id, resource_name="output preset"
         )
 
     update_data = data.model_dump(exclude_unset=True)
@@ -109,16 +118,12 @@ async def delete_preset(
     session: AsyncSession = Depends(get_db_session),
     current_user: UserModel = Depends(get_current_active_user),
 ):
-    """Удаление пресета."""
+    """Delete output preset."""
     repo = OutputPresetRepository(session)
     preset = await repo.find_by_id(preset_id, current_user.id)
 
     if not preset:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Preset {preset_id} not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Preset {preset_id} not found")
 
     await repo.delete(preset)
     await session.commit()
-

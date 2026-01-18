@@ -20,4 +20,3 @@ class UserConfigModel(Base):
 
     def __repr__(self):
         return f"<UserConfig(id={self.id}, user_id={self.user_id})>"
-

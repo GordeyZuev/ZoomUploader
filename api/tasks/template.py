@@ -3,23 +3,14 @@
 import asyncio
 import logging
 
-from celery import Task
-
 from api.celery_app import celery_app
 from api.repositories.template_repos import RecordingTemplateRepository
+from api.tasks.base import TemplateTask
 from database.config import DatabaseConfig
 from database.manager import DatabaseManager
 from models.recording import ProcessingStatus
 
 logger = logging.getLogger(__name__)
-
-
-class TemplateTask(Task):
-    """Base class for template tasks."""
-
-    def on_failure(self, exc, task_id, args, kwargs, einfo):
-        """Handling task failure."""
-        logger.error(f"[Task {task_id}] Template task failed: {exc!r}", exc_info=True)
 
 
 @celery_app.task(
@@ -60,10 +51,7 @@ def rematch_recordings_task(
             f"user {user_id}, only_unmapped={only_unmapped}"
         )
 
-        self.update_state(
-            state="PROCESSING",
-            meta={"progress": 10, "status": "Loading template...", "step": "rematch"},
-        )
+        self.update_progress(user_id, 10, "Loading template...", step="rematch")
 
         try:
             loop = asyncio.get_event_loop()
@@ -75,29 +63,25 @@ def rematch_recordings_task(
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-        result = loop.run_until_complete(
-            _async_rematch_recordings(self, template_id, user_id, only_unmapped)
-        )
+        result = loop.run_until_complete(_async_rematch_recordings(self, template_id, user_id, only_unmapped))
 
         logger.info(
             f"[Task {self.request.id}] Re-match completed: "
             f"checked={result['checked']}, matched={result['matched']}, updated={result['updated']}"
         )
 
-        return {
-            "task_id": self.request.id,
-            "status": "completed",
-            "result": result,
-        }
+        return self.build_result(
+            user_id=user_id,
+            status="completed",
+            result=result,
+        )
 
     except Exception as exc:
         logger.error(f"[Task {self.request.id}] Error in re-match: {exc!r}", exc_info=True)
         raise self.retry(exc=exc)
 
 
-async def _async_rematch_recordings(
-    task_self, template_id: int, user_id: int, only_unmapped: bool
-) -> dict:
+async def _async_rematch_recordings(task_self, template_id: int, user_id: int, only_unmapped: bool) -> dict:
     """
     Async функция для re-match recordings.
 
@@ -120,10 +104,7 @@ async def _async_rematch_recordings(
     async with db_manager.async_session() as session:
         template_repo = RecordingTemplateRepository(session)
 
-        task_self.update_state(
-            state="PROCESSING",
-            meta={"progress": 20, "status": "Loading template...", "step": "rematch"},
-        )
+        task_self.update_progress(user_id, 20, "Loading template...", step="rematch")
 
         # Get template
         template = await template_repo.find_by_id(template_id, user_id)
@@ -135,14 +116,12 @@ async def _async_rematch_recordings(
                 f"Template {template_id} is not active (is_active={template.is_active}, is_draft={template.is_draft})"
             )
 
-        task_self.update_state(
-            state="PROCESSING",
-            meta={
-                "progress": 30,
-                "status": "Loading recordings...",
-                "step": "rematch",
-                "template_name": template.name,
-            },
+        task_self.update_progress(
+            user_id,
+            30,
+            "Loading recordings...",
+            step="rematch",
+            template_name=template.name,
         )
 
         # Get recordings for checking
@@ -160,17 +139,13 @@ async def _async_rematch_recordings(
         result = await session.execute(query)
         recordings = result.scalars().all()
 
-        logger.info(
-            f"[Re-match] Found {len(recordings)} recordings to check for template {template_id}"
-        )
+        logger.info(f"[Re-match] Found {len(recordings)} recordings to check for template {template_id}")
 
-        task_self.update_state(
-            state="PROCESSING",
-            meta={
-                "progress": 40,
-                "status": f"Checking {len(recordings)} recordings...",
-                "step": "rematch",
-            },
+        task_self.update_progress(
+            user_id,
+            40,
+            f"Checking {len(recordings)} recordings...",
+            step="rematch",
         )
 
         # Import function for matching
@@ -209,28 +184,21 @@ async def _async_rematch_recordings(
             # Update progress
             if idx % 10 == 0:
                 progress = 40 + int((idx / len(recordings)) * 50)
-                task_self.update_state(
-                    state="PROCESSING",
-                    meta={
-                        "progress": progress,
-                        "status": f"Checked {idx}/{len(recordings)} recordings...",
-                        "step": "rematch",
-                        "matched_so_far": matched_count,
-                    },
+                task_self.update_progress(
+                    user_id,
+                    progress,
+                    f"Checked {idx}/{len(recordings)} recordings...",
+                    step="rematch",
+                    matched_so_far=matched_count,
                 )
 
         # Save changes
         if updated_count > 0:
-            task_self.update_state(
-                state="PROCESSING",
-                meta={"progress": 95, "status": "Saving changes...", "step": "rematch"},
-            )
+            task_self.update_progress(user_id, 95, "Saving changes...", step="rematch")
 
             await session.commit()
 
-            logger.info(
-                f"[Re-match] Committed {updated_count} updates for template {template_id}"
-            )
+            logger.info(f"[Re-match] Committed {updated_count} updates for template {template_id}")
 
         return {
             "success": True,
@@ -241,4 +209,3 @@ async def _async_rematch_recordings(
             "updated": updated_count,
             "recordings": updated_recording_ids,
         }
-

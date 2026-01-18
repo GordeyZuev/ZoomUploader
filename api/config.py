@@ -54,9 +54,7 @@ class APISettings(BaseSettings):
     jwt_access_token_expire_minutes: int = Field(
         default=30, ge=1, le=1440, description="Время жизни access токена (минуты)"
     )
-    jwt_refresh_token_expire_days: int = Field(
-        default=7, ge=1, le=30, description="Время жизни refresh токена (дни)"
-    )
+    jwt_refresh_token_expire_days: int = Field(default=7, ge=1, le=30, description="Время жизни refresh токена (дни)")
 
     # Security
     bcrypt_rounds: int = Field(default=12, ge=4, le=31, description="Раунды bcrypt хеширования")

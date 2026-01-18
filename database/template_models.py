@@ -36,8 +36,9 @@ class InputSourceModel(Base):
     __table_args__ = (
         # Уникальное ограничение: один пользователь не может иметь несколько источников
         # с одинаковым именем, типом и credential_id
-        UniqueConstraint('user_id', 'name', 'source_type', 'credential_id',
-                        name='uq_input_sources_user_name_type_credential'),
+        UniqueConstraint(
+            "user_id", "name", "source_type", "credential_id", name="uq_input_sources_user_name_type_credential"
+        ),
     )
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
@@ -104,4 +105,3 @@ class RecordingTemplateModel(Base):
     def __repr__(self):
         draft_status = " (draft)" if self.is_draft else ""
         return f"<RecordingTemplate(id={self.id}, name='{self.name}', user_id={self.user_id}{draft_status})>"
-

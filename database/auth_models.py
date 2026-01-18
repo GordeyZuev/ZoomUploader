@@ -51,7 +51,7 @@ class UserModel(Base):
         back_populates="user",
         uselist=False,
         cascade="all, delete-orphan",
-        foreign_keys="[UserSubscriptionModel.user_id]"
+        foreign_keys="[UserSubscriptionModel.user_id]",
     )
     quota_usage = relationship("QuotaUsageModel", back_populates="user", cascade="all, delete-orphan")
     config = relationship("UserConfigModel", back_populates="user", uselist=False, cascade="all, delete-orphan")

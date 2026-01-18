@@ -93,7 +93,7 @@ async def register(request: RegisterRequest, session: AsyncSession = Depends(get
     existing_config = await config_repo.get_by_user_id(user.id)
     if not existing_config:
         config_path = Path(__file__).parent.parent.parent / "config" / "default_user_config.json"
-        with open(config_path, "r", encoding="utf-8") as f:
+        with open(config_path, encoding="utf-8") as f:
             default_config = json.load(f)
 
         await config_repo.create(user_id=user.id, config_data=default_config)
@@ -262,7 +262,9 @@ async def logout(request: RefreshTokenRequest, session: AsyncSession = Depends(g
 
 
 @router.post("/logout-all", response_model=LogoutAllResponse)
-async def logout_all(request: RefreshTokenRequest, session: AsyncSession = Depends(get_db_session)) -> LogoutAllResponse:
+async def logout_all(
+    request: RefreshTokenRequest, session: AsyncSession = Depends(get_db_session)
+) -> LogoutAllResponse:
     """
     Выход из всех устройств (отзыв всех refresh токенов пользователя).
 
@@ -299,5 +301,3 @@ async def logout_all(request: RefreshTokenRequest, session: AsyncSession = Depen
         message="Successfully logged out from all devices",
         revoked_tokens=count,
     )
-
-

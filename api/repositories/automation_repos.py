@@ -17,12 +17,7 @@ class AutomationJobRepository:
     async def create(self, job_data: dict, user_id: int) -> AutomationJobModel:
         """Create new automation job."""
         now = datetime.utcnow()
-        job = AutomationJobModel(
-            **job_data,
-            user_id=user_id,
-            created_at=now,
-            updated_at=now
-        )
+        job = AutomationJobModel(**job_data, user_id=user_id, created_at=now, updated_at=now)
         self.session.add(job)
         await self.session.commit()
         await self.session.refresh(job)
@@ -31,10 +26,7 @@ class AutomationJobRepository:
     async def get_by_id(self, job_id: int, user_id: int) -> AutomationJobModel | None:
         """Get automation job by ID (with user ownership check)."""
         stmt = select(AutomationJobModel).where(
-            and_(
-                AutomationJobModel.id == job_id,
-                AutomationJobModel.user_id == user_id
-            )
+            and_(AutomationJobModel.id == job_id, AutomationJobModel.user_id == user_id)
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -81,4 +73,3 @@ class AutomationJobRepository:
         job.next_run_at = next_run_at
         job.run_count += 1
         await self.session.commit()
-

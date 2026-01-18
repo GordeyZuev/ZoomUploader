@@ -73,4 +73,3 @@ class DeleteAccountRequest(BaseModel):
                 "confirmation": "DELETE",
             }
         }
-

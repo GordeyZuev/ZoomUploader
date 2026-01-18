@@ -9,9 +9,7 @@ class UserConfigRepository:
         self.session = session
 
     async def get_by_user_id(self, user_id: int) -> UserConfigModel | None:
-        result = await self.session.execute(
-            select(UserConfigModel).where(UserConfigModel.user_id == user_id)
-        )
+        result = await self.session.execute(select(UserConfigModel).where(UserConfigModel.user_id == user_id))
         return result.scalars().first()
 
     async def create(self, user_id: int, config_data: dict) -> UserConfigModel:
@@ -30,4 +28,3 @@ class UserConfigRepository:
     async def delete(self, config: UserConfigModel) -> None:
         await self.session.delete(config)
         await self.session.flush()
-

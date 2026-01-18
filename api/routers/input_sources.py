@@ -71,6 +71,7 @@ async def _sync_single_source(
         }
 
     from api.auth.encryption import get_encryption
+
     encryption = get_encryption()
     credentials = encryption.decrypt_credentials(credential.encrypted_data)
 
@@ -131,7 +132,10 @@ async def _sync_single_source(
                     recording_files = meeting.get("recording_files", [])
                     video_file = None
                     for file in recording_files:
-                        if file.get("file_type") == "MP4" and file.get("recording_type") == "shared_screen_with_speaker_view":
+                        if (
+                            file.get("file_type") == "MP4"
+                            and file.get("recording_type") == "shared_screen_with_speaker_view"
+                        ):
                             video_file = file
                             break
 
@@ -193,7 +197,7 @@ async def _sync_single_source(
                     matched_template = _find_matching_template(display_name, source_id, templates)
 
                     # Create or update
-                    recording, is_new = await recording_repo.create_or_update(
+                    _recording, is_new = await recording_repo.create_or_update(
                         user_id=user_id,
                         input_source_id=source_id,
                         display_name=display_name,
@@ -217,7 +221,9 @@ async def _sync_single_source(
                     logger.warning(f"Failed to save recording {meeting.get('id')}: {e}")
                     continue
 
-            logger.info(f"Synced {saved_count + updated_count} recordings from source {source_id} (new={saved_count}, updated={updated_count})")
+            logger.info(
+                f"Synced {saved_count + updated_count} recordings from source {source_id} (new={saved_count}, updated={updated_count})"
+            )
 
         except Exception as e:
             logger.error(f"Zoom sync failed for source {source_id}: {e}", exc_info=True)
@@ -257,11 +263,7 @@ async def _sync_single_source(
     }
 
 
-def _find_matching_template(
-    display_name: str,
-    source_id: int,
-    templates: list
-):
+def _find_matching_template(display_name: str, source_id: int, templates: list):
     """
     Найти первый подходящий template (first_match strategy).
 
@@ -302,10 +304,7 @@ def _find_matching_template(
         if exact_matches:
             for exact in exact_matches:
                 if isinstance(exact, str) and exact.lower() == display_name_lower:
-                    logger.debug(
-                        f"Recording '{display_name}' matched template '{template.name}' "
-                        f"by exact match"
-                    )
+                    logger.debug(f"Recording '{display_name}' matched template '{template.name}' by exact match")
                     return template
 
         # Check keywords
@@ -314,8 +313,7 @@ def _find_matching_template(
             for keyword in keywords:
                 if isinstance(keyword, str) and keyword.lower() in display_name_lower:
                     logger.debug(
-                        f"Recording '{display_name}' matched template '{template.name}' "
-                        f"by keyword '{keyword}'"
+                        f"Recording '{display_name}' matched template '{template.name}' by keyword '{keyword}'"
                     )
                     return template
 
@@ -327,14 +325,11 @@ def _find_matching_template(
                     try:
                         if re.search(pattern, display_name, re.IGNORECASE):
                             logger.debug(
-                                f"Recording '{display_name}' matched template '{template.name}' "
-                                f"by pattern '{pattern}'"
+                                f"Recording '{display_name}' matched template '{template.name}' by pattern '{pattern}'"
                             )
                             return template
                     except re.error as e:
-                        logger.warning(
-                            f"Invalid regex pattern '{pattern}' in template '{template.name}': {e}"
-                        )
+                        logger.warning(f"Invalid regex pattern '{pattern}' in template '{template.name}': {e}")
 
     logger.debug(f"Recording '{display_name}' did not match any template")
     return None
@@ -347,7 +342,7 @@ async def list_sources(
     session: AsyncSession = Depends(get_db_session),
     current_user: UserModel = Depends(get_current_active_user),
 ):
-    """Получение списка источников пользователя."""
+    """Get list of user's input sources."""
     repo = InputSourceRepository(session)
 
     if active_only:
@@ -369,7 +364,7 @@ async def create_source(
     session: AsyncSession = Depends(get_db_session),
     current_user: UserModel = Depends(get_current_active_user),
 ):
-    """Создание нового источника."""
+    """Create new input source."""
     repo = InputSourceRepository(session)
 
     source_type = data.platform.upper()
@@ -379,8 +374,7 @@ async def create_source(
         credential = await cred_repo.get_by_id(data.credential_id)
         if not credential or credential.user_id != current_user.id:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Credential {data.credential_id} not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"Credential {data.credential_id} not found"
             )
 
     # Проверка на дубликаты
@@ -394,7 +388,7 @@ async def create_source(
     if duplicate:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Source with name '{data.name}', type '{source_type}' and credential_id {data.credential_id} already exists"
+            detail=f"Source with name '{data.name}', type '{source_type}' and credential_id {data.credential_id} already exists",
         )
 
     source = await repo.create(
@@ -417,15 +411,15 @@ async def bulk_sync_sources(
     current_user: UserModel = Depends(get_current_active_user),
 ):
     """
-    Bulk синхронизация нескольких источников (async через Celery).
+    Bulk sync multiple sources (async via Celery).
 
     Args:
-        data: Запрос с source_ids, from_date, to_date
+        data: Request with source_ids, from_date, to_date
 
     Returns:
-        task_id для отслеживания прогресса через GET /api/v1/tasks/{task_id}
+        task_id for tracking progress via GET /api/v1/tasks/{task_id}
     """
-    # Валидация что все sources существуют и принадлежат пользователю
+    # Validate that all sources exist and belong to the user
     repo = InputSourceRepository(session)
     invalid_sources = []
     source_names = []
@@ -438,12 +432,9 @@ async def bulk_sync_sources(
             source_names.append(source.name)
 
     if invalid_sources:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Sources not found: {invalid_sources}"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Sources not found: {invalid_sources}")
 
-    # Запускаем Celery task
+    # Start Celery task
     from api.tasks.sync_tasks import bulk_sync_sources_task
 
     task = bulk_sync_sources_task.apply_async(
@@ -472,15 +463,12 @@ async def get_source(
     session: AsyncSession = Depends(get_db_session),
     current_user: UserModel = Depends(get_current_active_user),
 ):
-    """Получение источника по ID."""
+    """Get input source by ID."""
     repo = InputSourceRepository(session)
     source = await repo.find_by_id(source_id, current_user.id)
 
     if not source:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Source {source_id} not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Source {source_id} not found")
 
     return source
 
@@ -492,14 +480,26 @@ async def update_source(
     session: AsyncSession = Depends(get_db_session),
     current_user: UserModel = Depends(get_current_active_user),
 ):
-    """Обновление источника."""
+    """
+    Update input source.
+
+    Security:
+        - Validates source ownership
+        - Validates credential ownership if credential_id is being updated
+    """
+    from api.services.resource_access_validator import ResourceAccessValidator
+
     repo = InputSourceRepository(session)
     source = await repo.find_by_id(source_id, current_user.id)
 
     if not source:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Source {source_id} not found"
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Source {source_id} not found")
+
+    # Validate credential ownership if credential_id is being updated
+    if data.credential_id is not None:
+        validator = ResourceAccessValidator(session)
+        await validator.validate_credential_for_update(
+            data.credential_id, current_user.id, resource_name="input source"
         )
 
     update_data = data.model_dump(exclude_unset=True)
@@ -518,15 +518,12 @@ async def delete_source(
     session: AsyncSession = Depends(get_db_session),
     current_user: UserModel = Depends(get_current_active_user),
 ):
-    """Удаление источника."""
+    """Delete input source."""
     repo = InputSourceRepository(session)
     source = await repo.find_by_id(source_id, current_user.id)
 
     if not source:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Source {source_id} not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Source {source_id} not found")
 
     await repo.delete(source)
     await session.commit()
@@ -541,33 +538,27 @@ async def sync_source(
     current_user: UserModel = Depends(get_current_active_user),
 ):
     """
-    Синхронизация записей из одного источника (async через Celery).
+    Sync recordings from one source (async via Celery).
 
     Args:
-        source_id: ID источника
-        from_date: Дата начала в формате YYYY-MM-DD
-        to_date: Дата окончания в формате YYYY-MM-DD (опционально)
+        source_id: Source ID
+        from-date: Start date in format YYYY-MM-DD
+        to-date: End date in format YYYY-MM-DD (optional)
 
     Returns:
-        task_id для отслеживания прогресса через GET /api/v1/tasks/{task_id}
+        task_id for tracking progress via GET /api/v1/tasks/{task_id}
     """
-    # Проверяем что source существует и принадлежит пользователю
+    # Validate that source exists and belongs to the user
     repo = InputSourceRepository(session)
     source = await repo.find_by_id(source_id, current_user.id)
 
     if not source:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Source {source_id} not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Source {source_id} not found")
 
     if not source.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Source is not active"
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Source is not active")
 
-    # Запускаем Celery task
+    # Start Celery task
     from api.tasks.sync_tasks import sync_single_source_task
 
     task = sync_single_source_task.apply_async(
@@ -588,4 +579,3 @@ async def sync_source(
         "source_id": source_id,
         "source_name": source.name,
     }
-

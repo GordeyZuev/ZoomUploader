@@ -12,12 +12,12 @@ from .recording import (
 
 __all__ = [
     "MeetingRecording",
-    "ProcessingStatus",
-    "ProcessingStage",
-    "ProcessingStageType",
-    "ProcessingStageStatus",
-    "SourceType",
-    "TargetType",
-    "TargetStatus",
     "OutputTarget",
+    "ProcessingStage",
+    "ProcessingStageStatus",
+    "ProcessingStageType",
+    "ProcessingStatus",
+    "SourceType",
+    "TargetStatus",
+    "TargetType",
 ]

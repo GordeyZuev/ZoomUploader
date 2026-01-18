@@ -1,41 +1,45 @@
 """Recording service"""
 
+import shutil
+from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from api.repositories.recording_repo import RecordingRepository
 from api.schemas.common.pagination import PaginationParams
 from api.schemas.recording.request import ProcessRecordingRequest, UpdateRecordingRequest
 from api.schemas.recording.response import RecordingListResponse, RecordingResponse
-from api.shared.exceptions import APIException, NotFoundError
-
-# Import Celery tasks
-from api.tasks.processing import (
-    batch_process_recordings,
-    process_single_recording,
-)
+from api.shared.exceptions import NotFoundError
 from api.tasks.processing import (
     generate_subtitles as generate_subtitles_task,
+    process_single_recording,
 )
 from api.tasks.upload import batch_upload_recordings as upload_to_platforms
+from api.zoom_api import ZoomAPI
+from config.unified_config import AppConfig, load_app_config
 from logger import get_logger
 from models import MeetingRecording, ProcessingStatus
-from pipeline_manager import PipelineManager
+from utils import filter_available_recordings, get_recordings_by_date_range
+from utils.title_mapper import TitleMapper
 
 logger = get_logger()
 
 
 class RecordingService:
-    """Сервис для работы с записями.
-    Является основным узлом бизнес-логики для API и CLI.
+    """Service for recording operations.
+
+    Main business logic hub for the API.
     """
 
     def __init__(
         self,
         repo: RecordingRepository,
-        pipeline: PipelineManager,
+        app_config: AppConfig | None = None,
     ):
         self.repo = repo
-        self.pipeline = pipeline
+        self.logger = get_logger()
+        self.app_config = app_config or load_app_config()
+        self.title_mapper = TitleMapper(self.app_config)
 
     async def list_recordings(
         self,
@@ -79,31 +83,28 @@ class RecordingService:
         from_date: str,
         to_date: str | None = None,
     ) -> int:
-        """Синхронизация записей из Zoom (даты уже обработаны в роутере)."""
+        """Sync recordings from Zoom API for the specified period."""
         from config import load_config_from_file
 
-        # Загружаем конфиги (в будущем — из настроек пользователя для multi-tenancy)
+        # Load configs (future: from user settings for multi-tenancy)
         configs = load_config_from_file("config/zoom_creds.json")
 
-        count = await self.pipeline.sync_zoom_recordings(configs, from_date, to_date)
-        return count
+        return await self._sync_zoom_recordings(configs, from_date, to_date)
 
     async def process_recording(
         self,
         recording_id: int,
         request: ProcessRecordingRequest,
-        use_celery: bool = True,
     ) -> dict[str, Any]:
         """
-        Запуск обработки конкретной записи.
+        Запуск обработки конкретной записи через Celery.
 
         Args:
             recording_id: ID записи
             request: Параметры обработки
-            use_celery: Использовать Celery (True) или синхронную обработку (False)
 
         Returns:
-            Словарь с task_id (если Celery) или статусом (если синхронно)
+            Словарь с task_id
         """
         recording = await self.repo.find_by_id(recording_id)
         if not recording:
@@ -132,234 +133,275 @@ class RecordingService:
         recording.processing_preferences = prefs
         await self.repo.save(recording)
 
-        if use_celery:
-            # Запускаем через Celery (асинхронно)
-            task = process_single_recording.apply_async(
-                args=[recording_id],
-                kwargs={
-                    "enable_transcription": enable_transcription,
-                    "enable_topics": prefs.get("enable_topics", True),
-                    "enable_subtitles": prefs.get("enable_subtitles", True),
-                    "transcription_model": request.transcription_model,
-                    "topic_model": request.topic_model,
-                    "granularity": request.granularity,
-                },
-                priority=7,  # Высокий приоритет для одиночных задач
-            )
+        task = process_single_recording.apply_async(
+            args=[recording_id],
+            kwargs={
+                "enable_transcription": enable_transcription,
+                "enable_topics": prefs.get("enable_topics", True),
+                "enable_subtitles": prefs.get("enable_subtitles", True),
+                "transcription_model": request.transcription_model,
+                "topic_model": request.topic_model,
+                "granularity": request.granularity,
+            },
+            priority=7,  # Высокий приоритет для одиночных задач
+        )
 
-            return {
-                "message": "Processing task scheduled",
-                "recording_id": recording_id,
-                "task_id": task.id,
-                "status_url": f"/api/v1/tasks/{task.id}",
-            }
-        else:
-            # Синхронная обработка (для CLI или отладки)
-            try:
-                await self.pipeline._process_single_video_complete(
-                    recording,
-                    platforms=request.platforms,
-                    no_transcription=request.no_transcription,
-                    transcription_model=request.transcription_model,
-                    granularity=request.granularity,
-                    topic_model=request.topic_model,
-                )
-                success = True
-            except Exception as e:
-                logger.error(f"Error processing recording {recording_id}: {e}")
-                success = False
-
-            if not success:
-                raise APIException(status_code=500, detail="Failed to process recording")
-
-            updated = await self.repo.find_by_id(recording_id)
-
-            return {
-                "message": "Processing completed",
-                "recording_id": recording_id,
-                "status": updated.status if updated else recording.status,
-            }
-
-    async def run_batch_processing(
-        self,
-        from_date: str | None = None,
-        to_date: str | None = None,
-        select_all: bool = False,
-        recording_ids: list[int] | None = None,
-        platforms: list[str] | None = None,
-        no_transcription: bool = False,
-        use_celery: bool = True,
-    ) -> dict[str, Any]:
-        """
-        Запуск пакетной обработки.
-
-        Args:
-            from_date: Начальная дата
-            to_date: Конечная дата
-            select_all: Обработать все записи
-            recording_ids: Список ID записей
-            platforms: Платформы для загрузки
-            no_transcription: Отключить транскрибацию
-            use_celery: Использовать Celery (True) или синхронную обработку (False)
-
-        Returns:
-            Словарь с task_id (если Celery) или результатом (если синхронно)
-        """
-        # Определяем список записей для обработки
-        if recording_ids:
-            ids_to_process = recording_ids
-        else:
-            # Получаем записи по датам или все
-            recordings = await self.repo.find_all()
-            if from_date or to_date:
-                from utils.data_processing import filter_recordings_by_date_range
-
-                recordings = filter_recordings_by_date_range(recordings, from_date, to_date)
-            ids_to_process = [r.id for r in recordings]
-
-        if not ids_to_process:
-            return {"message": "No recordings to process", "count": 0}
-
-        if use_celery:
-            # Запускаем через Celery (асинхронно)
-            task = batch_process_recordings.apply_async(
-                args=[ids_to_process],
-                kwargs={
-                    "enable_transcription": not no_transcription,
-                    "enable_topics": True,
-                    "enable_subtitles": True,
-                },
-                priority=5,  # Средний приоритет для пакетных задач
-            )
-
-            return {
-                "message": "Batch processing scheduled",
-                "task_id": task.id,
-                "recordings_count": len(ids_to_process),
-                "status_url": f"/api/v1/tasks/{task.id}",
-            }
-        else:
-            # Синхронная обработка (для CLI)
-            from config import load_config_from_file
-
-            configs = load_config_from_file("config/zoom_creds.json")
-            ids_str = [str(i) for i in ids_to_process]
-
-            result = await self.pipeline.run_full_pipeline(
-                configs=configs,
-                from_date=from_date,
-                to_date=to_date,
-                select_all=select_all,
-                recordings=ids_str,
-                platforms=platforms or [],
-                no_transcription=no_transcription,
-            )
-            return result
+        return {
+            "message": "Processing task scheduled",
+            "recording_id": recording_id,
+            "task_id": task.id,
+            "status_url": f"/api/v1/tasks/{task.id}",
+        }
 
     async def generate_subtitles(
         self,
         recording_ids: list[int] | None = None,
-        formats: list[str] | None = None,
-        use_celery: bool = True,
+        _formats: list[str] | None = None,
     ) -> dict[str, Any]:
         """
-        Генерация субтитров для указанных записей.
+        Генерация субтитров для указанных записей через Celery.
 
         Args:
             recording_ids: Список ID записей
             formats: Форматы субтитров
-            use_celery: Использовать Celery (True) или синхронную обработку (False)
 
         Returns:
-            Словарь с task_id (если Celery) или результатом (если синхронно)
+            Словарь с task_id
         """
         if not recording_ids:
             return {"message": "No recordings specified", "count": 0}
 
-        if use_celery:
-            # Запускаем через Celery (асинхронно)
-            task = generate_subtitles_task.apply_async(
-                args=[recording_ids],
-                priority=6,  # Высокий приоритет
-            )
+        # Запускаем через Celery (асинхронно)
+        task = generate_subtitles_task.apply_async(
+            args=[recording_ids],
+            priority=6,  # Высокий приоритет
+        )
 
-            return {
-                "message": "Subtitle generation scheduled",
-                "task_id": task.id,
-                "recordings_count": len(recording_ids),
-                "status_url": f"/api/v1/tasks/{task.id}",
-            }
-        else:
-            # Синхронная обработка (для CLI)
-            recordings = await self.repo.db.get_recordings_by_ids(recording_ids)
-            if not recordings:
-                return {"message": "No recordings found", "count": 0}
-
-            count = await self.pipeline.generate_subtitles(recordings, formats=formats)
-            return {"message": "Subtitles generated", "count": count}
+        return {
+            "message": "Subtitle generation scheduled",
+            "task_id": task.id,
+            "recordings_count": len(recording_ids),
+            "status_url": f"/api/v1/tasks/{task.id}",
+        }
 
     async def upload_recordings(
         self,
         recording_ids: list[int],
         platforms: list[str],
-        upload_captions: bool | None = None,
-        use_celery: bool = True,
+        _upload_captions: bool | None = None,
     ) -> dict[str, Any]:
         """
-        Загрузка указанных записей на платформы.
+        Загрузка указанных записей на платформы через Celery.
 
         Args:
             recording_ids: Список ID записей
             platforms: Платформы для загрузки
             upload_captions: Загружать субтитры
-            use_celery: Использовать Celery (True) или синхронную обработку (False)
 
         Returns:
-            Словарь с task_id (если Celery) или результатом (если синхронно)
+            Словарь с task_id
         """
         if not recording_ids:
             return {"message": "No recordings specified", "count": 0}
 
-        if use_celery:
-            # Запускаем через Celery (асинхронно)
-            task = upload_to_platforms.apply_async(
-                args=[recording_ids],
-                kwargs={
-                    "youtube": "youtube" in platforms,
-                    "vk": "vk" in platforms,
-                },
-                priority=6,  # Высокий приоритет
-            )
+        # Запускаем через Celery (асинхронно)
+        task = upload_to_platforms.apply_async(
+            args=[recording_ids],
+            kwargs={
+                "youtube": "youtube" in platforms,
+                "vk": "vk" in platforms,
+            },
+            priority=6,  # Высокий приоритет
+        )
 
-            return {
-                "message": "Upload scheduled",
-                "task_id": task.id,
-                "recordings_count": len(recording_ids),
-                "platforms": platforms,
-                "status_url": f"/api/v1/tasks/{task.id}",
-            }
-        else:
-            # Синхронная обработка (для CLI)
-            recordings = await self.repo.db.get_recordings_by_ids(recording_ids)
-            if not recordings:
-                return {"message": "No recordings found", "count": 0}
-
-            count, uploaded = await self.pipeline.upload_recordings(
-                recordings, platforms=platforms, upload_captions=upload_captions
-            )
-            return {
-                "message": "Upload completed",
-                "count": count,
-                "uploaded": [r.id for r in uploaded],
-            }
+        return {
+            "message": "Upload scheduled",
+            "task_id": task.id,
+            "recordings_count": len(recording_ids),
+            "platforms": platforms,
+            "status_url": f"/api/v1/tasks/{task.id}",
+        }
 
     async def clean_old_recordings(self, days_ago: int = 7) -> dict[str, Any]:
-        """Очистка старых записей."""
-        return await self.pipeline.clean_old_recordings(days_ago=days_ago)
+        """Clean old recordings: delete files and set EXPIRED status."""
+        cutoff_date = datetime.now() - timedelta(days=days_ago)
+        all_recordings = await self.repo.get_older_than(cutoff_date)
+
+        if not all_recordings:
+            self.logger.info(f"No old recordings to clean: days_ago={days_ago}")
+            return {"cleaned_count": 0, "freed_space_mb": 0, "cleaned_recordings": []}
+
+        cleaned_count = 0
+        freed_space_mb = 0
+        cleaned_recordings = []
+
+        for recording in all_recordings:
+            file_deleted = False
+
+            if recording.local_video_path and Path(recording.local_video_path).exists():
+                try:
+                    video_path = Path(recording.local_video_path)
+                    file_size = video_path.stat().st_size / (1024 * 1024)
+                    video_path.unlink()
+                    freed_space_mb += file_size
+                    file_deleted = True
+                    self.logger.debug(
+                        f"Deleted file: path={recording.local_video_path} | size={file_size:.1f}MB | recording_id={recording.db_id}"
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"Error deleting file: path={recording.local_video_path} | recording_id={recording.db_id} | error={e}"
+                    )
+
+            if recording.processed_video_path and Path(recording.processed_video_path).exists():
+                try:
+                    video_path = Path(recording.processed_video_path)
+                    file_size = video_path.stat().st_size / (1024 * 1024)
+                    video_path.unlink()
+                    freed_space_mb += file_size
+                    file_deleted = True
+                    self.logger.debug(
+                        f"Deleted file: path={recording.processed_video_path} | size={file_size:.1f}MB | recording_id={recording.db_id}"
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"Error deleting file: path={recording.processed_video_path} | recording_id={recording.db_id} | error={e}"
+                    )
+
+            if recording.processed_audio_path and Path(recording.processed_audio_path).exists():
+                try:
+                    audio_file = Path(recording.processed_audio_path)
+                    file_size = audio_file.stat().st_size / (1024 * 1024)
+                    audio_file.unlink()
+                    freed_space_mb += file_size
+                    file_deleted = True
+                    self.logger.debug(
+                        f"Deleted audio: path={recording.processed_audio_path} | size={file_size:.1f}MB | recording_id={recording.db_id}"
+                    )
+                    # Remove directory if empty
+                    audio_dir = audio_file.parent
+                    if audio_dir.exists() and not any(audio_dir.iterdir()):
+                        audio_dir.rmdir()
+                        self.logger.debug(f"Removed empty directory: {audio_dir}")
+                except Exception as e:
+                    self.logger.error(
+                        f"Error deleting audio: path={recording.processed_audio_path} | recording_id={recording.db_id} | error={e}"
+                    )
+
+            if file_deleted:
+                recording.status = ProcessingStatus.EXPIRED
+                await self.repo.save(recording)
+                cleaned_count += 1
+                cleaned_recordings.append(
+                    {"id": recording.db_id, "display_name": recording.display_name, "deleted_files": []}
+                )
+
+        self.logger.info(
+            f"Cleaned recordings: count={cleaned_count} | freed_space={freed_space_mb:.1f}MB | days_ago={days_ago}"
+        )
+        return {
+            "cleaned_count": cleaned_count,
+            "freed_space_mb": freed_space_mb,
+            "cleaned_recordings": cleaned_recordings,
+        }
 
     async def reset_recordings(self, recording_ids: list[int]) -> dict:
-        """Сброс статусов записей."""
-        return await self.pipeline.reset_specific_recordings(recording_ids)
+        """Reset recordings to INITIALIZED status."""
+        reset_count = 0
+        total_deleted_files = 0
+
+        recordings = await self.repo.find_by_ids(recording_ids)
+        recordings_by_id = {recording.db_id: recording for recording in recordings}
+
+        for recording_id in recording_ids:
+            try:
+                recording = recordings_by_id.get(recording_id)
+                if not recording:
+                    self.logger.warning(f"Recording not found: recording_id={recording_id}")
+                    continue
+
+                deleted_files = []
+                if recording.local_video_path and Path(recording.local_video_path).exists():
+                    try:
+                        Path(recording.local_video_path).unlink()
+                        deleted_files.append(recording.local_video_path)
+                        self.logger.debug(f"Deleted file: {recording.local_video_path} | recording_id={recording_id}")
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Failed to delete file: {recording.local_video_path} | recording_id={recording_id} | error={e}"
+                        )
+
+                if recording.processed_video_path and Path(recording.processed_video_path).exists():
+                    try:
+                        Path(recording.processed_video_path).unlink()
+                        deleted_files.append(recording.processed_video_path)
+                        self.logger.debug(
+                            f"Deleted file: {recording.processed_video_path} | recording_id={recording_id}"
+                        )
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Failed to delete file: {recording.processed_video_path} | recording_id={recording_id} | error={e}"
+                        )
+
+                if recording.processed_audio_path and Path(recording.processed_audio_path).exists():
+                    try:
+                        audio_file = Path(recording.processed_audio_path)
+                        audio_file.unlink()
+                        deleted_files.append(recording.processed_audio_path)
+                        self.logger.debug(
+                            f"Deleted audio: {recording.processed_audio_path} | recording_id={recording_id}"
+                        )
+                        # Remove directory if empty
+                        audio_dir = audio_file.parent
+                        if audio_dir.exists() and not any(audio_dir.iterdir()):
+                            audio_dir.rmdir()
+                            self.logger.debug(f"Removed empty directory: {audio_dir}")
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Failed to delete audio: {recording.processed_audio_path} | recording_id={recording_id} | error={e}"
+                        )
+
+                if recording.transcription_dir and Path(recording.transcription_dir).exists():
+                    try:
+                        shutil.rmtree(recording.transcription_dir)
+                        deleted_files.append(recording.transcription_dir)
+                        self.logger.debug(
+                            f"Deleted transcription dir: {recording.transcription_dir} | recording_id={recording_id}"
+                        )
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Failed to delete transcription dir: {recording.transcription_dir} | recording_id={recording_id} | error={e}"
+                        )
+
+                if recording.is_mapped:
+                    recording.status = ProcessingStatus.INITIALIZED
+                else:
+                    recording.status = ProcessingStatus.SKIPPED
+
+                recording.local_video_path = None
+                recording.processed_video_path = None
+                recording.processed_audio_path = None
+                recording.downloaded_at = None
+
+                recording.transcription_dir = None
+                recording.transcription_info = None
+                recording.topic_timestamps = None
+                recording.main_topics = None
+
+                recording.updated_at = datetime.now()
+
+                await self.repo.save(recording)
+                reset_count += 1
+                total_deleted_files += len(deleted_files)
+
+            except Exception as e:
+                self.logger.error(f"Error resetting recording: recording_id={recording_id} | error={e}")
+
+        return {
+            "total_reset": reset_count,
+            "by_status": {"INITIALIZED": reset_count},
+            "deleted_files": total_deleted_files,
+        }
 
     async def update_recording(
         self,
@@ -380,6 +422,139 @@ class RecordingService:
             await self.repo.save(recording)
 
         return self._to_response(recording)
+
+    async def _sync_zoom_recordings(self, configs: dict, from_date: str, to_date: str | None = None) -> int:
+        """Sync recordings from Zoom API to database for the specified period."""
+        self.logger.info(f"📥 Syncing Zoom recordings for period {from_date} - {to_date or 'current date'}...")
+        all_recordings = []
+
+        for account, config in configs.items():
+            self.logger.info(f"📥 Fetching recordings from account: {account}")
+
+            try:
+                api = ZoomAPI(config)
+                recordings = await get_recordings_by_date_range(
+                    api, start_date=from_date, end_date=to_date, filter_video_only=False
+                )
+
+                if recordings:
+                    self.logger.info(f"   Found recordings: {len(recordings)}")
+                    # Add account info to each recording
+                    for recording in recordings:
+                        recording.account = account
+                    all_recordings.extend(recordings)
+                else:
+                    self.logger.info("   No recordings found")
+
+            except Exception as e:
+                self.logger.error(f"   ❌ Error fetching recordings from {account}: {e}")
+                continue
+
+        # Sync all recordings to DB (including deduplication)
+        synced_count = 0
+        if all_recordings:
+            synced_count = await self._sync_recordings_to_db(all_recordings)
+
+        updated_skipped_count = await self._check_and_update_skipped_recordings(from_date, to_date)
+
+        total_count = synced_count + updated_skipped_count
+        if total_count > 0:
+            return total_count
+        self.logger.info("📋 No recordings found")
+        return 0
+
+    async def _sync_recordings_to_db(self, recordings: list[MeetingRecording]) -> int:
+        """Sync recordings to database."""
+        if not recordings:
+            return 0
+
+        filtered_recordings = filter_available_recordings(recordings, min_duration_minutes=25, min_size_mb=30)
+        filtered_count = len(recordings) - len(filtered_recordings)
+
+        if filtered_count > 0:
+            self.logger.info(f"Filtered recordings: {filtered_count} (do not meet criteria)")
+
+        for recording in filtered_recordings:
+            self._check_and_set_mapping(recording)
+
+        synced_count = await self.repo.save_batch(filtered_recordings)
+        self.logger.info(f"Synced recordings: {synced_count}/{len(filtered_recordings)}")
+        return synced_count
+
+    def _check_and_set_mapping(self, recording: MeetingRecording) -> None:
+        """Check recording mapping and set appropriate status."""
+        try:
+            topic = recording.display_name.strip() if recording.display_name else ""
+            mapping_result = self.title_mapper.map_title(topic, recording.start_time, recording.duration)
+
+            if mapping_result.title:
+                recording.is_mapped = True
+                recording.status = ProcessingStatus.INITIALIZED
+                self.logger.debug(
+                    f"Mapping found: original='{topic}' | mapped='{mapping_result.title}' | recording_id={recording.db_id}"
+                )
+            else:
+                recording.is_mapped = False
+                recording.status = ProcessingStatus.SKIPPED
+                self.logger.debug(f"Mapping not found: topic='{topic}' | recording_id={recording.db_id}")
+
+        except Exception as e:
+            recording.is_mapped = False
+            recording.status = ProcessingStatus.SKIPPED
+            self.logger.warning(
+                f"Error checking mapping: recording={recording.display_name} | recording_id={recording.db_id} | error={e}"
+            )
+
+    async def _check_and_update_skipped_recordings(self, from_date: str, to_date: str | None = None) -> int:
+        """Check existing SKIPPED recordings and update status if mapping appeared."""
+        from utils.data_processing import filter_recordings_by_date_range
+
+        skipped_recordings = await self.repo.find_all(status=ProcessingStatus.SKIPPED)
+
+        if not skipped_recordings:
+            return 0
+
+        filtered_skipped = filter_recordings_by_date_range(skipped_recordings, from_date, to_date)
+
+        if not filtered_skipped:
+            return 0
+
+        self.logger.info(
+            f"Checking skipped recordings: count={len(filtered_skipped)} | period={from_date} - {to_date or 'current date'}"
+        )
+
+        updated_count = 0
+        recordings_to_update = []
+
+        for recording in filtered_skipped:
+            old_status = recording.status
+            old_is_mapped = recording.is_mapped
+            topic = recording.display_name.strip() if recording.display_name else "No title"
+
+            self.logger.debug(
+                f"Checking recording: recording='{topic}' | recording_id={recording.db_id} | status={old_status.value} | is_mapped={old_is_mapped}"
+            )
+
+            self._check_and_set_mapping(recording)
+
+            if old_status == ProcessingStatus.SKIPPED and recording.status == ProcessingStatus.INITIALIZED:
+                self.logger.info(
+                    f"Found mapping for skipped recording: recording='{topic}' | recording_id={recording.db_id} | status=INITIALIZED | is_mapped={recording.is_mapped}"
+                )
+                recordings_to_update.append(recording)
+                updated_count += 1
+            elif old_is_mapped != recording.is_mapped:
+                self.logger.info(
+                    f"Changed is_mapped: recording='{topic}' | recording_id={recording.db_id} | is_mapped={old_is_mapped} -> {recording.is_mapped}"
+                )
+                recordings_to_update.append(recording)
+                updated_count += 1
+
+        if recordings_to_update:
+            await self.repo.save_batch(recordings_to_update)
+            self.logger.info(f"Updated skipped recordings: {updated_count}/{len(filtered_skipped)}")
+
+        return updated_count
 
     def _to_response(self, recording: MeetingRecording) -> RecordingResponse:
         """Конвертация MeetingRecording в RecordingResponse."""

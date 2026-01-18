@@ -134,23 +134,11 @@ class BulkOperationRequest(BaseModel):
     Только один из режимов может быть использован одновременно.
     """
 
-    recording_ids: list[int] | None = Field(
-        None,
-        description="Явный список ID записей для обработки",
-        min_length=1
-    )
-    filters: RecordingFilters | None = Field(
-        None,
-        description="Фильтры для автоматической выборки записей"
-    )
-    limit: int = Field(
-        50,
-        ge=1,
-        le=200,
-        description="Максимальное количество записей при использовании filters"
-    )
+    recording_ids: list[int] | None = Field(None, description="Явный список ID записей для обработки", min_length=1)
+    filters: RecordingFilters | None = Field(None, description="Фильтры для автоматической выборки записей")
+    limit: int = Field(50, ge=1, le=200, description="Максимальное количество записей при использовании filters")
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_input(self):
         """Валидация: должен быть указан либо recording_ids, либо filters."""
         if not self.recording_ids and not self.filters:
@@ -162,17 +150,8 @@ class BulkOperationRequest(BaseModel):
     class Config:
         json_schema_extra = {
             "examples": [
-                {
-                    "recording_ids": [1, 2, 3, 4, 5]
-                },
-                {
-                    "filters": {
-                        "template_id": 5,
-                        "status": ["INITIALIZED"],
-                        "is_mapped": True
-                    },
-                    "limit": 50
-                }
+                {"recording_ids": [1, 2, 3, 4, 5]},
+                {"filters": {"template_id": 5, "status": ["INITIALIZED"], "is_mapped": True}, "limit": 50},
             ]
         }
 
@@ -190,14 +169,7 @@ class BulkDownloadRequest(BulkOperationRequest):
 
     class Config:
         json_schema_extra = {
-            "example": {
-                "filters": {
-                    "source_id": 10,
-                    "status": ["PENDING"]
-                },
-                "force": False,
-                "allow_skipped": False
-            }
+            "example": {"filters": {"source_id": 10, "status": ["PENDING"]}, "force": False, "allow_skipped": False}
         }
 
 
@@ -211,33 +183,23 @@ class BulkTrimRequest(BulkOperationRequest):
 
     class Config:
         json_schema_extra = {
-            "example": {
-                "recording_ids": [1, 2, 3],
-                "silence_threshold": -35.0,
-                "min_silence_duration": 3.0
-            }
+            "example": {"recording_ids": [1, 2, 3], "silence_threshold": -35.0, "min_silence_duration": 3.0}
         }
 
 
 class BulkTranscribeRequest(BulkOperationRequest):
     """Bulk транскрибация записей."""
 
-    use_batch_api: bool = Field(
-        False,
-        description="Использовать Fireworks Batch API (экономия ~50%, но дольше)"
-    )
+    use_batch_api: bool = Field(False, description="Использовать Fireworks Batch API (экономия ~50%, но дольше)")
     poll_interval: float = Field(10.0, description="Интервал polling для Batch API (секунды)")
     max_wait_time: float = Field(3600.0, description="Максимальное время ожидания Batch API (секунды)")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "filters": {
-                    "template_id": 5,
-                    "status": ["DOWNLOADED", "PROCESSED"]
-                },
+                "filters": {"template_id": 5, "status": ["DOWNLOADED", "PROCESSED"]},
                 "use_batch_api": True,
-                "limit": 100
+                "limit": 100,
             }
         }
 
@@ -250,52 +212,31 @@ class BulkTopicsRequest(BulkOperationRequest):
 
     class Config:
         json_schema_extra = {
-            "example": {
-                "filters": {
-                    "status": ["TRANSCRIBED"],
-                    "template_id": 5
-                },
-                "granularity": "long",
-                "limit": 50
-            }
+            "example": {"filters": {"status": ["TRANSCRIBED"], "template_id": 5}, "granularity": "long", "limit": 50}
         }
 
 
 class BulkSubtitlesRequest(BulkOperationRequest):
     """Bulk генерация субтитров."""
 
-    formats: list[str] = Field(
-        default=["srt", "vtt"],
-        description="Форматы субтитров для генерации"
-    )
+    formats: list[str] = Field(default=["srt", "vtt"], description="Форматы субтитров для генерации")
 
     class Config:
-        json_schema_extra = {
-            "example": {
-                "recording_ids": [1, 2, 3],
-                "formats": ["srt", "vtt"]
-            }
-        }
+        json_schema_extra = {"example": {"recording_ids": [1, 2, 3], "formats": ["srt", "vtt"]}}
 
 
 class BulkUploadRequest(BulkOperationRequest):
     """Bulk загрузка записей на платформы."""
 
-    platforms: list[str] | None = Field(
-        None,
-        description="Платформы для загрузки (youtube, vk). Если None - из preset"
-    )
+    platforms: list[str] | None = Field(None, description="Платформы для загрузки (youtube, vk). Если None - из preset")
     preset_id: int | None = Field(None, description="Override preset ID для всех записей")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "filters": {
-                    "status": ["TOPICS_EXTRACTED"],
-                    "is_mapped": True
-                },
+                "filters": {"status": ["TOPICS_EXTRACTED"], "is_mapped": True},
                 "platforms": ["youtube", "vk"],
-                "limit": 30
+                "limit": 30,
             }
         }
 
@@ -310,15 +251,8 @@ class BulkProcessRequest(BulkOperationRequest):
     class Config:
         json_schema_extra = {
             "example": {
-                "filters": {
-                    "template_id": 5,
-                    "status": ["INITIALIZED", "FAILED"],
-                    "is_mapped": True
-                },
-                "output_config": {
-                    "auto_upload": True,
-                    "platforms": ["youtube"]
-                },
-                "limit": 50
+                "filters": {"template_id": 5, "status": ["INITIALIZED", "FAILED"], "is_mapped": True},
+                "output_config": {"auto_upload": True, "platforms": ["youtube"]},
+                "limit": 50,
             }
         }

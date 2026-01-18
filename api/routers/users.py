@@ -50,17 +50,17 @@ async def get_me(
     current_user: UserInDB = Depends(get_current_user),
 ):
     """
-    Получить базовую информацию о текущем пользователе.
+    Get basic information about the current user.
 
-    Для получения информации о квотах используйте GET /api/v1/users/me/quota
+    For information about quotas, use GET /api/v1/users/me/quota
 
-    Требует аутентификации через JWT токен.
+    Requires authentication via JWT token.
 
     Args:
-        current_user: Текущий пользователь (из JWT токена)
+        current_user: Current user (from JWT token)
 
     Returns:
-        Базовая информация о пользователе
+        Basic information about the user
     """
     return UserMeResponse(
         id=current_user.id,
@@ -81,32 +81,31 @@ async def get_my_quota(
     session: AsyncSession = Depends(get_db_session),
 ):
     """
-    Получить текущий статус квот пользователя.
+    Get current quota status of the user.
 
-    Включает:
-    - Информацию о подписке и плане
-    - Эффективные квоты (с учетом custom overrides)
-    - Текущее использование за период
-    - Доступные ресурсы (available/limit)
-    - Pay-as-you-go статус и overage cost
+    Includes:
+    - Information about subscription and plan
+    - Effective quotas (with custom overrides)
+    - Current usage for period
+    - Available resources (available/limit)
+    - Pay-as-you-go status and overage cost
 
-    Требует аутентификации через JWT токен.
+    Requires authentication via JWT token.
 
     Args:
-        current_user: Текущий пользователь (из JWT токена)
+        current_user: Current user (from JWT token)
         session: Database session
 
     Returns:
-        QuotaStatusResponse: Полный статус квот
+        QuotaStatusResponse: Full quota status
 
     Raises:
-        HTTPException: Если подписка не найдена
+        HTTPException: If subscription not found
     """
     quota_service = QuotaService(session)
 
     try:
-        quota_status = await quota_service.get_quota_status(current_user.id)
-        return quota_status
+        return await quota_service.get_quota_status(current_user.id)
     except ValueError as e:
         logger.error(f"Error getting quota status for user {current_user.id}: {e}")
         raise HTTPException(
@@ -119,39 +118,39 @@ async def get_my_quota(
 async def get_my_quota_history(
     current_user: UserInDB = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
-    limit: int = Query(12, ge=1, le=24, description="Количество периодов (макс 24)"),
+    limit: int = Query(12, ge=1, le=24, description="Number of periods (max 24)"),
     period: int | None = Query(
         None,
-        description="Конкретный период (YYYYMM), если None - последние N периодов",
+        description="Specific period (YYYYMM), if None - last N periods",
     ),
 ):
     """
-    Получить историю использования квот.
+    Get history of quota usage.
 
-    По умолчанию возвращает последние 12 периодов.
-    Можно запросить конкретный период или задать лимит.
+    By default returns last 12 periods.
+    Can request specific period or set limit.
 
     Args:
-        current_user: Текущий пользователь (из JWT токена)
+        current_user: Current user (from JWT token)
         session: Database session
-        limit: Количество периодов для возврата (по умолчанию 12, макс 24)
-        period: Конкретный период (YYYYMM), опционально
+        limit: Number of periods to return (default 12, max 24)
+        period: Specific period (YYYYMM), optional
 
     Returns:
-        list[QuotaUsageResponse]: История использования квот
+        list[QuotaUsageResponse]: History of quota usage
 
     Examples:
-        - GET /api/v1/users/me/quota/history - последние 12 месяцев
-        - GET /api/v1/users/me/quota/history?limit=6 - последние 6 месяцев
-        - GET /api/v1/users/me/quota/history?period=202601 - только январь 2026
+        - GET /api/v1/users/me/quota/history - last 12 months
+        - GET /api/v1/users/me/quota/history?limit=6 - last 6 months
+        - GET /api/v1/users/me/quota/history?period=202601 - only January 2026
     """
     quota_service = QuotaService(session)
 
-    # Если указан конкретный период
+    # If specific period is specified
     if period:
         usage = await quota_service.usage_repo.get_by_user_and_period(current_user.id, period)
         if not usage:
-            # Вернуть пустой список, если период не найден
+            # Return empty list if period not found
             return []
 
         return [
@@ -165,7 +164,7 @@ async def get_my_quota_history(
             )
         ]
 
-    # Иначе возвращаем историю
+    # Otherwise return history
     usages = await quota_service.usage_repo.get_history(current_user.id, limit=limit)
 
     return [
@@ -188,26 +187,26 @@ async def update_profile(
     session: AsyncSession = Depends(get_db_session),
 ):
     """
-    Обновить профиль текущего пользователя.
+    Update profile of the current user.
 
-    Пользователь может обновить:
-    - full_name - полное имя
-    - email - email адрес
+    User can update:
+    - full_name - full name
+    - email - email address
 
     Args:
-        profile_data: Данные для обновления
-        current_user: Текущий пользователь (из JWT токена)
+        profile_data: Data for updating
+        current_user: Current user (from JWT token)
         session: Database session
 
     Returns:
-        Обновленная информация о пользователе
+        Updated information about the user
 
     Raises:
-        HTTPException: Если email уже используется другим пользователем
+        HTTPException: If email is already used by another user
     """
     user_repo = UserRepository(session)
 
-    # Проверяем, что email не занят другим пользователем
+    # Check that email is not used by another user
     if profile_data.email and profile_data.email != current_user.email:
         existing_user = await user_repo.get_by_email(profile_data.email)
         if existing_user:
@@ -216,7 +215,7 @@ async def update_profile(
                 detail="Email already in use by another user",
             )
 
-    # Обновляем только те поля, которые были переданы
+    # Update only fields that were passed
     user_update = UserUpdate(
         email=profile_data.email,
         full_name=profile_data.full_name,
@@ -241,37 +240,37 @@ async def change_password(
     session: AsyncSession = Depends(get_db_session),
 ) -> PasswordChangeResponse:
     """
-    Сменить пароль текущего пользователя.
+    Change password of the current user.
 
     Args:
-        password_data: Текущий и новый пароль
-        current_user: Текущий пользователь (из JWT токена)
+        password_data: Current and new password
+        current_user: Current user (from JWT token)
         session: Database session
 
     Returns:
-        Подтверждение смены пароля
+        Confirmation of password change
 
     Raises:
-        HTTPException: Если текущий пароль неверен
+        HTTPException: If current password is incorrect
     """
-    # Проверяем текущий пароль
+    # Check current password
     if not PasswordHelper.verify_password(password_data.current_password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Current password is incorrect",
         )
 
-    # Проверяем, что новый пароль отличается от старого
+    # Check that new password is different from old
     if PasswordHelper.verify_password(password_data.new_password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="New password must be different from current password",
         )
 
-    # Хешируем новый пароль
+    # Hash new password
     new_hashed_password = PasswordHelper.hash_password(password_data.new_password)
 
-    # Обновляем пароль в БД
+    # Update password in DB
     result = await session.execute(select(UserModel).where(UserModel.id == current_user.id))
     db_user = result.scalars().first()
     if not db_user:
@@ -283,7 +282,7 @@ async def change_password(
     db_user.hashed_password = new_hashed_password
     await session.commit()
 
-    # Отзываем все refresh токены (выход на всех устройствах)
+    # Revoke all refresh tokens (logout on all devices)
     token_repo = RefreshTokenRepository(session)
     result = await session.execute(select(RefreshTokenModel).where(RefreshTokenModel.user_id == current_user.id))
     tokens = result.scalars().all()
@@ -305,29 +304,29 @@ async def delete_account(
     session: AsyncSession = Depends(get_db_session),
 ) -> AccountDeleteResponse:
     """
-    Удалить аккаунт текущего пользователя.
+    Delete account of the current user.
 
-    ⚠️ ВНИМАНИЕ: Это действие необратимо!
+    ⚠️ WARNING: This action is irreversible!
 
-    Будут удалены:
-    - Профиль пользователя
-    - Все recordings
-    - Все credentials
-    - Все presets и templates
-    - Все токены
+    Will be deleted:
+    - User profile
+    - All recordings
+    - All credentials
+    - All presets and templates
+    - All tokens
 
     Args:
-        delete_data: Пароль и подтверждение удаления
+        delete_data: Password and confirmation of deletion
         current_user: Текущий пользователь (из JWT токена)
         session: Database session
 
     Returns:
-        Подтверждение удаления
+        Confirmation of deletion
 
     Raises:
-        HTTPException: Если пароль неверен или подтверждение не прошло
+        HTTPException: If password is incorrect or confirmation failed
     """
-    # Проверяем пароль
+    # Check password
     if not PasswordHelper.verify_password(delete_data.password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -337,7 +336,7 @@ async def delete_account(
     user_id = current_user.id
     user_email = current_user.email
 
-    # Удаляем все связанные данные (в правильном порядке из-за FK)
+    # Delete all related data (in correct order due to FK)
     # 1. Output targets
     await session.execute(select(OutputTargetModel).where(OutputTargetModel.user_id == user_id))
     result = await session.execute(select(OutputTargetModel).where(OutputTargetModel.user_id == user_id))
@@ -399,7 +398,7 @@ async def delete_account(
     for token in tokens:
         await session.delete(token)
 
-    # 11. User (последним!) - subscriptions and quotas will be deleted via CASCADE
+    # 11. User (last!) - subscriptions and quotas will be deleted via CASCADE
     result = await session.execute(select(UserModel).where(UserModel.id == user_id))
     db_user = result.scalars().first()
     if not db_user:
@@ -417,4 +416,3 @@ async def delete_account(
         message="Account successfully deleted",
         detail="All your data has been permanently removed from our system.",
     )
-

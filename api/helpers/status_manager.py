@@ -154,10 +154,7 @@ def should_allow_processing(recording: RecordingModel, allow_skipped: bool = Fal
         return True
 
     # Если SKIPPED и allow_skipped=True, разрешаем
-    if recording.status == ProcessingStatus.SKIPPED and allow_skipped:
-        return True
-
-    return False
+    return bool(recording.status == ProcessingStatus.SKIPPED and allow_skipped)
 
 
 def should_allow_transcription(recording: RecordingModel, allow_skipped: bool = False) -> bool:
@@ -224,9 +221,7 @@ def should_allow_transcription(recording: RecordingModel, allow_skipped: bool = 
     return False
 
 
-def should_allow_upload(
-    recording: RecordingModel, target_type: str, allow_skipped: bool = False
-) -> bool:
+def should_allow_upload(recording: RecordingModel, target_type: str, allow_skipped: bool = False) -> bool:
     """
     Проверить, можно ли запустить загрузку на платформу.
 
@@ -249,9 +244,7 @@ def should_allow_upload(
 
     # Проверяем, что все stages завершены (если есть)
     if recording.processing_stages:
-        all_completed = all(
-            stage.status == ProcessingStageStatus.COMPLETED for stage in recording.processing_stages
-        )
+        all_completed = all(stage.status == ProcessingStageStatus.COMPLETED for stage in recording.processing_stages)
         if not all_completed:
             return False
 
@@ -272,4 +265,3 @@ def should_allow_upload(
 
     # Если уже UPLOADED или UPLOADING - нельзя
     return False
-

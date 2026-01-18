@@ -70,11 +70,10 @@ class DateRangeMixin:
                 # Только сегодня
                 today = date.today()
                 return today, today
-            else:
-                # Последние N дней
-                to_date = date.today()
-                from_date = to_date - timedelta(days=last_days)
-                return from_date, to_date
+            # Последние N дней
+            to_date = date.today()
+            from_date = to_date - timedelta(days=last_days)
+            return from_date, to_date
 
         # Используем явно указанные даты
         if from_date is None:

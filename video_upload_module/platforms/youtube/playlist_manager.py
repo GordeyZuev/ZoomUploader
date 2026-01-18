@@ -7,6 +7,8 @@ from googleapiclient.errors import HttpError
 from logger import get_logger
 
 from ...config_factory import YouTubeConfig
+from ...credentials_provider import CredentialProvider
+from .token_handler import TokenRefreshError, requires_valid_token
 
 logger = get_logger()
 
@@ -14,10 +16,19 @@ logger = get_logger()
 class YouTubePlaylistManager:
     """YouTube playlist manager."""
 
-    def __init__(self, service, config: YouTubeConfig):
+    def __init__(
+        self,
+        service,
+        config: YouTubeConfig,
+        credentials=None,
+        credential_provider: CredentialProvider | None = None,
+    ):
         self.service = service
         self.config = config
+        self.credentials = credentials
+        self.credential_provider = credential_provider
 
+    @requires_valid_token(max_retries=1)
     async def create_playlist(self, title: str, description: str = "", privacy_status: str = "unlisted") -> str | None:
         """Create playlist."""
         try:
@@ -35,10 +46,14 @@ class YouTubePlaylistManager:
             logger.info(f"Playlist created: {playlist_url}")
             return playlist_id
 
+        except TokenRefreshError as e:
+            logger.error(f"Token error during create_playlist: {e}")
+            return None
         except HttpError as e:
             logger.error(f"Playlist creation error: {e}")
             return None
 
+    @requires_valid_token(max_retries=1)
     async def add_video_to_playlist(self, playlist_id: str, video_id: str) -> bool:
         """Add video to playlist."""
         try:
@@ -54,10 +69,14 @@ class YouTubePlaylistManager:
 
             logger.info(f"Video added to playlist {playlist_id}")
             return True
+        except TokenRefreshError as e:
+            logger.error(f"Token error during add_video_to_playlist: {e}")
+            return False
         except HttpError as e:
             logger.error(f"Error adding to playlist: {e}")
             return False
 
+    @requires_valid_token(max_retries=1)
     async def remove_video_from_playlist(self, playlist_item_id: str) -> bool:
         """Remove video from playlist."""
         try:
@@ -66,10 +85,14 @@ class YouTubePlaylistManager:
 
             logger.info("Video removed from playlist")
             return True
+        except TokenRefreshError as e:
+            logger.error(f"Token error during remove_video_from_playlist: {e}")
+            return False
         except HttpError as e:
             logger.error(f"Error removing from playlist: {e}")
             return False
 
+    @requires_valid_token(max_retries=1)
     async def get_playlist_info(self, playlist_id: str) -> dict[str, Any] | None:
         """Get playlist information."""
         try:
@@ -87,6 +110,9 @@ class YouTubePlaylistManager:
                 }
             return None
 
+        except TokenRefreshError as e:
+            logger.error(f"Token error during get_playlist_info: {e}")
+            return None
         except HttpError as e:
             logger.error(f"Error getting playlist info: {e}")
             return None

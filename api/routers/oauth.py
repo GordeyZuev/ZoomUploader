@@ -233,11 +233,25 @@ async def vk_authorize_implicit(
 
     Uses separate VK app (54249533) configured for Implicit Flow.
 
-    Pros:
+    **How to use:**
+    1. Redirect user to `redirect_uri` URL
+    2. User authorizes and VK redirects to `blank_redirect_uri`
+    3. Parse token from URL hash: `#access_token=XXX&expires_in=86400&user_id=YYY`
+    4. Extract `access_token`, `expires_in`, and `user_id` from hash
+
+    **Response fields:**
+    - `method`: OAuth method type ("implicit_flow")
+    - `app_id`: VK application ID
+    - `redirect_uri`: Full authorization URL to redirect user to
+    - `scope`: Requested permissions (e.g., "video,groups,wall")
+    - `response_type`: Response type ("token" for implicit flow)
+    - `blank_redirect_uri`: Final redirect URI where token will appear in URL hash
+
+    **Pros:**
     - Works immediately without VK approval
     - Grants video, groups, wall permissions
 
-    Cons:
+    **Cons:**
     - Token expires in 24 hours
     - No refresh token
     - Deprecated by VK (use for testing only)
@@ -253,12 +267,16 @@ async def vk_authorize_implicit(
     # Use separate app_id for Implicit Flow (legacy VK app)
     implicit_app_id = vk_config.get("implicit_flow_app_id", "54249533")
 
+    scope = "video,groups,wall"
+    response_type = "token"
+    blank_redirect = "https://oauth.vk.com/blank.html"
+
     params = {
         "client_id": implicit_app_id,
         "display": "page",
-        "redirect_uri": "https://oauth.vk.com/blank.html",
-        "scope": "video,groups,wall",
-        "response_type": "token",
+        "redirect_uri": blank_redirect,
+        "scope": scope,
+        "response_type": response_type,
         "v": "5.131",
     }
 
@@ -270,6 +288,9 @@ async def vk_authorize_implicit(
         method="implicit_flow",
         app_id=implicit_app_id,
         redirect_uri=implicit_url,
+        scope=scope,
+        response_type=response_type,
+        blank_redirect_uri=blank_redirect,
     )
 
 
@@ -301,11 +322,7 @@ async def vk_callback(
         # Exchange code for token (VK ID requires device_id)
         config = get_platform_config("vk_video")
         oauth_service = OAuthService(config, state_manager)
-        token_data = await oauth_service.exchange_code_for_token(
-            code,
-            code_verifier=code_verifier,
-            device_id=device_id
-        )
+        token_data = await oauth_service.exchange_code_for_token(code, code_verifier=code_verifier, device_id=device_id)
 
         # Validate token
         token_valid = await oauth_service.validate_token(token_data["access_token"])

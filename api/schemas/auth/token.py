@@ -38,4 +38,3 @@ class TokenPair(BaseModel):
     refresh_token: str = Field(..., description="Refresh токен")
     token_type: str = Field(default="bearer", description="Тип токена")
     expires_in: int = Field(..., description="Время жизни access токена в секундах")
-

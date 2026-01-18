@@ -9,8 +9,8 @@ Create Date: 2026-01-05 17:00:00.000000
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = '009'
-down_revision = '008'
+revision = "009"
+down_revision = "008"
 branch_labels = None
 depends_on = None
 
@@ -38,17 +38,12 @@ def upgrade() -> None:
 
     # Добавляем уникальное ограничение
     op.create_unique_constraint(
-        'uq_input_sources_user_name_type_credential',
-        'input_sources',
-        ['user_id', 'name', 'source_type', 'credential_id']
+        "uq_input_sources_user_name_type_credential",
+        "input_sources",
+        ["user_id", "name", "source_type", "credential_id"],
     )
 
 
 def downgrade() -> None:
     """Удаляем уникальное ограничение."""
-    op.drop_constraint(
-        'uq_input_sources_user_name_type_credential',
-        'input_sources',
-        type_='unique'
-    )
-
+    op.drop_constraint("uq_input_sources_user_name_type_credential", "input_sources", type_="unique")

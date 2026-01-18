@@ -1,6 +1,6 @@
 """VK video thumbnail manager."""
 
-import os
+from pathlib import Path
 
 import aiohttp
 
@@ -20,14 +20,15 @@ class VKThumbnailManager:
 
     def validate_thumbnail(self, thumbnail_path: str) -> tuple[bool, str]:
         """Validate thumbnail."""
-        if not os.path.exists(thumbnail_path):
+        thumb_path = Path(thumbnail_path)
+        if not thumb_path.exists():
             return False, f"File not found: {thumbnail_path}"
 
-        file_size = os.path.getsize(thumbnail_path)
+        file_size = thumb_path.stat().st_size
         if file_size > 5 * 1024 * 1024:
             return False, f"File too large: {file_size / 1024 / 1024:.1f}MB (max 5MB)"
 
-        file_ext = os.path.splitext(thumbnail_path)[1].lower().lstrip(".")
+        file_ext = thumb_path.suffix.lower().lstrip(".")
         if file_ext not in ["jpg", "jpeg", "png"]:
             return False, f"Unsupported format: {file_ext} (supported: jpg, jpeg, png)"
 
@@ -55,9 +56,8 @@ class VKThumbnailManager:
             if success:
                 logger.info(f"Thumbnail set for video {video_id}")
                 return True
-            else:
-                logger.error("Thumbnail save error")
-                return False
+            logger.error("Thumbnail save error")
+            return False
 
         except Exception as e:
             logger.error(f"Thumbnail set error: {e}")
@@ -76,9 +76,8 @@ class VKThumbnailManager:
                             logger.error(f"VK API Error: {data['error']}")
                             return None
                         return data["response"]["upload_url"]
-                    else:
-                        logger.error(f"HTTP Error: {response.status}")
-                        return None
+                    logger.error(f"HTTP Error: {response.status}")
+                    return None
         except Exception as e:
             logger.error(f"Error getting thumbnail upload URL: {e}")
             return None
@@ -95,9 +94,8 @@ class VKThumbnailManager:
                             text = await response.text()
                             logger.info("Thumbnail uploaded to server")
                             return text
-                        else:
-                            logger.error(f"HTTP Upload Error: {response.status}")
-                            return None
+                        logger.error(f"HTTP Upload Error: {response.status}")
+                        return None
         except Exception as e:
             logger.error(f"Thumbnail upload error: {e}")
             return None
@@ -124,9 +122,8 @@ class VKThumbnailManager:
 
                         logger.info(f"Thumbnail saved for video {video_id}")
                         return True
-                    else:
-                        logger.error(f"HTTP Error saving thumbnail: {response.status}")
-                        return False
+                    logger.error(f"HTTP Error saving thumbnail: {response.status}")
+                    return False
         except Exception as e:
             logger.error(f"Thumbnail save error: {e}")
             return False

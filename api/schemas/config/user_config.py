@@ -98,4 +98,3 @@ class UserConfigUpdate(BaseModel):
     upload: UploadConfig | None = None
     metadata: MetadataConfig | None = None
     platforms: dict[str, PlatformSettings] | None = None
-

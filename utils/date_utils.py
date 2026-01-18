@@ -1,11 +1,11 @@
 """Date utilities"""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime
 
 
 def parse_date(date_str: str) -> str:
     """
-    Парсит дату в различных форматах и возвращает в формате YYYY-MM-DD.
+    Parse date in different formats and return in format YYYY-MM-DD.
 
     Поддерживаемые форматы:
     - YYYY-MM-DD (стандартный)
@@ -37,41 +37,43 @@ def parse_date(date_str: str) -> str:
     return date_str
 
 
-def parse_date_range(
-    from_date: str | None = None,
-    to_date: str | None = None,
-    last_days: int | None = None,
-) -> tuple[str, str | None]:
+def parse_from_date_to_datetime(date_str: str) -> datetime:
     """
-    Парсит диапазон дат с поддержкой различных форматов и опции 'last_days'.
+    Parse date string to datetime at start of day (00:00:00) with UTC timezone.
+
+    Used for 'from_date' filters (>=).
 
     Args:
-        from_date: Дата начала в любом поддерживаемом формате
-        to_date: Дата окончания в любом поддерживаемом формате
-        last_days: Количество последних дней (0 = сегодня, 7 = последние 7 дней)
+        date_str: Date string in any supported format (YYYY-MM-DD, DD-MM-YYYY, etc.)
 
     Returns:
-        Tuple (from_date, to_date) в формате YYYY-MM-DD
+        datetime object at 00:00:00 UTC
+
+    Example:
+        >>> parse_from_date_to_datetime("2024-12-01")
+        datetime(2024, 12, 1, 0, 0, 0, tzinfo=UTC)
     """
-    if last_days is not None:
-        if last_days == 0:
-            # Сегодня
-            from_date = datetime.now().strftime("%Y-%m-%d")
-            to_date = datetime.now().strftime("%Y-%m-%d")
-        else:
-            # Последние N дней
-            to_date = datetime.now().strftime("%Y-%m-%d")
-            from_date = (datetime.now() - timedelta(days=last_days)).strftime("%Y-%m-%d")
-    else:
-        # Если даты указаны явно, парсим их
-        if from_date:
-            from_date = parse_date(from_date)
-        else:
-            # По умолчанию: последние 14 дней
-            from_date = (datetime.now() - timedelta(days=14)).strftime("%Y-%m-%d")
+    parsed = parse_date(date_str)
+    return datetime.strptime(parsed, "%Y-%m-%d").replace(tzinfo=UTC)
 
-        if to_date:
-            to_date = parse_date(to_date)
-        # else: to_date остаётся None (до текущего момента)
 
-    return from_date, to_date
+def parse_to_date_to_datetime(date_str: str) -> datetime:
+    """
+    Parse date string to datetime at end of day (23:59:59) with UTC timezone.
+
+    Used for 'to_date' filters (<=).
+
+    Args:
+        date_str: Date string in any supported format (YYYY-MM-DD, DD-MM-YYYY, etc.)
+
+    Returns:
+        datetime object at 23:59:59 UTC
+
+    Example:
+        >>> parse_to_date_to_datetime("2024-12-31")
+        datetime(2024, 12, 31, 23, 59, 59, tzinfo=UTC)
+    """
+    parsed = parse_date(date_str)
+    dt = datetime.strptime(parsed, "%Y-%m-%d").replace(tzinfo=UTC)
+    # End of day
+    return dt.replace(hour=23, minute=59, second=59)

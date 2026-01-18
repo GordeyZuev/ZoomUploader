@@ -22,9 +22,7 @@ class UploaderFactory:
 
     @staticmethod
     async def create_youtube_uploader(
-        session: AsyncSession,
-        user_id: int,
-        credential_id: int | None = None
+        session: AsyncSession, user_id: int, credential_id: int | None = None
     ) -> YouTubeUploader:
         """
         Create YouTubeUploader for user.
@@ -74,11 +72,7 @@ class UploaderFactory:
         return YouTubeUploader(config)
 
     @staticmethod
-    async def create_vk_uploader(
-        session: AsyncSession,
-        user_id: int,
-        credential_id: int | None = None
-    ) -> VKUploader:
+    async def create_vk_uploader(session: AsyncSession, user_id: int, credential_id: int | None = None) -> VKUploader:
         """
         Create VKUploader for user.
 
@@ -113,10 +107,7 @@ class UploaderFactory:
 
     @staticmethod
     async def create_uploader(
-        session: AsyncSession,
-        user_id: int,
-        platform: Literal["youtube", "vk"],
-        credential_id: int | None = None
+        session: AsyncSession, user_id: int, platform: Literal["youtube", "vk"], credential_id: int | None = None
     ) -> YouTubeUploader | VKUploader:
         """
         Universal method for creating uploader for any platform.
@@ -135,16 +126,13 @@ class UploaderFactory:
         """
         if platform == "youtube":
             return await UploaderFactory.create_youtube_uploader(session, user_id, credential_id)
-        elif platform == "vk":
+        if platform == "vk":
             return await UploaderFactory.create_vk_uploader(session, user_id, credential_id)
-        else:
-            raise ValueError(f"Unsupported platform: {platform}")
+        raise ValueError(f"Unsupported platform: {platform}")
 
     @staticmethod
     async def create_uploader_by_preset_id(
-        session: AsyncSession,
-        user_id: int,
-        preset_id: int
+        session: AsyncSession, user_id: int, preset_id: int
     ) -> YouTubeUploader | VKUploader:
         """
         Create uploader from output preset.
@@ -181,9 +169,5 @@ class UploaderFactory:
             raise ValueError(f"Unsupported platform in preset: {preset.platform}")
 
         return await UploaderFactory.create_uploader(
-            session=session,
-            user_id=user_id,
-            platform=platform,
-            credential_id=preset.credential_id
+            session=session, user_id=user_id, platform=platform, credential_id=preset.credential_id
         )
-

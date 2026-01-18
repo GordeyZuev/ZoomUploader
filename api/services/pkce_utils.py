@@ -28,9 +28,7 @@ def generate_code_verifier(length: int = 128) -> str:
     alphabet = string.ascii_letters + string.digits + "-._~"
 
     # Generate random string
-    code_verifier = "".join(secrets.choice(alphabet) for _ in range(length))
-
-    return code_verifier
+    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
 def generate_code_challenge(code_verifier: str, method: str = "S256") -> str:
@@ -49,16 +47,14 @@ def generate_code_challenge(code_verifier: str, method: str = "S256") -> str:
     if method == "plain":
         # Plain method - code_challenge = code_verifier
         return code_verifier
-    elif method == "S256":
+    if method == "S256":
         # SHA256 method - code_challenge = BASE64URL(SHA256(ASCII(code_verifier)))
         digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
 
         # Base64 URL encoding (without padding)
-        code_challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+        return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
-        return code_challenge
-    else:
-        raise ValueError(f"Unsupported code_challenge_method: {method}")
+    raise ValueError(f"Unsupported code_challenge_method: {method}")
 
 
 def generate_pkce_pair() -> tuple[str, str]:
@@ -71,4 +67,3 @@ def generate_pkce_pair() -> tuple[str, str]:
     code_challenge = generate_code_challenge(code_verifier, method="S256")
 
     return code_verifier, code_challenge
-

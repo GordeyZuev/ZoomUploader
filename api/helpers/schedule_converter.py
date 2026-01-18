@@ -92,4 +92,3 @@ def validate_cron_expression(expression: str) -> bool:
         return True
     except Exception:
         return False
-

@@ -5,6 +5,7 @@ Revises: 001
 Create Date: 2026-01-04 23:01:00.000000
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -93,13 +94,19 @@ def upgrade() -> None:
     op.create_foreign_key("fk_recordings_user_id", "recordings", "users", ["user_id"], ["id"], ondelete="CASCADE")
 
     # Добавление foreign key для user_id в таблицу source_metadata
-    op.create_foreign_key("fk_source_metadata_user_id", "source_metadata", "users", ["user_id"], ["id"], ondelete="CASCADE")
+    op.create_foreign_key(
+        "fk_source_metadata_user_id", "source_metadata", "users", ["user_id"], ["id"], ondelete="CASCADE"
+    )
 
     # Добавление foreign key для user_id в таблицу output_targets
-    op.create_foreign_key("fk_output_targets_user_id", "output_targets", "users", ["user_id"], ["id"], ondelete="CASCADE")
+    op.create_foreign_key(
+        "fk_output_targets_user_id", "output_targets", "users", ["user_id"], ["id"], ondelete="CASCADE"
+    )
 
     # Добавление foreign key для user_id в таблицу processing_stages
-    op.create_foreign_key("fk_processing_stages_user_id", "processing_stages", "users", ["user_id"], ["id"], ondelete="CASCADE")
+    op.create_foreign_key(
+        "fk_processing_stages_user_id", "processing_stages", "users", ["user_id"], ["id"], ondelete="CASCADE"
+    )
 
 
 def downgrade() -> None:
@@ -122,4 +129,3 @@ def downgrade() -> None:
 
     op.drop_index("ix_users_email", table_name="users")
     op.drop_table("users")
-

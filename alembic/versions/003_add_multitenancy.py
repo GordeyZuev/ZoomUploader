@@ -5,6 +5,7 @@ Revises: 002
 Create Date: 2026-01-04 23:02:00.000000
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -27,9 +28,7 @@ def upgrade() -> None:
     op.add_column("users", sa.Column("can_upload", sa.Boolean(), nullable=False, server_default="true"))
     op.add_column("users", sa.Column("can_create_templates", sa.Boolean(), nullable=False, server_default="true"))
     op.add_column("users", sa.Column("can_delete_recordings", sa.Boolean(), nullable=False, server_default="true"))
-    op.add_column(
-        "users", sa.Column("can_update_uploaded_videos", sa.Boolean(), nullable=False, server_default="true")
-    )
+    op.add_column("users", sa.Column("can_update_uploaded_videos", sa.Boolean(), nullable=False, server_default="true"))
     op.add_column("users", sa.Column("can_manage_credentials", sa.Boolean(), nullable=False, server_default="true"))
     op.add_column("users", sa.Column("can_export_data", sa.Boolean(), nullable=False, server_default="true"))
 
@@ -138,4 +137,3 @@ def downgrade() -> None:
     op.drop_column("users", "can_process_video")
     op.drop_column("users", "can_transcribe")
     op.drop_column("users", "role")
-

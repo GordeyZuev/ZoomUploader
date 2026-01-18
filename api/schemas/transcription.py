@@ -202,4 +202,3 @@ class BatchTranscribeResponse(BaseModel):
     queued: int
     errors: int
     tasks: list[BatchTranscribeTaskInfo]
-

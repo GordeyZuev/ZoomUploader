@@ -6,11 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
 # Явно импортируем Celery задачи чтобы они зарегистрировались в API сервере
-import api.tasks.automation  # noqa: F401
-import api.tasks.maintenance  # noqa: F401
-import api.tasks.processing  # noqa: F401
-import api.tasks.sync_tasks  # noqa: F401
-import api.tasks.template  # noqa: F401
+import api.tasks.automation
+import api.tasks.maintenance
+import api.tasks.processing
+import api.tasks.sync_tasks
+import api.tasks.template
 import api.tasks.upload  # noqa: F401
 from api.config import get_settings
 from api.middleware.error_handler import (
@@ -74,6 +74,7 @@ async def startup_event():
         logger.info("🔄 Применение миграций Alembic...")
         result = subprocess.run(
             ["alembic", "upgrade", "head"],
+            check=False,
             capture_output=True,
             text=True,
         )
@@ -85,6 +86,7 @@ async def startup_event():
 
     except Exception as e:
         logger.error(f"❌ Ошибка инициализации БД: {e}")
+
 
 # CORS
 app.add_middleware(
@@ -131,6 +133,7 @@ app.include_router(automation.router)
 app.include_router(thumbnails.router)
 app.include_router(admin.router)
 app.include_router(tasks.router)
+
 
 @app.get("/")
 async def root():

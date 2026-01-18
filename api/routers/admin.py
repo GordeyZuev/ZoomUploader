@@ -244,8 +244,7 @@ async def get_quota_stats(
         .join(UserSubscriptionModel, SubscriptionPlanModel.id == UserSubscriptionModel.plan_id)
         .outerjoin(
             QuotaUsageModel,
-            (QuotaUsageModel.user_id == UserSubscriptionModel.user_id)
-            & (QuotaUsageModel.period == period),
+            (QuotaUsageModel.user_id == UserSubscriptionModel.user_id) & (QuotaUsageModel.period == period),
         )
         .group_by(SubscriptionPlanModel.name)
     )
@@ -278,4 +277,3 @@ async def get_quota_stats(
         total_overage_cost=total_overage_cost,
         plans=plans,
     )
-

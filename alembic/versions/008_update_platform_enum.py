@@ -8,8 +8,8 @@ Create Date: 2026-01-05 12:15:00.000000
 
 from alembic import op
 
-revision = '008'
-down_revision = '007'
+revision = "008"
+down_revision = "007"
 branch_labels = None
 depends_on = None
 
@@ -24,4 +24,3 @@ def downgrade() -> None:
     op.execute("UPDATE user_credentials SET platform = 'vk' WHERE platform = 'vk_video'")
     op.execute("UPDATE output_presets SET platform = 'vk' WHERE platform = 'vk_video'")
     op.execute("UPDATE input_sources SET source_type = 'VK' WHERE source_type = 'VK_VIDEO'")
-

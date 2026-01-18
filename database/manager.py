@@ -263,7 +263,7 @@ class DatabaseManager:
 
         new_status = _normalize_enum(recording.status, ProcessingStatus)
 
-        if existing.status != new_status and existing.status != ProcessingStatus.UPLOADED:
+        if existing.status not in (new_status, ProcessingStatus.UPLOADED):
             existing.status = new_status
         existing.expire_at = recording.expire_at
 

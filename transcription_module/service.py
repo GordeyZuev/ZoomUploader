@@ -1,6 +1,5 @@
 """Transcription and topic extraction service"""
 
-import os
 import time
 from pathlib import Path
 from typing import Any
@@ -97,15 +96,14 @@ class TranscriptionService:
         if base and topic:
             # Объединяем базовый промпт с названием пары в связный текст
             return f'{base} Название пары: "{topic}". Учитывай специфику этого курса при распознавании терминов.'
-        elif base:
+        if base:
             # Только базовый промпт
             return base
-        elif topic:
+        if topic:
             # Только название пары с базовыми инструкциями
             return f'Это лекция магистратуры по Computer Science со специализацией в Machine Learning и Data Science. Название пары: "{topic}". Сохраняй правильное написание профильных терминов (включая английские), латинских обозначений, аббревиатур, элементов кода и имён собственных.'
-        else:
-            # Fallback - общие инструкции
-            return "Это лекция магистратуры по Computer Science со специализацией в Machine Learning и Data Science. Сохраняй правильное написание профильных терминов (включая английские), латинских обозначений, аббревиатур, элементов кода и имён собственных."
+        # Fallback - общие инструкции
+        return "Это лекция магистратуры по Computer Science со специализацией в Machine Learning и Data Science. Сохраняй правильное написание профильных терминов (включая английские), латинских обозначений, аббревиатур, элементов кода и имён собственных."
 
     async def process_audio(
         self,
@@ -134,7 +132,7 @@ class TranscriptionService:
                 'main_topics': list,
             }
         """
-        if not os.path.exists(audio_path):
+        if not Path(audio_path).exists():
             raise FileNotFoundError(f"Аудио файл не найден: {audio_path}")
 
         logger.info(f"🎬 Начало обработки аудио: {audio_path} (модель: Fireworks)")
@@ -240,9 +238,10 @@ class TranscriptionService:
         finally:
             # Удаляем временные файлы, если они были созданы
             for temp_file in temp_files_to_cleanup:
-                if temp_file != audio_path and os.path.exists(temp_file):
+                temp_file_path = Path(temp_file)
+                if temp_file != audio_path and temp_file_path.exists():
                     try:
-                        os.remove(temp_file)
+                        temp_file_path.unlink()
                         logger.debug(f"🗑️ Удален временный файл: {temp_file}")
                     except Exception as e:
                         logger.warning(f"⚠️ Не удалось удалить временный файл {temp_file}: {e}")
@@ -258,7 +257,7 @@ class TranscriptionService:
         Returns:
             Tuple: (путь к файлу, список временных файлов для удаления)
         """
-        file_size = os.path.getsize(audio_path)
+        file_size = Path(audio_path).stat().st_size
         file_size_mb = file_size / (1024 * 1024)
         temp_files = []
 
@@ -284,8 +283,8 @@ class TranscriptionService:
         srt_content: str | None = None,
         user_id: int | None = None,
         recording_id: int | None = None,
-        recording_topic: str | None = None,
-        recording_start_time: str | None = None,
+        _recording_topic: str | None = None,
+        _recording_start_time: str | None = None,
     ) -> str:
         """
         Сохранение транскрипции в папку с файлами.
@@ -330,7 +329,7 @@ class TranscriptionService:
 
         if words and len(words) > 0:
             words_file_path = transcription_folder / "words.txt"
-            with open(words_file_path, "w", encoding="utf-8") as f:
+            with words_file_path.open("w", encoding="utf-8") as f:
                 logger.info(f"📝 Сохранение транскрипции с {len(words)} словами и временными метками")
 
                 for word_item in words:
@@ -348,7 +347,7 @@ class TranscriptionService:
             logger.warning("⚠️ Слова не предоставлены, генерация субтитров может быть невозможна")
 
         def _write_segments_file(target_path: Path, segments_data: list[dict[str, Any]], label: str) -> None:
-            with open(target_path, "w", encoding="utf-8") as f:
+            with target_path.open("w", encoding="utf-8") as f:
                 if segments_data and len(segments_data) > 0:
                     logger.info(f"📝 Сохранение транскрипции с {len(segments_data)} сегментами ({label})")
 
@@ -430,7 +429,7 @@ class TranscriptionService:
 
         if srt_content:
             srt_backup_path = transcription_folder / "subtitles_fireworks_original.srt"
-            with open(srt_backup_path, "w", encoding="utf-8") as f:
+            with srt_backup_path.open("w", encoding="utf-8") as f:
                 f.write(srt_content)
             logger.info(f"💾 Оригинальный SRT файл от Fireworks сохранен (резервный): {srt_backup_path}")
 

@@ -33,10 +33,7 @@ class AutomationService:
         current_count = await self.job_repo.count_user_jobs(self.user_id)
 
         if current_count >= max_jobs:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Automation job limit reached ({max_jobs} jobs maximum)"
-            )
+            raise HTTPException(status_code=400, detail=f"Automation job limit reached ({max_jobs} jobs maximum)")
 
         return quotas
 
@@ -50,14 +47,11 @@ class AutomationService:
             return
 
         if not validate_min_interval(cron_expr, min_interval):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Schedule interval must be at least {min_interval} hour(s)"
-            )
+            raise HTTPException(status_code=400, detail=f"Schedule interval must be at least {min_interval} hour(s)")
 
     async def prepare_job_data(self, job_data: dict) -> dict:
         """Prepare job data with calculated next_run_at."""
-        cron_expr, human = schedule_to_cron(job_data["schedule"])
+        cron_expr, _human = schedule_to_cron(job_data["schedule"])
         timezone = job_data["schedule"].get("timezone", "Europe/Moscow")
         next_run = get_next_run_time(cron_expr, timezone)
 
@@ -89,4 +83,3 @@ class AutomationService:
             updates["next_run_at"] = get_next_run_time(cron_expr, timezone)
 
         return await self.job_repo.update(job, updates)
-

@@ -1,5 +1,6 @@
 """Video upload configuration factory."""
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, field_validator
@@ -48,9 +49,8 @@ class YouTubeUploadConfig(PlatformConfig):
 
     def validate(self) -> bool:
         """Validate configuration."""
-        import os
 
-        if not os.path.exists(self.client_secrets_file):
+        if not Path(self.client_secrets_file).exists():
             logger.warning(f"Client secrets file not found: {self.client_secrets_file}")
 
         if self.default_privacy not in ["private", "unlisted", "public"]:
@@ -163,10 +163,7 @@ class UploadConfig(BaseSettings):
         if self.youtube and not self.youtube.validate():
             return False
 
-        if self.vk and not self.vk.validate():
-            return False
-
-        return True
+        return not (self.vk and not self.vk.validate())
 
 
 class UploadConfigFactory:

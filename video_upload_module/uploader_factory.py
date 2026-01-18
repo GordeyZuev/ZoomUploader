@@ -117,8 +117,6 @@ async def create_uploader_from_db(
     """
     if platform == "youtube":
         return await create_youtube_uploader_from_db(credential_id, session, config)
-    elif platform in ("vk", "vk_video"):
+    if platform in ("vk", "vk_video"):
         return await create_vk_uploader_from_db(credential_id, session, config)
-    else:
-        raise ValueError(f"Unsupported platform: {platform}")
-
+    raise ValueError(f"Unsupported platform: {platform}")

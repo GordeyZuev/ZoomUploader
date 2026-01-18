@@ -85,4 +85,3 @@ class TemplateMatcher:
                 result[key] = value
 
         return result
-

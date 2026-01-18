@@ -5,13 +5,14 @@ Revises:
 Create Date: 2026-01-04 23:00:00.000000
 
 """
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = '001'
+revision = "001"
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -27,7 +28,21 @@ def upgrade() -> None:
         sa.Column("display_name", sa.String(length=500), nullable=False),
         sa.Column("start_time", sa.DateTime(timezone=True), nullable=False),
         sa.Column("duration", sa.Integer(), nullable=False),
-        sa.Column("status", sa.Enum("INITIALIZED", "SKIPPED", "DOWNLOADED", "PROCESSED", "TRANSCRIBED", "UPLOADED", "FAILED", "EXPIRED", name="processingstatus"), nullable=True),
+        sa.Column(
+            "status",
+            sa.Enum(
+                "INITIALIZED",
+                "SKIPPED",
+                "DOWNLOADED",
+                "PROCESSED",
+                "TRANSCRIBED",
+                "UPLOADED",
+                "FAILED",
+                "EXPIRED",
+                name="processingstatus",
+            ),
+            nullable=True,
+        ),
         sa.Column("is_mapped", sa.Boolean(), nullable=True),
         sa.Column("expire_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("local_video_path", sa.String(length=1000), nullable=True),
@@ -59,7 +74,11 @@ def upgrade() -> None:
         sa.Column("recording_id", sa.Integer(), nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=True),
         sa.Column("input_source_id", sa.Integer(), nullable=True),
-        sa.Column("source_type", sa.Enum("ZOOM", "LOCAL_FILE", "GOOGLE_DRIVE", "YOUTUBE", "OTHER", name="sourcetype"), nullable=True),
+        sa.Column(
+            "source_type",
+            sa.Enum("ZOOM", "LOCAL_FILE", "GOOGLE_DRIVE", "YOUTUBE", "OTHER", name="sourcetype"),
+            nullable=True,
+        ),
         sa.Column("source_key", sa.String(length=1000), nullable=True),
         sa.Column("metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.ForeignKeyConstraint(["recording_id"], ["recordings.id"], ondelete="CASCADE"),
@@ -77,8 +96,14 @@ def upgrade() -> None:
         sa.Column("recording_id", sa.Integer(), nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=True),
         sa.Column("preset_id", sa.Integer(), nullable=True),
-        sa.Column("target_type", sa.Enum("YOUTUBE", "VK", "LOCAL_STORAGE", "GOOGLE_DRIVE", "OTHER", name="targettype"), nullable=True),
-        sa.Column("status", sa.Enum("NOT_UPLOADED", "UPLOADING", "UPLOADED", "FAILED", name="targetstatus"), nullable=True),
+        sa.Column(
+            "target_type",
+            sa.Enum("YOUTUBE", "VK", "LOCAL_STORAGE", "GOOGLE_DRIVE", "OTHER", name="targettype"),
+            nullable=True,
+        ),
+        sa.Column(
+            "status", sa.Enum("NOT_UPLOADED", "UPLOADING", "UPLOADED", "FAILED", name="targetstatus"), nullable=True
+        ),
         sa.Column("target_meta", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("uploaded_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
@@ -96,8 +121,24 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), sa.Identity(), nullable=False),
         sa.Column("recording_id", sa.Integer(), nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=True),
-        sa.Column("stage_type", sa.Enum("DOWNLOAD", "PROCESS_VIDEO", "TRANSCRIBE", "EXTRACT_TOPICS", "GENERATE_SUBTITLES", "UPLOAD", name="processingstagetype"), nullable=True),
-        sa.Column("status", sa.Enum("PENDING", "IN_PROGRESS", "COMPLETED", "FAILED", name="processingstagestatus"), nullable=True),
+        sa.Column(
+            "stage_type",
+            sa.Enum(
+                "DOWNLOAD",
+                "PROCESS_VIDEO",
+                "TRANSCRIBE",
+                "EXTRACT_TOPICS",
+                "GENERATE_SUBTITLES",
+                "UPLOAD",
+                name="processingstagetype",
+            ),
+            nullable=True,
+        ),
+        sa.Column(
+            "status",
+            sa.Enum("PENDING", "IN_PROGRESS", "COMPLETED", "FAILED", name="processingstagestatus"),
+            nullable=True,
+        ),
         sa.Column("failed", sa.Boolean(), nullable=True),
         sa.Column("failed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("failed_reason", sa.String(length=1000), nullable=True),
@@ -119,4 +160,3 @@ def downgrade() -> None:
     op.drop_table("output_targets")
     op.drop_table("source_metadata")
     op.drop_table("recordings")
-

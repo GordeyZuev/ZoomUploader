@@ -38,7 +38,7 @@ class TemplateRenderer:
             return ""
 
         # Pattern to match {variable} or {variable:format}
-        pattern = r'\{([^{}:]+)(?::([^{}]+))?\}'
+        pattern = r"\{([^{}:]+)(?::([^{}]+))?\}"
 
         def replace_placeholder(match):
             var_name = match.group(1)
@@ -52,11 +52,9 @@ class TemplateRenderer:
             # Apply format if specified
             if format_spec and isinstance(value, datetime):
                 return TemplateRenderer._format_datetime(value, format_spec)
-            else:
-                return TemplateRenderer._format_value(value)
+            return TemplateRenderer._format_value(value)
 
-        result = re.sub(pattern, replace_placeholder, template)
-        return result
+        return re.sub(pattern, replace_placeholder, template)
 
     @staticmethod
     def _format_value(value) -> str:
@@ -109,9 +107,9 @@ class TemplateRenderer:
         """
         if format_spec == "date":
             return dt.strftime("%Y-%m-%d")
-        elif format_spec == "time":
+        if format_spec == "time":
             return dt.strftime("%H:%M")
-        elif format_spec == "datetime":
+        if format_spec == "datetime":
             return dt.strftime("%Y-%m-%d %H:%M")
 
         # Custom format with replacements
@@ -173,10 +171,7 @@ class TemplateRenderer:
         # Filter topics by length
         min_length = config.get("min_length", 0)
         max_length = config.get("max_length", 1000)
-        filtered_topics = [
-            t for t in normalized_topics
-            if min_length <= len(t.get("topic", "")) <= max_length
-        ]
+        filtered_topics = [t for t in normalized_topics if min_length <= len(t.get("topic", "")) <= max_length]
 
         # Limit count (None = unlimited)
         max_count = config.get("max_count", 10)
@@ -199,21 +194,16 @@ class TemplateRenderer:
                 # Format timestamp as HH:MM:SS
                 timestamp = TemplateRenderer._format_seconds_to_timestamp(start)
                 return f"{timestamp} — {topic_text}"
-            else:
-                return topic_text
+            return topic_text
 
         if format_type == "numbered_list":
             formatted = separator.join(
-                f"{i+1}. {format_topic_item(topic)}" for i, topic in enumerate(filtered_topics)
+                f"{i + 1}. {format_topic_item(topic)}" for i, topic in enumerate(filtered_topics)
             )
         elif format_type == "bullet_list":
-            formatted = separator.join(
-                f"• {format_topic_item(topic)}" for topic in filtered_topics
-            )
+            formatted = separator.join(f"• {format_topic_item(topic)}" for topic in filtered_topics)
         elif format_type == "dash_list":
-            formatted = separator.join(
-                f"- {format_topic_item(topic)}" for topic in filtered_topics
-            )
+            formatted = separator.join(f"- {format_topic_item(topic)}" for topic in filtered_topics)
         elif format_type == "comma_separated":
             formatted = ", ".join(format_topic_item(topic) for topic in filtered_topics)
         elif format_type == "inline":
@@ -221,7 +211,7 @@ class TemplateRenderer:
         else:
             # Default: numbered list
             formatted = separator.join(
-                f"{i+1}. {format_topic_item(topic)}" for i, topic in enumerate(filtered_topics)
+                f"{i + 1}. {format_topic_item(topic)}" for i, topic in enumerate(filtered_topics)
             )
 
         # Add prefix if specified
@@ -274,6 +264,7 @@ class TemplateRenderer:
             Dict with template variables
         """
         from logger import get_logger
+
         logger = get_logger()
 
         # Basic info
@@ -305,24 +296,21 @@ class TemplateRenderer:
         # Format topics for description
         if topics_for_description:
             if topics_display:
-                logger.info(f"[TemplateRenderer] Formatting {len(topics_for_description)} topics with config: {topics_display}")
-                context["topics"] = TemplateRenderer._format_topics_list(
-                    topics_for_description,
-                    topics_display
+                logger.info(
+                    f"[TemplateRenderer] Formatting {len(topics_for_description)} topics with config: {topics_display}"
                 )
+                context["topics"] = TemplateRenderer._format_topics_list(topics_for_description, topics_display)
                 logger.info(f"[TemplateRenderer] Formatted topics length: {len(context['topics'])} chars")
+            # Default formatting (handle both dict and string topics)
+            elif topics_for_description and isinstance(topics_for_description[0], dict):
+                context["topics"] = "\n".join(
+                    f"{i + 1}. {item['topic']}" for i, item in enumerate(topics_for_description[:10])
+                )
             else:
-                # Default formatting (handle both dict and string topics)
-                if topics_for_description and isinstance(topics_for_description[0], dict):
-                    context["topics"] = "\n".join(
-                        f"{i+1}. {item['topic']}" for i, item in enumerate(topics_for_description[:10])
-                    )
-                else:
-                    context["topics"] = "\n".join(
-                        f"{i+1}. {topic}" for i, topic in enumerate(topics_for_description[:10])
-                    )
+                context["topics"] = "\n".join(
+                    f"{i + 1}. {topic}" for i, topic in enumerate(topics_for_description[:10])
+                )
         else:
             context["topics"] = ""
 
         return context
-

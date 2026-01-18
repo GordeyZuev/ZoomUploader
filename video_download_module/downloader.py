@@ -4,16 +4,6 @@ from pathlib import Path
 from urllib.parse import quote
 
 import httpx
-from rich.console import Console
-from rich.progress import (
-    BarColumn,
-    DownloadColumn,
-    Progress,
-    TaskID,
-    TextColumn,
-    TimeRemainingColumn,
-    TransferSpeedColumn,
-)
 
 from logger import get_logger
 from models import MeetingRecording, ProcessingStatus
@@ -28,7 +18,6 @@ class ZoomDownloader:
     def __init__(self, download_dir: str = "media/video/unprocessed"):
         self.download_dir = Path(download_dir)
         self.download_dir.mkdir(parents=True, exist_ok=True)
-        self.console = Console()
         logger.debug(f"Downloader initialized: {self.download_dir}")
 
     def _encode_download_url(self, url: str) -> str:
@@ -63,15 +52,12 @@ class ZoomDownloader:
         url: str,
         filepath: Path,
         description: str = "file",
-        progress: Progress = None,
-        task_id: TaskID = None,
-        expected_size: int = None,
-        password: str = None,
-        passcode: str = None,
-        download_access_token: str = None,
-        oauth_token: str = None,
+        expected_size: int | None = None,
+        password: str | None = None,
+        passcode: str | None = None,
+        download_access_token: str | None = None,
+        oauth_token: str | None = None,
         max_retries: int = 10,
-        completed_offset: int = 0,
     ) -> bool:
         """Download file by URL with resume and retry mechanism."""
 
@@ -173,15 +159,10 @@ class ZoomDownloader:
                             f"File size: {total_size} bytes ({total_size / (1024 * 1024):.1f} MB), already downloaded: {downloaded} bytes ({downloaded / (1024 * 1024):.1f} MB)"
                         )
 
-                        # Update progress with already downloaded
-                        if progress and task_id and total_size > 0:
-                            progress.update(task_id, total=total_size, completed=completed_offset + downloaded)
-
                         # Open file in the needed mode (wb or ab)
                         with open(filepath, mode) as f:
                             chunk_count = 0
                             bytes_in_session = 0
-                            last_update_downloaded = downloaded
 
                             async for chunk in response.aiter_bytes(chunk_size=8192):
                                 f.write(chunk)
@@ -189,24 +170,6 @@ class ZoomDownloader:
                                 bytes_in_session += chunk_size
                                 downloaded += chunk_size
                                 chunk_count += 1
-
-                                # Update progress every 10 chunks for smoothness
-                                if progress and task_id is not None and chunk_count % 10 == 0:
-                                    try:
-                                        # Check if the task exists in the progress bar
-                                        if task_id in progress.task_ids:
-                                            progress.update(task_id, completed=completed_offset + downloaded)
-                                            last_update_downloaded = downloaded
-                                    except Exception:
-                                        pass  # Ignore progress update errors
-
-                            # Final progress update
-                            if progress and task_id is not None and downloaded > last_update_downloaded:
-                                try:
-                                    if task_id in progress.task_ids:
-                                        progress.update(task_id, completed=completed_offset + downloaded)
-                                except Exception:
-                                    pass
 
                         logger.info(
                             f"✅ File written: {downloaded}/{total_size} bytes ({downloaded / (1024 * 1024):.1f}/{total_size / (1024 * 1024):.1f} MB)"
@@ -222,11 +185,10 @@ class ZoomDownloader:
                         )
                         await asyncio.sleep(wait_time)
                         continue
-                    else:
-                        logger.error(f"❌ All download attempts exhausted for {description}")
-                        if filepath.exists():
-                            filepath.unlink()
-                        return False
+                    logger.error(f"❌ All download attempts exhausted for {description}")
+                    if filepath.exists():
+                        filepath.unlink()
+                    return False
 
                 logger.debug(f"File successfully downloaded: description={description} | path={filepath}")
                 return True
@@ -242,10 +204,9 @@ class ZoomDownloader:
                     logger.info(f"🔄 Retry attempt {attempt + 2}/{max_retries} through {wait_time} seconds...")
                     await asyncio.sleep(wait_time)
                     continue
-                else:
-                    logger.error(f"❌ All download attempts exhausted for {description} after network errors")
-                    # Do not delete partially downloaded file - can continue later!
-                    return False
+                logger.error(f"❌ All download attempts exhausted for {description} after network errors")
+                # Do not delete partially downloaded file - can continue later!
+                return False
 
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code
@@ -255,8 +216,8 @@ class ZoomDownloader:
                     try:
                         filepath.unlink()
                         downloaded = 0  # reset size for the next attempt
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f"Ignored exception: {e}")
                     if attempt < max_retries - 1:
                         await asyncio.sleep(1)
                         continue
@@ -275,14 +236,15 @@ class ZoomDownloader:
                     )
                     await asyncio.sleep(wait_time)
                     continue
-                else:
-                    if filepath.exists():
-                        filepath.unlink()
-                    return False
+                if filepath.exists():
+                    filepath.unlink()
+                return False
 
         return False
 
-    def _validate_downloaded_file(self, filepath: Path, expected_size: int = None, total_size: int = None) -> bool:
+    def _validate_downloaded_file(
+        self, filepath: Path, expected_size: int | None = None, total_size: int | None = None
+    ) -> bool:
         """Check if the downloaded file is correct."""
         try:
             if not filepath.exists():
@@ -307,7 +269,7 @@ class ZoomDownloader:
                         f"{(file_size / reference_size * 100):.1f}%)"
                     )
                     return False
-                elif file_size > reference_size * 1.1:
+                if file_size > reference_size * 1.1:
                     # File is larger than expected by 10%+ - something is wrong
                     logger.warning(
                         f"File is larger than expected: {file_size} > {reference_size} "
@@ -339,8 +301,6 @@ class ZoomDownloader:
     async def download_recording(
         self,
         recording: MeetingRecording,
-        progress: Progress = None,
-        task_id: TaskID = None,
         force_download: bool = False,
     ) -> bool:
         """Download one recording (one MP4)."""
@@ -406,25 +366,17 @@ class ZoomDownloader:
             logger.error(f"❌ Error getting OAuth token: {e}")
 
         total_size = recording.video_file_size or 0
-        if progress and task_id and total_size > 0:
-            try:
-                progress.update(task_id, total=total_size)
-            except Exception:
-                pass
 
         success = await self.download_file(
             recording.video_file_download_url,
             final_path,
             "video file",
-            progress,
-            task_id,
             total_size,
             recording.password,
             recording.recording_play_passcode,
             fresh_download_token or recording.download_access_token,
             oauth_token,
             max_retries=10,
-            completed_offset=0,
         )
 
         if not success:
@@ -446,55 +398,3 @@ class ZoomDownloader:
             f"Recording successfully downloaded: recording={recording.display_name} | recording_id={recording.db_id} | path={recording.local_video_path}"
         )
         return True
-
-    async def download_multiple(
-        self,
-        recordings: list[MeetingRecording],
-        max_concurrent: int = 3,
-        force_download: bool = False,
-    ) -> list[bool]:
-        """Download multiple recordings in parallel with beautiful individual progress bars."""
-        logger.debug(f"Starting download of {len(recordings)} recordings (max {max_concurrent} concurrently)")
-
-        with Progress(
-            TextColumn("[cyan]{task.fields[date]}[/cyan]"),
-            TextColumn("•"),
-            TextColumn("[bold white]{task.description}[/bold white]"),
-            BarColumn(bar_width=25),
-            DownloadColumn(),
-            TransferSpeedColumn(),
-            TextColumn("[yellow]{task.percentage:>3.0f}%[/yellow]"),
-            TimeRemainingColumn(),
-            console=self.console,
-            transient=False,
-        ) as progress:
-            semaphore = asyncio.Semaphore(max_concurrent)
-
-            async def download_with_progress(recording: MeetingRecording) -> bool:
-                async with semaphore:
-                    try:
-                        from utils.formatting import normalize_datetime_string
-
-                        normalized_time = normalize_datetime_string(recording.start_time)
-                        meeting_dt = datetime.fromisoformat(normalized_time)
-                        date_str = meeting_dt.strftime("%d.%m.%y")
-                    except Exception:
-                        date_str = "??/??/??"
-
-                    title = f"{recording.display_name[:45]}{'...' if len(recording.display_name) > 45 else ''}"
-                    # Use real file size or reasonable default value
-                    estimated_size = recording.video_file_size or (200 * 1024 * 1024)  # 200 MB by default
-                    task_id = progress.add_task(title, total=estimated_size, date=date_str)
-
-                    success = await self.download_recording(recording, progress, task_id, force_download)
-
-                    status_icon = "[green]✓[/green]" if success else "[red]✗[/red]"
-                    progress.update(task_id, description=f"{status_icon} {title}")
-
-                    return success
-
-            results = await asyncio.gather(*[download_with_progress(rec) for rec in recordings])
-
-        success_count = sum(results)
-        logger.debug(f"Download completed: {success_count}/{len(recordings)} successfully")
-        return results

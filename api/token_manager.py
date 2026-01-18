@@ -132,32 +132,30 @@ class TokenManager:
                                 f"(истекает через {expires_in} секунд)"
                             )
                             return (access_token, expires_in)
-                        else:
-                            logger.error(f"Токен не найден в ответе API для аккаунта {config.account}")
-                            return (None, None)
-                    else:
-                        error_msg = (
-                            f"Ошибка получения токена для аккаунта {config.account}: "
-                            f"{response.status_code} - {response.text}"
+                        logger.error(f"Токен не найден в ответе API для аккаунта {config.account}")
+                        return (None, None)
+                    error_msg = (
+                        f"Ошибка получения токена для аккаунта {config.account}: "
+                        f"{response.status_code} - {response.text}"
+                    )
+                    logger.error(error_msg)
+
+                    # Для ошибок аутентификации (401, 403) не имеет смысла повторять
+                    if response.status_code in (401, 403):
+                        logger.error(
+                            f"Ошибка аутентификации для аккаунта {config.account}. Повторные попытки не помогут."
                         )
-                        logger.error(error_msg)
+                        return (None, None)
 
-                        # Для ошибок аутентификации (401, 403) не имеет смысла повторять
-                        if response.status_code in (401, 403):
-                            logger.error(
-                                f"Ошибка аутентификации для аккаунта {config.account}. Повторные попытки не помогут."
-                            )
-                            return (None, None)
-
-                        # Для других ошибок продолжаем попытки
-                        if attempt < max_retries - 1:
-                            delay = min(base_delay * (2**attempt), max_delay)
-                            logger.warning(
-                                f"Повторная попытка получения токена для {config.account} через {delay:.1f} секунд..."
-                            )
-                            await asyncio.sleep(delay)
-                        else:
-                            return (None, None)
+                    # Для других ошибок продолжаем попытки
+                    if attempt < max_retries - 1:
+                        delay = min(base_delay * (2**attempt), max_delay)
+                        logger.warning(
+                            f"Повторная попытка получения токена для {config.account} через {delay:.1f} секунд..."
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        return (None, None)
 
             except (httpx.NetworkError, httpx.TimeoutException, httpx.ConnectError) as e:
                 error_type = type(e).__name__
@@ -234,9 +232,8 @@ class TokenManager:
                 expires_in = expires_in or 3600  # 1 час по умолчанию
                 self._token_expires_at = time.time() + expires_in
                 return access_token
-            else:
-                logger.error(f"Не удалось получить токен для аккаунта: {config.account}")
-                return None
+            logger.error(f"Не удалось получить токен для аккаунта: {config.account}")
+            return None
 
     def invalidate_token(self) -> None:
         """

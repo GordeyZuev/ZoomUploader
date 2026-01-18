@@ -43,3 +43,26 @@ class ConflictError(APIException):
             status_code=status.HTTP_409_CONFLICT,
             detail=detail,
         )
+
+
+# Exceptions for Celery tasks (not HTTP-related)
+class TaskError(Exception):
+    """Базовое исключение для Celery задач."""
+
+
+class CredentialError(TaskError):
+    """Ошибка валидации credentials (токен невалиден, истек и т.д.)."""
+
+    def __init__(self, platform: str, reason: str):
+        self.platform = platform
+        self.reason = reason
+        super().__init__(f"Credential error for {platform}: {reason}")
+
+
+class ResourceNotFoundError(TaskError):
+    """Ресурс не найден (например, файл для загрузки)."""
+
+    def __init__(self, resource_type: str, resource_id: int | str):
+        self.resource_type = resource_type
+        self.resource_id = resource_id
+        super().__init__(f"{resource_type} {resource_id} not found")

@@ -23,7 +23,14 @@ celery_app = Celery(
     "zoom_publishing",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["api.tasks.processing", "api.tasks.upload", "api.tasks.automation", "api.tasks.maintenance", "api.tasks.sync_tasks", "api.tasks.template"],
+    include=[
+        "api.tasks.processing",
+        "api.tasks.upload",
+        "api.tasks.automation",
+        "api.tasks.maintenance",
+        "api.tasks.sync_tasks",
+        "api.tasks.template",
+    ],
 )
 
 celery_app.conf.update(

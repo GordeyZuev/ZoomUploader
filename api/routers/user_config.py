@@ -17,7 +17,7 @@ logger = get_logger()
 
 def load_default_config() -> dict:
     config_path = Path(__file__).parent.parent.parent / "config" / "default_user_config.json"
-    with open(config_path, "r", encoding="utf-8") as f:
+    with config_path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -40,10 +40,7 @@ async def get_user_config(
     config = await repo.get_by_user_id(current_user.id)
 
     if not config:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User config not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User config not found")
 
     return config
 
@@ -58,10 +55,7 @@ async def update_user_config(
     config = await repo.get_by_user_id(current_user.id)
 
     if not config:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User config not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User config not found")
 
     current_config = config.config_data
     update_dict = update_data.model_dump(exclude_unset=True)
@@ -85,10 +79,7 @@ async def reset_user_config(
     config = await repo.get_by_user_id(current_user.id)
 
     if not config:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User config not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User config not found")
 
     default_config = load_default_config()
     updated_config = await repo.update(config, default_config)
@@ -97,4 +88,3 @@ async def reset_user_config(
     logger.info(f"User config reset to defaults: user_id={current_user.id}")
 
     return updated_config
-

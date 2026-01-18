@@ -48,16 +48,15 @@ class TitleMapper:
             result = self._apply_rule(matched_rule, original_title, start_time, duration, main_topic)
             self.logger.info(f"Найдено правило для '{original_title}': {matched_rule['pattern']} -> '{result.title}'")
             return result
-        else:
-            self.logger.info(f"Правило для '{original_title}' не найдено")
-            return MappingResult(
-                title="",  # Пустое название означает "не найдено правило"
-                description="",
-                thumbnail_path="",
-                youtube_playlist_id=None,
-                vk_album_id=None,
-                matched_rule=None,
-            )
+        self.logger.info(f"Правило для '{original_title}' не найдено")
+        return MappingResult(
+            title="",  # Пустое название означает "не найдено правило"
+            description="",
+            thumbnail_path="",
+            youtube_playlist_id=None,
+            vk_album_id=None,
+            matched_rule=None,
+        )
 
     def _find_matching_rule(self, title: str) -> dict[str, Any] | None:
         """Поиск подходящего правила для названия."""

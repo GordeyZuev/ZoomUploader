@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class ScheduleType(str, Enum):
     """Schedule type enumeration."""
+
     TIME_OF_DAY = "time_of_day"
     HOURS = "hours"
     WEEKDAYS = "weekdays"
@@ -16,6 +17,7 @@ class ScheduleType(str, Enum):
 
 class TimeOfDaySchedule(BaseModel):
     """Daily schedule at specific time."""
+
     type: Literal["time_of_day"]
     time: str = Field(pattern=r"^([0-1][0-9]|2[0-3]):[0-5][0-9]$", description="Time in HH:MM format (e.g., 06:00)")
     timezone: str = Field(default="Europe/Moscow", description="Timezone (e.g., Europe/Moscow, UTC)")
@@ -32,6 +34,7 @@ class TimeOfDaySchedule(BaseModel):
 
 class HoursSchedule(BaseModel):
     """Periodic schedule every N hours."""
+
     type: Literal["hours"]
     hours: int = Field(ge=1, le=24, description="Run every N hours (1-24)")
     timezone: str = Field(default="Europe/Moscow", description="Timezone")
@@ -47,6 +50,7 @@ class HoursSchedule(BaseModel):
 
 class WeekdaysSchedule(BaseModel):
     """Weekly schedule on specific days."""
+
     type: Literal["weekdays"]
     days: list[int] = Field(min_length=1, max_length=7, description="Days: 0=Monday, 1=Tuesday, ..., 6=Sunday")
     time: str = Field(pattern=r"^([0-1][0-9]|2[0-3]):[0-5][0-9]$", description="Time in HH:MM format")
@@ -75,6 +79,7 @@ class WeekdaysSchedule(BaseModel):
 
 class CronSchedule(BaseModel):
     """Custom cron expression schedule."""
+
     type: Literal["cron"]
     expression: str = Field(description="Cron expression (e.g., '0 6 * * *')")
     timezone: str = Field(default="Europe/Moscow", description="Timezone")
@@ -88,8 +93,4 @@ class CronSchedule(BaseModel):
         return f"Custom: {self.expression}"
 
 
-Schedule = Annotated[
-    TimeOfDaySchedule | HoursSchedule | WeekdaysSchedule | CronSchedule,
-    Field(discriminator="type")
-]
-
+Schedule = Annotated[TimeOfDaySchedule | HoursSchedule | WeekdaysSchedule | CronSchedule, Field(discriminator="type")]

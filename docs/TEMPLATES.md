@@ -623,15 +623,18 @@ GET /templates/{id}/stats
   "metadata_config": {
     "title_template": "МО | {themes}",
     "description_template": "Лекция по машинному обучению\n\n{topics}",
+    "thumbnail_path": "media/templates/thumbnails/ml_course.png",  // Common thumbnail for all platforms
     "tags": ["ML", "AI", "Education"],
     "youtube": {
       "playlist_id": "PLxxx",
-      "privacy": "unlisted"  // Override preset
+      "privacy": "unlisted",  // Override preset
+      "thumbnail_path": "media/templates/thumbnails/youtube_ml.png"  // Platform-specific thumbnail (optional)
     },
     "vk": {
       "group_id": -123456,
       "album_id": 63,
       "no_comments": false
+      // If vk.thumbnail_path is not set, uses common thumbnail_path
     }
   }
 }
@@ -674,6 +677,68 @@ recording_override = {"privacy": "private"}
 # Final
 final = {"privacy": "private", "category_id": 27, "playlist_id": "PLxxx"}
 ```
+
+### Thumbnail Path Hierarchy
+
+**Common vs Platform-Specific Thumbnail**
+
+Вы можете задать общий `thumbnail_path` для всех платформ или платформо-специфичный.
+
+**Иерархия (приоритет от высшего к низшему):**
+1. **Platform-specific** (`youtube.thumbnail_path` или `vk.thumbnail_path`) - наивысший приоритет
+2. **Common** (`thumbnail_path` в корне `metadata_config`) - используется если platform-specific не задан
+3. **Preset default** - используется если ни один из вышеперечисленных не задан
+
+**Пример 1: Общий thumbnail для всех платформ**
+```json
+{
+  "metadata_config": {
+    "thumbnail_path": "media/templates/thumbnails/ml_course.png",
+    "youtube": {
+      "playlist_id": "PLxxx"
+    },
+    "vk": {
+      "album_id": "56"
+    }
+  }
+}
+```
+→ Оба YouTube и VK используют `ml_course.png`
+
+**Пример 2: Разные thumbnail для разных платформ**
+```json
+{
+  "metadata_config": {
+    "thumbnail_path": "media/templates/thumbnails/default.png",
+    "youtube": {
+      "playlist_id": "PLxxx",
+      "thumbnail_path": "media/templates/thumbnails/youtube_specific.png"
+    },
+    "vk": {
+      "album_id": "56"
+      // vk.thumbnail_path не задан - будет использован общий default.png
+    }
+  }
+}
+```
+→ YouTube использует `youtube_specific.png`, VK использует `default.png`
+
+**Пример 3: Только platform-specific (без общего)**
+```json
+{
+  "metadata_config": {
+    "youtube": {
+      "playlist_id": "PLxxx",
+      "thumbnail_path": "media/templates/thumbnails/youtube_only.png"
+    },
+    "vk": {
+      "album_id": "56",
+      "thumbnail_path": "media/templates/thumbnails/vk_only.png"
+    }
+  }
+}
+```
+→ Каждая платформа использует свой thumbnail
 
 ---
 

@@ -91,4 +91,3 @@ class MatchingRules(BaseModel):
         if v is not None and len(v) == 0:
             return None
         return v
-

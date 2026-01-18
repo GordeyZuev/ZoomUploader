@@ -156,9 +156,7 @@ class RecordingAsyncRepository:
         self.session.add(source)
         await self.session.flush()
 
-        logger.info(
-            f"Created recording {recording.id} for user {user_id} from source {input_source_id}"
-        )
+        logger.info(f"Created recording {recording.id} for user {user_id} from source {input_source_id}")
 
         return recording
 
@@ -311,9 +309,7 @@ class RecordingAsyncRepository:
         output_target.updated_at = datetime.utcnow()
         await self.session.flush()
 
-        logger.warning(
-            f"Marked output_target {output_target.id} as FAILED: {error_message[:100]}"
-        )
+        logger.warning(f"Marked output_target {output_target.id} as FAILED: {error_message[:100]}")
 
     async def save_upload_result(
         self,
@@ -365,33 +361,28 @@ class RecordingAsyncRepository:
             existing_output.updated_at = datetime.utcnow()
             await self.session.flush()
 
-            logger.info(
-                f"Updated upload result for recording {recording.id} to {target_type}"
-            )
+            logger.info(f"Updated upload result for recording {recording.id} to {target_type}")
             return existing_output
-        else:
-            # Создаем новый
-            output = OutputTargetModel(
-                recording_id=recording.id,
-                user_id=recording.user_id,
-                preset_id=preset_id,
-                target_type=target_type,
-                status=TargetStatus.UPLOADED,
-                target_meta={
-                    "video_id": video_id,
-                    "video_url": video_url,
-                    **(target_meta or {}),
-                },
-                uploaded_at=datetime.utcnow(),
-            )
+        # Создаем новый
+        output = OutputTargetModel(
+            recording_id=recording.id,
+            user_id=recording.user_id,
+            preset_id=preset_id,
+            target_type=target_type,
+            status=TargetStatus.UPLOADED,
+            target_meta={
+                "video_id": video_id,
+                "video_url": video_url,
+                **(target_meta or {}),
+            },
+            uploaded_at=datetime.utcnow(),
+        )
 
-            self.session.add(output)
-            await self.session.flush()
+        self.session.add(output)
+        await self.session.flush()
 
-            logger.info(
-                f"Created upload result for recording {recording.id} to {target_type}"
-            )
-            return output
+        logger.info(f"Created upload result for recording {recording.id} to {target_type}")
+        return output
 
     async def count_by_user(self, user_id: int, status: ProcessingStatus | None = None) -> int:
         """
@@ -498,8 +489,13 @@ class RecordingAsyncRepository:
                     existing.is_mapped = kwargs["is_mapped"]
 
                     # Если is_mapped изменился, обновляем статус
-                    if old_is_mapped != existing.is_mapped and existing.status in [ProcessingStatus.INITIALIZED, ProcessingStatus.SKIPPED]:
-                        existing.status = ProcessingStatus.INITIALIZED if existing.is_mapped else ProcessingStatus.SKIPPED
+                    if old_is_mapped != existing.is_mapped and existing.status in [
+                        ProcessingStatus.INITIALIZED,
+                        ProcessingStatus.SKIPPED,
+                    ]:
+                        existing.status = (
+                            ProcessingStatus.INITIALIZED if existing.is_mapped else ProcessingStatus.SKIPPED
+                        )
 
                 # Обновляем template_id если передан
                 if "template_id" in kwargs:
@@ -518,60 +514,52 @@ class RecordingAsyncRepository:
 
                 existing.updated_at = datetime.utcnow()
 
-                logger.info(
-                    f"Updated existing recording {existing.id} for user {user_id} (status={existing.status})"
-                )
+                logger.info(f"Updated existing recording {existing.id} for user {user_id} (status={existing.status})")
 
                 await self.session.flush()
                 return existing, False
-            else:
-                # Запись уже загружена, не обновляем
-                logger.info(
-                    f"Skipped updating recording {existing.id} - already uploaded"
-                )
-                return existing, False
-        else:
-            # Создаем новую запись
-            is_mapped = kwargs.get("is_mapped", False)
-            status = ProcessingStatus.INITIALIZED if is_mapped else ProcessingStatus.SKIPPED
+            # Запись уже загружена, не обновляем
+            logger.info(f"Skipped updating recording {existing.id} - already uploaded")
+            return existing, False
+        # Создаем новую запись
+        is_mapped = kwargs.get("is_mapped", False)
+        status = ProcessingStatus.INITIALIZED if is_mapped else ProcessingStatus.SKIPPED
 
-            recording = RecordingModel(
-                user_id=user_id,
-                input_source_id=input_source_id,
-                template_id=kwargs.get("template_id"),
-                display_name=display_name,
-                start_time=start_time,
-                duration=duration,
-                status=status,
-                is_mapped=is_mapped,
-                blank_record=kwargs.get("blank_record", False),
-                video_file_size=kwargs.get("video_file_size"),
-                expire_at=kwargs.get("expire_at"),
-                local_video_path=kwargs.get("local_video_path"),
-                processed_video_path=kwargs.get("processed_video_path"),
-            )
+        recording = RecordingModel(
+            user_id=user_id,
+            input_source_id=input_source_id,
+            template_id=kwargs.get("template_id"),
+            display_name=display_name,
+            start_time=start_time,
+            duration=duration,
+            status=status,
+            is_mapped=is_mapped,
+            blank_record=kwargs.get("blank_record", False),
+            video_file_size=kwargs.get("video_file_size"),
+            expire_at=kwargs.get("expire_at"),
+            local_video_path=kwargs.get("local_video_path"),
+            processed_video_path=kwargs.get("processed_video_path"),
+        )
 
-            self.session.add(recording)
-            await self.session.flush()
+        self.session.add(recording)
+        await self.session.flush()
 
-            # Создаем source metadata
-            source = SourceMetadataModel(
-                recording_id=recording.id,
-                user_id=user_id,
-                input_source_id=input_source_id,
-                source_type=source_type,
-                source_key=source_key,
-                meta=source_metadata or {},
-            )
+        # Создаем source metadata
+        source = SourceMetadataModel(
+            recording_id=recording.id,
+            user_id=user_id,
+            input_source_id=input_source_id,
+            source_type=source_type,
+            source_key=source_key,
+            meta=source_metadata or {},
+        )
 
-            self.session.add(source)
-            await self.session.flush()
+        self.session.add(source)
+        await self.session.flush()
 
-            logger.info(
-                f"Created new recording {recording.id} for user {user_id} (is_mapped={is_mapped}, status={status})"
-            )
+        logger.info(f"Created new recording {recording.id} for user {user_id} (is_mapped={is_mapped}, status={status})")
 
-            return recording, True
+        return recording, True
 
     async def delete(self, recording: RecordingModel) -> None:
         """
@@ -584,4 +572,3 @@ class RecordingAsyncRepository:
         await self.session.flush()
 
         logger.info(f"Deleted recording {recording.id}")
-

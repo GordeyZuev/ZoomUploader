@@ -30,6 +30,6 @@ __all__ = [
     "ScheduleType",
     "SyncConfig",
     "TimeOfDaySchedule",
-    "WeekdaysSchedule",
     "TriggerJobResponse",
+    "WeekdaysSchedule",
 ]

@@ -26,4 +26,3 @@ def get_service_context(
         ServiceContext для использования в сервисах
     """
     return ServiceContext.create(session=session, user_id=current_user.id)
-

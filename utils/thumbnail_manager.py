@@ -235,4 +235,3 @@ def get_thumbnail_manager(base_media_dir: str = "media") -> ThumbnailManager:
     if _thumbnail_manager is None:
         _thumbnail_manager = ThumbnailManager(base_media_dir)
     return _thumbnail_manager
-

@@ -64,31 +64,3 @@ dependencies = [
     # Dev tools
     "ruff>=0.14.1",
 ]
-
-[tool.ruff]
-line-length = 100
-indent-width = 4
-target-version = "py311"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "W", "UP", "B"]
-ignore = ["E203", "E501"]
-
-[tool.ruff.format]
-quote-style = "preserve"
-indent-style = "space"
-line-ending = "lf"
-
-[tool.ruff.lint.isort]
-known-first-party = [
-    "api",
-    "config",
-    "database",
-    "models",
-    "utils",
-    "video_download_module",
-    "video_processing_module",
-    "video_upload_module",
-]
-force-single-line = false
-combine-as-imports = true

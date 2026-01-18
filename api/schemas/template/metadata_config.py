@@ -17,7 +17,12 @@ class VKMetadataConfig(BaseModel):
     model_config = BASE_MODEL_CONFIG
 
     album_id: str | None = Field(None, description="ID альбома VK")
+    group_id: int | None = Field(None, gt=0, description="ID группы VK для публикации")
     thumbnail_path: str | None = Field(None, description="Путь к thumbnail для VK")
+    title_template: str | None = Field(None, max_length=500, description="VK-специфичный шаблон заголовка")
+    description_template: str | None = Field(
+        None, max_length=5000, description="VK-специфичный шаблон описания"
+    )
 
 
 class YouTubeMetadataConfig(BaseModel):
@@ -28,6 +33,10 @@ class YouTubeMetadataConfig(BaseModel):
     privacy: str | None = Field(None, description="Privacy status (public, unlisted, private)")
     playlist_id: str | None = Field(None, description="ID плейлиста YouTube")
     thumbnail_path: str | None = Field(None, description="Путь к thumbnail для YouTube")
+    title_template: str | None = Field(None, max_length=500, description="YouTube-специфичный шаблон заголовка")
+    description_template: str | None = Field(
+        None, max_length=5000, description="YouTube-специфичный шаблон описания"
+    )
 
 
 # ============================================================================
@@ -42,8 +51,15 @@ class TemplateMetadataConfig(BaseModel):
     Структура:
     - vk: VK-специфичные настройки (album_id, thumbnail_path)
     - youtube: YouTube-специфичные настройки (privacy, playlist_id, thumbnail_path)
-    - title_template: общий шаблон заголовка
+    - title_template: общий шаблон заголовка (для всех платформ)
+    - description_template: общий шаблон описания (для всех платформ)
     - topics_display: общие настройки отображения тем
+    - thumbnail_path: общий путь к thumbnail (используется если не задан платформо-специфичный)
+
+    Иерархия thumbnail_path:
+    1. Если задан vk.thumbnail_path или youtube.thumbnail_path - используется он
+    2. Иначе используется общий thumbnail_path
+    3. Иначе используется thumbnail из preset
 
     Переменные в templates:
     - {display_name}, {themes}, {topic}, {topics}, {topics_list}
@@ -68,9 +84,29 @@ class TemplateMetadataConfig(BaseModel):
         ],
     )
 
+    description_template: str | None = Field(
+        None,
+        max_length=5000,
+        description="Шаблон описания с переменными",
+        examples=[
+            "Лекция по курсу\\n\\n{topics}\\n\\nЗаписано: {record_time:DD.MM.YYYY}",
+            "{summary}",
+            "Темы: {topics_list}\\n\\nДлительность: {duration}",
+        ],
+    )
+
     topics_display: TopicsDisplayConfig | None = Field(
         None,
         description="Настройки отображения тем в description (для всех платформ)",
+    )
+
+    thumbnail_path: str | None = Field(
+        None,
+        description="Общий путь к thumbnail для всех платформ (если не указан платформо-специфичный)",
+        examples=[
+            "media/templates/thumbnails/applied_python.png",
+            "thumbnails/ml_course.png",
+        ],
     )
 
     @field_validator("title_template")
@@ -85,4 +121,3 @@ class TemplateMetadataConfig(BaseModel):
             if not any(var in v for var in valid_vars):
                 raise ValueError(f"title_template должен содержать хоть одну переменную из: {', '.join(valid_vars)}")
         return v
-

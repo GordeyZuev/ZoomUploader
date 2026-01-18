@@ -25,7 +25,9 @@ class AutomationJobModel(Base):
 
     schedule = Column(JSONB, nullable=False)
     sync_config = Column(JSONB, nullable=False, server_default='{"sync_days": 2, "allow_skipped": false}')
-    processing_config = Column(JSONB, nullable=False, server_default='{"auto_process": true, "auto_upload": true, "max_parallel": 3}')
+    processing_config = Column(
+        JSONB, nullable=False, server_default='{"auto_process": true, "auto_upload": true, "max_parallel": 3}'
+    )
 
     is_active = Column(Boolean, default=True, nullable=False)
     last_run_at = Column(DateTime(timezone=True), nullable=True)
@@ -40,4 +42,3 @@ class AutomationJobModel(Base):
 
     def __repr__(self):
         return f"<AutomationJob(id={self.id}, user_id={self.user_id}, name='{self.name}', active={self.is_active})>"
-

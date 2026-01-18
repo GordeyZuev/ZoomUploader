@@ -5,6 +5,7 @@ Revises: 003
 Create Date: 2026-01-04 23:03:00.000000
 
 """
+
 import sqlalchemy as sa
 
 from alembic import op
@@ -40,4 +41,3 @@ def downgrade() -> None:
 
     # Drop column
     op.drop_column("base_configs", "config_type")
-

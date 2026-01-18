@@ -39,9 +39,7 @@ class BaseConfigRepository:
         query = select(BaseConfigModel).where(BaseConfigModel.id == config_id)
         if user_id is not None:
             # Пользователь может видеть только свои конфигурации или глобальные
-            query = query.where(
-                (BaseConfigModel.user_id == user_id) | (BaseConfigModel.user_id.is_(None))
-            )
+            query = query.where((BaseConfigModel.user_id == user_id) | (BaseConfigModel.user_id.is_(None)))
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
@@ -85,28 +83,20 @@ class InputSourceRepository:
 
     async def find_by_user(self, user_id: int) -> list[InputSourceModel]:
         """Получение всех источников пользователя."""
-        result = await self.session.execute(
-            select(InputSourceModel).where(InputSourceModel.user_id == user_id)
-        )
+        result = await self.session.execute(select(InputSourceModel).where(InputSourceModel.user_id == user_id))
         return list(result.scalars().all())
 
     async def find_by_id(self, source_id: int, user_id: int) -> InputSourceModel | None:
         """Получение источника по ID с проверкой прав."""
         result = await self.session.execute(
-            select(InputSourceModel).where(
-                InputSourceModel.id == source_id,
-                InputSourceModel.user_id == user_id
-            )
+            select(InputSourceModel).where(InputSourceModel.id == source_id, InputSourceModel.user_id == user_id)
         )
         return result.scalar_one_or_none()
 
     async def find_active_by_user(self, user_id: int) -> list[InputSourceModel]:
         """Получение активных источников пользователя."""
         result = await self.session.execute(
-            select(InputSourceModel).where(
-                InputSourceModel.user_id == user_id,
-                InputSourceModel.is_active
-            )
+            select(InputSourceModel).where(InputSourceModel.user_id == user_id, InputSourceModel.is_active)
         )
         return list(result.scalars().all())
 
@@ -187,28 +177,20 @@ class OutputPresetRepository:
 
     async def find_by_user(self, user_id: int) -> list[OutputPresetModel]:
         """Получение всех пресетов пользователя."""
-        result = await self.session.execute(
-            select(OutputPresetModel).where(OutputPresetModel.user_id == user_id)
-        )
+        result = await self.session.execute(select(OutputPresetModel).where(OutputPresetModel.user_id == user_id))
         return list(result.scalars().all())
 
     async def find_by_id(self, preset_id: int, user_id: int) -> OutputPresetModel | None:
         """Получение пресета по ID с проверкой прав."""
         result = await self.session.execute(
-            select(OutputPresetModel).where(
-                OutputPresetModel.id == preset_id,
-                OutputPresetModel.user_id == user_id
-            )
+            select(OutputPresetModel).where(OutputPresetModel.id == preset_id, OutputPresetModel.user_id == user_id)
         )
         return result.scalar_one_or_none()
 
     async def find_active_by_user(self, user_id: int) -> list[OutputPresetModel]:
         """Получение активных пресетов пользователя."""
         result = await self.session.execute(
-            select(OutputPresetModel).where(
-                OutputPresetModel.user_id == user_id,
-                OutputPresetModel.is_active
-            )
+            select(OutputPresetModel).where(OutputPresetModel.user_id == user_id, OutputPresetModel.is_active)
         )
         return list(result.scalars().all())
 
@@ -218,7 +200,7 @@ class OutputPresetRepository:
             select(OutputPresetModel).where(
                 OutputPresetModel.user_id == user_id,
                 OutputPresetModel.platform == platform,
-                OutputPresetModel.is_active
+                OutputPresetModel.is_active,
             )
         )
         return list(result.scalars().all())
@@ -275,8 +257,7 @@ class RecordingTemplateRepository:
         """Получение шаблона по ID с проверкой прав."""
         result = await self.session.execute(
             select(RecordingTemplateModel).where(
-                RecordingTemplateModel.id == template_id,
-                RecordingTemplateModel.user_id == user_id
+                RecordingTemplateModel.id == template_id, RecordingTemplateModel.user_id == user_id
             )
         )
         return result.scalar_one_or_none()
@@ -288,7 +269,7 @@ class RecordingTemplateRepository:
             .where(
                 RecordingTemplateModel.user_id == user_id,
                 RecordingTemplateModel.is_active,
-                ~RecordingTemplateModel.is_draft
+                ~RecordingTemplateModel.is_draft,
             )
             .order_by(RecordingTemplateModel.created_at.asc())
         )
@@ -337,4 +318,3 @@ class RecordingTemplateRepository:
         """Удаление шаблона."""
         await self.session.delete(template)
         await self.session.flush()
-

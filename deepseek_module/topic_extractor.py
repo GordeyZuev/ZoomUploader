@@ -238,9 +238,8 @@ class TopicExtractor:
                             f"⚠️ Ошибка парсинга строки {line_num} в файле {segments_file_path}: {line[:50]}... - {e}"
                         )
                         continue
-                else:
-                    if line and not line.startswith("["):
-                        transcription_text_parts.append(line)
+                elif line and not line.startswith("["):
+                    transcription_text_parts.append(line)
 
         if not segments:
             raise ValueError(f"Не удалось извлечь сегменты из файла {segments_file_path}")
@@ -620,8 +619,7 @@ class TopicExtractor:
                 if "choices" not in data or not data["choices"]:
                     raise ValueError(f"Неожиданный формат ответа от Fireworks API: {data}")
 
-                content = data["choices"][0]["message"]["content"].strip()
-                return content
+                return data["choices"][0]["message"]["content"].strip()
             except httpx.HTTPStatusError as e:
                 if e.response is not None:
                     try:
@@ -745,7 +743,7 @@ class TopicExtractor:
         if not found_main_topic_before_section:
             for _, line in enumerate(lines[:10]):
                 line_stripped = line.strip()
-                if not line_stripped or line_stripped.startswith("##") or line_stripped.startswith("#"):
+                if not line_stripped or line_stripped.startswith(("##", "#")):
                     continue
                 if re.match(timestamp_pattern, line_stripped):
                     break
@@ -786,11 +784,11 @@ class TopicExtractor:
                             if len(words) <= 4:
                                 main_topics.append(topic_candidate)
                 continue
-            elif "ДЕТАЛИЗИРОВАННЫЕ ТОПИКИ" in line.upper() or "ТОПИКИ С ТАЙМКОДАМИ" in line.upper():
+            if "ДЕТАЛИЗИРОВАННЫЕ ТОПИКИ" in line.upper() or "ТОПИКИ С ТАЙМКОДАМИ" in line.upper():
                 in_main_topics = False
                 in_detailed_topics = True
                 continue
-            elif line.startswith("##"):
+            if line.startswith("##"):
                 in_main_topics = False
                 in_detailed_topics = False
                 continue
@@ -821,7 +819,7 @@ class TopicExtractor:
                 continue
 
             if in_main_topics:
-                if not line or line.startswith("##") or line.startswith("#"):
+                if not line or line.startswith(("##", "#")):
                     continue
 
                 topic = re.sub(r"^[-*•\d.)]+\s*", "", line).strip()

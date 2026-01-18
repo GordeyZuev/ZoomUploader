@@ -84,8 +84,7 @@ async def get_user_processing_config(
         user_config_model = await user_config_repo.get_by_user_id(user_id)
         if user_config_model:
             return user_config_model.config_data.get("processing", {})
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Ignored exception: {e}")
 
     return {}
-

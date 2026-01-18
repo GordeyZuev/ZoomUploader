@@ -75,7 +75,9 @@ class OAuthService:
 
         authorization_url = f"{self.config.authorization_url}?{urlencode(params)}"
 
-        logger.info(f"OAuth authorization URL generated: user_id={user_id} platform={self.config.platform_id} pkce={self.config.use_pkce}")
+        logger.info(
+            f"OAuth authorization URL generated: user_id={user_id} platform={self.config.platform_id} pkce={self.config.use_pkce}"
+        )
 
         return {
             "authorization_url": authorization_url,
@@ -85,10 +87,7 @@ class OAuthService:
         }
 
     async def exchange_code_for_token(
-        self,
-        code: str,
-        code_verifier: str | None = None,
-        device_id: str | None = None
+        self, code: str, code_verifier: str | None = None, device_id: str | None = None
     ) -> dict[str, Any]:
         """
         Exchange authorization code for access token.
@@ -131,12 +130,11 @@ class OAuthService:
         # Platform-specific handling
         if self.config.platform_id == "youtube":
             return await self._exchange_google_token(data)
-        elif self.config.platform_id == "vk_video":
+        if self.config.platform_id == "vk_video":
             return await self._exchange_vk_token(data)
-        elif self.config.platform_id == "zoom":
+        if self.config.platform_id == "zoom":
             return await self._exchange_zoom_token(data)
-        else:
-            raise ValueError(f"Unsupported platform: {self.config.platform_id}")
+        raise ValueError(f"Unsupported platform: {self.config.platform_id}")
 
     async def _exchange_google_token(self, data: dict) -> dict[str, Any]:
         """Exchange Google/YouTube authorization code for token."""
@@ -172,7 +170,9 @@ class OAuthService:
                 response_text = await response.text()
 
                 if response.status != 200:
-                    logger.error(f"VK token exchange failed: status={response.status} url={url} error={response_text[:500]}")
+                    logger.error(
+                        f"VK token exchange failed: status={response.status} url={url} error={response_text[:500]}"
+                    )
                     raise aiohttp.ClientError(f"Token exchange failed: {response.status}")
 
                 try:
@@ -182,7 +182,9 @@ class OAuthService:
                     raise aiohttp.ClientError("Invalid JSON response from VK")
 
                 if "error" in token_data:
-                    logger.error(f"VK token error: {token_data.get('error')} - {token_data.get('error_description', '')}")
+                    logger.error(
+                        f"VK token error: {token_data.get('error')} - {token_data.get('error_description', '')}"
+                    )
                     raise aiohttp.ClientError(f"VK error: {token_data['error']}")
 
                 logger.info(f"VK ID token obtained: has_refresh={bool(token_data.get('refresh_token'))}")
@@ -226,7 +228,9 @@ class OAuthService:
                     raise aiohttp.ClientError("Invalid JSON response from Zoom")
 
                 if "error" in token_response:
-                    logger.error(f"Zoom token error: {token_response.get('error')} - {token_response.get('error_description', '')}")
+                    logger.error(
+                        f"Zoom token error: {token_response.get('error')} - {token_response.get('error_description', '')}"
+                    )
                     raise aiohttp.ClientError(f"Zoom error: {token_response['error']}")
 
                 logger.info(f"Zoom token obtained: has_refresh={bool(token_response.get('refresh_token'))}")
@@ -251,12 +255,11 @@ class OAuthService:
 
         if self.config.platform_id == "youtube":
             return await self._refresh_google_token(refresh_token)
-        elif self.config.platform_id == "vk_video":
+        if self.config.platform_id == "vk_video":
             return await self._refresh_vk_token(refresh_token)
-        elif self.config.platform_id == "zoom":
+        if self.config.platform_id == "zoom":
             return await self._refresh_zoom_token(refresh_token)
-        else:
-            raise ValueError(f"Token refresh not supported for {self.config.platform_id}")
+        raise ValueError(f"Token refresh not supported for {self.config.platform_id}")
 
     async def _refresh_google_token(self, refresh_token: str) -> dict[str, Any]:
         """Refresh Google/YouTube token."""
@@ -351,13 +354,12 @@ class OAuthService:
         try:
             if self.config.platform_id == "youtube":
                 return await self._validate_youtube_token(access_token)
-            elif self.config.platform_id == "vk_video":
+            if self.config.platform_id == "vk_video":
                 return await self._validate_vk_token(access_token)
-            elif self.config.platform_id == "zoom":
+            if self.config.platform_id == "zoom":
                 return await self._validate_zoom_token(access_token)
-            else:
-                logger.warning(f"Token validation not implemented for {self.config.platform_id}")
-                return True  # Assume valid
+            logger.warning(f"Token validation not implemented for {self.config.platform_id}")
+            return True  # Assume valid
         except Exception as e:
             logger.error(f"Token validation error: {e}")
             return False
@@ -373,37 +375,32 @@ class OAuthService:
                 if response.status == 200:
                     logger.debug("YouTube token validated successfully")
                     return True
-                else:
-                    logger.warning(f"YouTube token validation failed: status={response.status}")
-                    return False
+                logger.warning(f"YouTube token validation failed: status={response.status}")
+                return False
 
     async def _validate_vk_token(self, access_token: str) -> bool:
         """Validate VK token via API call."""
         url = "https://api.vk.com/method/users.get"
         params = {"access_token": access_token, "v": "5.131"}
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    if "error" not in data:
-                        logger.debug("VK token validated successfully")
-                        return True
+        async with aiohttp.ClientSession() as session, session.get(url, params=params) as response:
+            if response.status == 200:
+                data = await response.json()
+                if "error" not in data:
+                    logger.debug("VK token validated successfully")
+                    return True
 
-                logger.warning(f"VK token validation failed: status={response.status}")
-                return False
+            logger.warning(f"VK token validation failed: status={response.status}")
+            return False
 
     async def _validate_zoom_token(self, access_token: str) -> bool:
         """Validate Zoom token via API call."""
         url = "https://api.zoom.us/v2/users/me"
         headers = {"Authorization": f"Bearer {access_token}"}
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as response:
-                if response.status == 200:
-                    logger.debug("Zoom token validated successfully")
-                    return True
-                else:
-                    logger.warning(f"Zoom token validation failed: status={response.status}")
-                    return False
-
+        async with aiohttp.ClientSession() as session, session.get(url, headers=headers) as response:
+            if response.status == 200:
+                logger.debug("Zoom token validated successfully")
+                return True
+            logger.warning(f"Zoom token validation failed: status={response.status}")
+            return False

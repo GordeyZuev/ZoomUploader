@@ -67,23 +67,17 @@ async def resolve_full_config(
         template_repo = RecordingTemplateRepository(session)
         template = await template_repo.find_by_id(recording.template_id, user_id)
         if template and template.processing_config:
-            logger.debug(
-                f"Merging template '{template.name}' config for recording {recording_id}"
-            )
+            logger.debug(f"Merging template '{template.name}' config for recording {recording_id}")
             full_config = config_resolver._merge_configs(full_config, template.processing_config)
 
     # Merge with recording.processing_preferences if exists (higher priority)
     if recording.processing_preferences:
-        logger.debug(
-            f"Merging recording.processing_preferences for recording {recording_id}"
-        )
+        logger.debug(f"Merging recording.processing_preferences for recording {recording_id}")
         full_config = config_resolver._merge_configs(full_config, recording.processing_preferences)
 
     # Merge with manual_override (absolute highest priority)
     if manual_override:
-        logger.debug(
-            f"Applying manual_override for recording {recording_id}"
-        )
+        logger.debug(f"Applying manual_override for recording {recording_id}")
         full_config = config_resolver._merge_configs(full_config, manual_override)
 
     # Flatten nested processing_config structure if exists
@@ -108,4 +102,3 @@ async def resolve_full_config(
         return full_config, output_config, recording
 
     return full_config, recording
-

@@ -24,8 +24,7 @@ async def list_jobs(
 ):
     """List user's automation jobs."""
     repo = AutomationJobRepository(ctx.session)
-    jobs = await repo.get_user_jobs(ctx.user_id, active_only)
-    return jobs
+    return await repo.get_user_jobs(ctx.user_id, active_only)
 
 
 @router.post("", response_model=AutomationJobResponse, status_code=201)
@@ -112,11 +111,9 @@ async def trigger_job(
             mode="dry_run",
             message="Preview mode - no changes will be made",
         )
-    else:
-        task = run_automation_job_task.delay(job_id, ctx.user_id)
-        return TriggerJobResponse(
-            task_id=str(task.id),
-            mode="execute",
-            message="Job execution started",
-        )
-
+    task = run_automation_job_task.delay(job_id, ctx.user_id)
+    return TriggerJobResponse(
+        task_id=str(task.id),
+        mode="execute",
+        message="Job execution started",
+    )

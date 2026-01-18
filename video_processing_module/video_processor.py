@@ -1,7 +1,6 @@
 import asyncio
 import json
 import os
-import re
 import shutil
 import traceback
 from datetime import datetime
@@ -9,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from logger import get_logger
-from utils.formatting import normalize_datetime_string
+from utils.formatting import normalize_datetime_string, sanitize_filename
 
 from .audio_detector import AudioDetector
 from .config import ProcessingConfig
@@ -35,14 +34,6 @@ class VideoProcessor:
         for directory in [self.config.input_dir, self.config.output_dir, self.config.temp_dir]:
             Path(directory).mkdir(parents=True, exist_ok=True)
 
-    def _sanitize_filename(self, filename: str) -> str:
-        """Create a safe filename."""
-        filename = re.sub(r'[<>:"/\\|?*]', "_", filename)
-        filename = re.sub(r"\s+", "_", filename)
-        filename = filename.strip("_")
-        if len(filename) > 200:
-            filename = filename[:200]
-        return filename
 
     async def get_video_info(self, video_path: str) -> dict[str, Any]:
         """Get video information."""
@@ -89,6 +80,10 @@ class VideoProcessor:
         """Trim video by time."""
         duration = end_time - start_time
 
+        # Ensure paths are strings
+        input_path = str(input_path)
+        output_path = str(output_path)
+
         cmd = [
             "ffmpeg",
             "-i",
@@ -132,13 +127,12 @@ class VideoProcessor:
                 logger.error(f"❌ FFmpeg error: {stderr_output.decode()}")
                 return False
 
-            if os.path.exists(output_path):
-                file_size = os.path.getsize(output_path)
+            if Path(output_path).exists():
+                file_size = Path(output_path).stat().st_size
                 logger.info(f"✅ File created: {output_path} ({file_size} bytes)")
                 return True
-            else:
-                logger.error(f"❌ File not created: {output_path}")
-                return False
+            logger.error(f"❌ File not created: {output_path}")
+            return False
 
         except Exception as e:
             logger.error(f"❌ Exception during video trimming: {e}")
@@ -157,18 +151,16 @@ class VideoProcessor:
             if self.config.remove_outro:
                 video_info = await self.get_video_info(input_path)
                 max_time = video_info["duration"]
-                if end_time >= max_time - self.config.outro_duration:
-                    end_time = max_time - self.config.outro_duration
+                end_time = min(max_time - self.config.outro_duration, end_time)
 
-            os.makedirs(os.path.dirname(segment.output_path), exist_ok=True)
+            os.makedirs(Path(segment.output_path).parent, exist_ok=True)
             success = await self.trim_video(input_path, segment.output_path, start_time, end_time)
 
             if success:
                 segment.processed = True
                 segment.processing_time = datetime.now()
                 return True
-            else:
-                return False
+            return False
 
         except Exception as e:
             logger.info(f"Error processing segment {segment.title}: {e}")
@@ -226,7 +218,7 @@ class VideoProcessor:
         try:
             logger.info(f"🎬 Обработка видео с детекцией звука: {title}")
 
-            if not os.path.exists(video_path):
+            if not Path(video_path).exists():
                 logger.error(f"❌ Файл не найден: {video_path}")
                 return False, None
 
@@ -259,7 +251,7 @@ class VideoProcessor:
                 f"✂️ Обрезка с {start_time_trim:.1f}s по {end_time:.1f}s (отступы: -{self.config.padding_before}s, +{self.config.padding_after}s)"
             )
 
-            safe_title = self._sanitize_filename(title)
+            safe_title = sanitize_filename(title)
 
             # Добавляем дату и время в имя файла для уникальности
             date_suffix = ""
@@ -272,18 +264,17 @@ class VideoProcessor:
                     logger.warning(f"⚠️ Error parsing date '{start_time}' for filename: {e}")
 
             output_filename = f"{safe_title}{date_suffix}_processed.mp4"
-            output_path = os.path.join(self.config.output_dir, output_filename)
+            output_path = Path(self.config.output_dir) / output_filename
 
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            os.makedirs(Path(output_path).parent, exist_ok=True)
             logger.info("🎬 Запуск FFmpeg для обрезки...")
             success = await self.trim_video(video_path, output_path, start_time_trim, end_time)
 
             if success:
                 logger.info(f"✅ Video processed: {output_path}")
-                return True, output_path
-            else:
-                logger.error(f"❌ Error trimming video: {title}")
-                return False, None
+                return True, str(output_path)
+            logger.error(f"❌ Error trimming video: {title}")
+            return False, None
 
         except Exception as e:
             logger.error(f"❌ Exception during video processing {title}: {e}")
@@ -295,7 +286,7 @@ class VideoProcessor:
         results = {}
 
         for video_path in video_files:
-            if not os.path.exists(video_path):
+            if not Path(video_path).exists():
                 logger.info(f"❌ File not found: {video_path}")
                 continue
 

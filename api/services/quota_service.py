@@ -67,8 +67,7 @@ class QuotaService:
             "max_recordings_per_month": subscription.custom_max_recordings_per_month
             or plan.included_recordings_per_month,
             "max_storage_gb": subscription.custom_max_storage_gb or plan.included_storage_gb,
-            "max_concurrent_tasks": subscription.custom_max_concurrent_tasks
-            or plan.max_concurrent_tasks,
+            "max_concurrent_tasks": subscription.custom_max_concurrent_tasks or plan.max_concurrent_tasks,
             "max_automation_jobs": subscription.custom_max_automation_jobs or plan.max_automation_jobs,
             "min_automation_interval_hours": subscription.custom_min_automation_interval_hours
             or plan.min_automation_interval_hours,
@@ -295,9 +294,7 @@ class QuotaService:
             storage={
                 "used_gb": storage_bytes_used / (1024**3),
                 "limit_gb": max_storage_gb,
-                "available_gb": (max_storage_gb - storage_bytes_used / (1024**3))
-                if max_storage_gb
-                else None,
+                "available_gb": (max_storage_gb - storage_bytes_used / (1024**3)) if max_storage_gb else None,
             },
             concurrent_tasks={
                 "used": tasks_used,
@@ -313,4 +310,3 @@ class QuotaService:
             overage_cost_this_month=usage.overage_cost if usage else Decimal("0"),
             overage_limit=subscription.pay_as_you_go_monthly_limit,
         )
-

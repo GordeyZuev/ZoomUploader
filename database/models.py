@@ -53,7 +53,7 @@ class RecordingModel(Base):
     duration: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(Enum(ProcessingStatus), default=ProcessingStatus.INITIALIZED)
     is_mapped: Mapped[bool] = mapped_column(Boolean, default=False)
-    blank_record: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false')
+    blank_record: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     expire_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     local_video_path: Mapped[str | None] = mapped_column(String(1000))
     processed_video_path: Mapped[str | None] = mapped_column(String(1000))
@@ -225,7 +225,9 @@ class ProcessingStageModel(Base):
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
     )
     stage_type: Mapped[str] = mapped_column(Enum(ProcessingStageType, name="processingstagetype"))
-    status: Mapped[str] = mapped_column(Enum(ProcessingStageStatus, name="processingstagestatus"), default=ProcessingStageStatus.PENDING)
+    status: Mapped[str] = mapped_column(
+        Enum(ProcessingStageStatus, name="processingstagestatus"), default=ProcessingStageStatus.PENDING
+    )
     failed: Mapped[bool] = mapped_column(Boolean, default=False)
     failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     failed_reason: Mapped[str | None] = mapped_column(String(1000))

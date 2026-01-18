@@ -29,9 +29,7 @@ def cleanup_expired_tokens_task():
 
             async with db_manager.async_session() as session:
                 token_repo = RefreshTokenRepository(session)
-                deleted_count = await token_repo.delete_expired()
-
-            return deleted_count
+                return await token_repo.delete_expired()
 
         # Execute async function
         try:
@@ -40,7 +38,6 @@ def cleanup_expired_tokens_task():
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
         except RuntimeError:
-
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
@@ -51,13 +48,9 @@ def cleanup_expired_tokens_task():
         return {
             "status": "success",
             "deleted_tokens": deleted_count,
-            "message": f"Cleaned up {deleted_count} expired refresh tokens"
+            "message": f"Cleaned up {deleted_count} expired refresh tokens",
         }
 
     except Exception as e:
         logger.error(f"Failed to cleanup expired tokens: {e}", exc_info=True)
-        return {
-            "status": "error",
-            "error": str(e)
-        }
-
+        return {"status": "error", "error": str(e)}

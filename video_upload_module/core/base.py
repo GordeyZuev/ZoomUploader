@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 
@@ -34,7 +35,6 @@ class BaseUploader(ABC):
     @abstractmethod
     async def authenticate(self) -> bool:
         """Authenticate with the platform."""
-        pass
 
     def is_authenticated(self) -> bool:
         """Check authentication status."""
@@ -51,26 +51,22 @@ class BaseUploader(ABC):
         **kwargs,
     ) -> UploadResult | None:
         """Upload video to platform."""
-        pass
 
     @abstractmethod
     async def get_video_info(self, video_id: str) -> dict[str, Any] | None:
         """Get video information."""
-        pass
 
     @abstractmethod
     async def delete_video(self, video_id: str) -> bool:
         """Delete video from platform."""
-        pass
 
     def validate_file(self, file_path: str) -> tuple[bool, str]:
         """Validate file before upload."""
-        import os
 
-        if not os.path.exists(file_path):
+        if not Path(file_path).exists():
             return False, "File does not exist"
 
-        file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+        file_size_mb = Path(file_path).stat().st_size / (1024 * 1024)
         if file_size_mb > 5000:
             return False, f"File too large: {file_size_mb:.1f}MB"
 

@@ -33,7 +33,7 @@ def load_oauth_config(config_path: str) -> dict:
     if not path.exists():
         raise FileNotFoundError(f"OAuth config file not found: {config_path}")
 
-    with open(path, encoding="utf-8") as f:
+    with path.open(encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -55,10 +55,7 @@ def create_youtube_config() -> OAuthPlatformConfig:
     redirect_uris = config.get("redirect_uris", [])
     if redirect_uris:
         # Use first redirect_uri that matches our base_url, or just the first one
-        redirect_uri = next(
-            (uri for uri in redirect_uris if base_url in uri),
-            redirect_uris[0]
-        )
+        redirect_uri = next((uri for uri in redirect_uris if base_url in uri), redirect_uris[0])
     else:
         redirect_uri = f"{base_url}/api/v1/oauth/youtube/callback"
 
@@ -112,21 +109,20 @@ def create_vk_config() -> OAuthPlatformConfig:
             access_type=None,
             use_pkce=True,
         )
-    else:
-        # Old VK OAuth (stable, but no refresh tokens)
-        logger.info("Using legacy VK OAuth (without PKCE)")
+    # Old VK OAuth (stable, but no refresh tokens)
+    logger.info("Using legacy VK OAuth (without PKCE)")
     return OAuthPlatformConfig(
         name="VK",
         platform_id="vk_video",
         authorization_url="https://oauth.vk.com/authorize",
-            token_url="https://oauth.vk.com/access_token",
+        token_url="https://oauth.vk.com/access_token",
         client_id=config.get("app_id", ""),
         client_secret=config.get("client_secret"),
         scopes=["video", "groups", "wall"],
         redirect_uri=redirect_uri,
         response_type="code",
-            access_type=None,
-            use_pkce=False,
+        access_type=None,
+        use_pkce=False,
     )
 
 
@@ -153,9 +149,9 @@ def create_zoom_config() -> OAuthPlatformConfig:
         scopes=[
             # User-level scopes (not admin) for user-managed app
             "cloud_recording:read:list_user_recordings",  # List user's recordings
-            "cloud_recording:read:recording",             # Read recording details
-            "recording:write:recording",                  # Delete recordings
-            "user:read:user",                             # User info
+            "cloud_recording:read:recording",  # Read recording details
+            "recording:write:recording",  # Delete recordings
+            "user:read:user",  # User info
         ],
         redirect_uri=redirect_uri,
         response_type="code",
@@ -168,12 +164,11 @@ def get_platform_config(platform: str) -> OAuthPlatformConfig:
     """Get OAuth configuration for a platform."""
     if platform == "youtube":
         return create_youtube_config()
-    elif platform in ("vk", "vk_video"):
+    if platform in ("vk", "vk_video"):
         return create_vk_config()
-    elif platform == "zoom":
+    if platform == "zoom":
         return create_zoom_config()
-    else:
-        raise ValueError(f"Unsupported OAuth platform: {platform}")
+    raise ValueError(f"Unsupported OAuth platform: {platform}")
 
 
 # Pre-load configs for quick access
@@ -187,4 +182,3 @@ except Exception as e:
     YOUTUBE_CONFIG = None
     VK_CONFIG = None
     ZOOM_CONFIG = None
-

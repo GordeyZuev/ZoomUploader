@@ -1,7 +1,7 @@
 """YouTube thumbnail manager."""
 
 import asyncio
-import os
+from pathlib import Path
 from typing import Any
 
 import aiohttp
@@ -11,6 +11,8 @@ from googleapiclient.http import MediaFileUpload
 from logger import get_logger
 
 from ...config_factory import YouTubeConfig
+from ...credentials_provider import CredentialProvider
+from .token_handler import TokenRefreshError, requires_valid_token
 
 logger = get_logger()
 
@@ -18,23 +20,32 @@ logger = get_logger()
 class YouTubeThumbnailManager:
     """YouTube thumbnail manager."""
 
-    def __init__(self, service, config: YouTubeConfig):
+    def __init__(
+        self,
+        service,
+        config: YouTubeConfig,
+        credentials=None,
+        credential_provider: CredentialProvider | None = None,
+    ):
         self.service = service
         self.config = config
+        self.credentials = credentials
+        self.credential_provider = credential_provider
         self.supported_formats = ["jpg", "jpeg", "png", "gif"]
         self.max_file_size = 2 * 1024 * 1024
         self.recommended_size = (1280, 720)
 
     def validate_thumbnail(self, thumbnail_path: str) -> tuple[bool, str]:
         """Validate thumbnail."""
-        if not os.path.exists(thumbnail_path):
+        thumb_path = Path(thumbnail_path)
+        if not thumb_path.exists():
             return False, "File does not exist"
 
-        file_size = os.path.getsize(thumbnail_path)
+        file_size = thumb_path.stat().st_size
         if file_size > self.max_file_size:
             return False, f"File too large: {file_size / 1024 / 1024:.1f}MB > 2MB"
 
-        file_ext = os.path.splitext(thumbnail_path)[1].lower().lstrip(".")
+        file_ext = thumb_path.suffix.lower().lstrip(".")
         if file_ext not in self.supported_formats:
             return (
                 False,
@@ -43,6 +54,7 @@ class YouTubeThumbnailManager:
 
         return True, "OK"
 
+    @requires_valid_token(max_retries=1)
     async def set_thumbnail(self, video_id: str, thumbnail_path: str) -> bool:
         """Set thumbnail for video."""
         is_valid, message = self.validate_thumbnail(thumbnail_path)
@@ -57,6 +69,9 @@ class YouTubeThumbnailManager:
             logger.info(f"Thumbnail set for video {video_id}")
             return True
 
+        except TokenRefreshError as e:
+            logger.error(f"Token error during set_thumbnail: {e}")
+            return False
         except HttpError as e:
             logger.error(f"Thumbnail set error: {e}")
             return False
@@ -64,6 +79,7 @@ class YouTubeThumbnailManager:
             logger.error(f"Unexpected thumbnail error: {e}")
             return False
 
+    @requires_valid_token(max_retries=1)
     async def get_thumbnail_info(self, video_id: str) -> dict[str, Any] | None:
         """Get video thumbnail information."""
         try:
@@ -85,6 +101,9 @@ class YouTubeThumbnailManager:
 
             return None
 
+        except TokenRefreshError as e:
+            logger.error(f"Token error during get_thumbnail_info: {e}")
+            return None
         except HttpError as e:
             logger.error(f"Error getting thumbnail info: {e}")
             return None
@@ -118,9 +137,8 @@ class YouTubeThumbnailManager:
 
                         logger.info(f"Thumbnail downloaded: {output_path}")
                         return True
-                    else:
-                        logger.error(f"Thumbnail download error: HTTP {response.status}")
-                        return False
+                    logger.error(f"Thumbnail download error: HTTP {response.status}")
+                    return False
 
         except Exception as e:
             logger.error(f"Thumbnail download error: {e}")

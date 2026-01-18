@@ -18,9 +18,7 @@ class ThumbnailListResponse(BaseModel):
     """Список thumbnails пользователя."""
 
     user_thumbnails: list[ThumbnailInfo] = Field(default_factory=list, description="Пользовательские thumbnails")
-    template_thumbnails: list[ThumbnailInfo] = Field(
-        default_factory=list, description="Глобальные template thumbnails"
-    )
+    template_thumbnails: list[ThumbnailInfo] = Field(default_factory=list, description="Глобальные template thumbnails")
 
 
 class ThumbnailUploadResponse(BaseModel):
@@ -28,4 +26,3 @@ class ThumbnailUploadResponse(BaseModel):
 
     message: str = Field(..., description="Сообщение о результате")
     thumbnail: ThumbnailInfo = Field(..., description="Информация о загруженном thumbnail")
-

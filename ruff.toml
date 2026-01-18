@@ -1,27 +1,169 @@
 # Ruff configuration for FastAPI project
+# Strict configuration with best practices for production-ready Python code
+
 target-version = "py311"
 line-length = 120
 
 [lint]
 select = [
+    # Core code quality (always enable)
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
-    "F",   # pyflakes
-    "I",   # isort
-    "B",   # flake8-bugbear
-    "C4",  # flake8-comprehensions
+    "F",   # pyflakes (unused imports, undefined names, etc.)
+    "I",   # isort (import sorting)
+    
+    # Bug prevention (highly recommended)
+    "B",   # flake8-bugbear (common bug patterns)
+    "C4",  # flake8-comprehensions (better list/dict comprehensions)
+    
+    # Modern Python (recommended)
+    "UP",  # pyupgrade (use modern Python syntax)
+    
+    # Code simplification
+    "SIM", # flake8-simplify
+    "RET", # flake8-return (better return statements)
+    "PIE", # flake8-pie (misc lints)
+    
+    # Naming conventions
+    "N",   # pep8-naming (PEP8 naming conventions)
+    
+    # Security & best practices
+    "S",   # flake8-bandit (security checks)
+    "A",   # flake8-builtins (avoid shadowing builtins)
+    
+    # Code organization
+    "PTH", # flake8-use-pathlib (prefer pathlib over os.path)
+    "ARG", # flake8-unused-arguments
+    
+    # Pylint rules (comprehensive)
+    "PL",  # Pylint
+    
+    # Ruff-specific rules
+    "RUF", # Ruff-specific rules
+    
+    # Quotes and formatting consistency
+    "Q",   # flake8-quotes
+    "COM", # flake8-commas
+    
+    # Type checking
+    "TC",  # flake8-type-checking (formerly TCH)
+    
+    # Print statements
+    "T20", # flake8-print
 ]
 
 ignore = [
-    "B008",  # Ignore function calls in argument defaults (normal for FastAPI Depends)
-    "B904",  # Ignore exception chaining (not always needed)
-    "E501",  # Ignore line length (handled by formatter)
+    # FastAPI-specific ignores
+    "B008",   # Function calls in argument defaults (normal for FastAPI Depends)
+    
+    # Formatting handled by Ruff formatter
+    "E501",   # Line length (handled by formatter)
+    "COM812", # Trailing comma (conflicts with formatter)
+    "COM819", # Trailing comma (conflicts with formatter)
+    
+    # Exception handling
+    "B904",   # Exception chaining with 'from' (not always needed)
+    
+    # Security - allow some common patterns
+    "S101",   # Allow assert statements (useful in tests and validation)
+    "S311",   # Allow pseudo-random generators (not all use cases are security-critical)
+    "S324",   # Allow md5/sha1 for non-security purposes
+    
+    # Type checking - can be too aggressive for gradual typing
+    "TC001",  # Type checking import optimization
+    "TC002",  # Type checking import optimization
+    "TC003",  # Type checking import optimization
+    
+    # Pylint - disable overly strict/noisy rules
+    "PLR0913", # Too many arguments (FastAPI endpoints often need many)
+    "PLR2004", # Magic value comparison (sometimes necessary)
+    "PLR0911", # Too many return statements (sometimes needed for clarity)
+    "PLR0912", # Too many branches (sometimes complex logic is needed)
+    "PLR0915", # Too many statements (sometimes long functions are clear)
+    "PLW0603", # Global statement (needed for some patterns)
+    "PLC0415", # Import outside top-level (lazy imports sometimes needed)
+    "PLW2901", # Redefining loop variable (sometimes intentional)
+    "PLE1205", # Logging too many args (loguru has different API)
+    
+    # Allow some simplification patterns that can reduce clarity
+    "SIM102", # Collapsible if statements (sometimes clearer when separate)
+    "SIM105", # Suppressible exception (contextlib.suppress not always clearer)
+    "SIM108", # Ternary operator (sometimes if-else is clearer)
+    "SIM117", # Multiple with statements (sometimes separate is clearer)
+    
+    # Ruff - allow some patterns
+    "RUF001", # Ambiguous unicode (allow Cyrillic in comments/docstrings)
+    "RUF002", # Ambiguous unicode (allow Cyrillic in comments/docstrings)
+    "RUF003", # Ambiguous unicode (allow Cyrillic in comments/docstrings)
+    "RUF012", # Mutable class default (Pydantic/SQLAlchemy patterns)
+    
+    # Print statements - allow in CLI context
+    "T201",   # Allow print (useful for CLI tools and scripts)
 ]
 
 [lint.per-file-ignores]
-"__init__.py" = ["F401"]  # Allow unused imports in __init__.py
+# Allow unused imports in __init__.py (re-exports)
+"__init__.py" = ["F401", "F403"]
+
+# Test files
+"tests/**/*.py" = [
+    "S101",   # Allow asserts in tests
+    "ARG001", # Allow unused function arguments in fixtures
+    "PLR2004", # Allow magic values in tests
+    "S105",   # Allow hardcoded passwords in tests
+    "S106",   # Allow hardcoded passwords in tests
+]
+
+# Alembic migrations
+"alembic/versions/*.py" = [
+    "N999",   # Allow any module names
+    "ARG001", # Unused arguments (upgrade/downgrade signatures)
+    "F401",   # Unused imports
+]
+
+# Scripts and CLI
+"**/scripts/*.py" = [
+    "T201",   # Allow print in scripts
+]
+
+# Task files may need some flexibility
+"api/tasks/*.py" = [
+    "ARG002", # Unused method arguments (Celery task signatures)
+]
+
+[lint.isort]
+known-first-party = [
+    "api",
+    "config",
+    "database",
+    "models",
+    "utils",
+    "video_download_module",
+    "video_processing_module",
+    "video_upload_module",
+    "subtitle_module",
+    "transcription_module",
+    "deepseek_module",
+    "fireworks_module",
+]
+force-single-line = false
+combine-as-imports = true
+
+[lint.flake8-quotes]
+inline-quotes = "double"
+multiline-quotes = "double"
+
+[lint.flake8-bugbear]
+# Allow default mutable arguments for FastAPI dependencies
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body", "fastapi.Header"]
+
+[lint.pylint]
+max-args = 8  # Allow up to 8 arguments (FastAPI needs flexibility)
+max-branches = 15  # Allow reasonable complexity
+max-returns = 8
+max-statements = 60
 
 [format]
 quote-style = "double"
 indent-style = "space"
-
+line-ending = "auto"

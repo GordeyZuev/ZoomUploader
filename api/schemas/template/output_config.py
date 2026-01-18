@@ -51,4 +51,3 @@ class TemplateOutputConfig(BaseModel):
         if len(v) != len(set(v)):
             raise ValueError("preset_ids не должны дублироваться")
         return v
-

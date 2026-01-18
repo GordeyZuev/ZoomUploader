@@ -5,7 +5,7 @@ from api.zoom_api import ZoomAPI
 from logger import get_logger
 from models.recording import MeetingRecording
 
-from .formatting import format_duration, format_file_size, normalize_datetime_string
+from .formatting import normalize_datetime_string
 
 logger = get_logger()
 
@@ -70,8 +70,8 @@ def process_meetings_data(response_data: dict[str, Any], filter_video_only: bool
                     end_dt = datetime.fromisoformat(normalize_datetime_string(part_end))
                     delta = end_dt - start_dt
                     duration_minutes = max(0, int(delta.total_seconds() // 60))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Ignored exception: {e}")
 
             meeting_data = dict(meeting)
             meeting_data["recording_files"] = [part]
@@ -137,7 +137,7 @@ def filter_recordings_by_date_range(
 async def get_recordings_by_date_range(
     api: ZoomAPI,
     start_date: str,
-    end_date: str = None,
+    end_date: str | None = None,
     page_size: int = 30,
     filter_video_only: bool = True,
 ) -> list[MeetingRecording]:
@@ -215,54 +215,7 @@ def filter_available_recordings(
             r.total_visible_parts = total
             if hasattr(r, "source_metadata") and isinstance(r.source_metadata, dict):
                 r.source_metadata["total_visible_parts"] = total
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Ignored exception: {e}")
 
     return large_enough
-
-
-def filter_ready_for_processing(recordings: list[MeetingRecording]) -> list[MeetingRecording]:
-    """Фильтрация записей, готовых для пост-обработки."""
-    return [recording for recording in recordings if recording.is_ready_for_processing()]
-
-
-def filter_ready_for_upload(recordings: list[MeetingRecording]) -> list[MeetingRecording]:
-    """Фильтрация записей, готовых для загрузки на платформы."""
-    return [recording for recording in recordings if recording.is_ready_for_upload()]
-
-
-def get_recordings_statistics(recordings: list[MeetingRecording]) -> dict[str, Any]:
-    """Получение статистики по записям."""
-    if not recordings:
-        return {
-            "total_recordings": 0,
-            "total_duration_minutes": 0,
-            "total_video_size_bytes": 0,
-            "total_chat_size_bytes": 0,
-            "status_counts": {},
-            "topics_count": 0,
-        }
-
-    total_duration = sum(rec.duration or 0 for rec in recordings)
-    total_video_size = sum(rec.video_file_size or 0 for rec in recordings)
-    total_chat_size = 0  # chat_file_size не используется в текущей модели
-
-    status_counts = {}
-    for recording in recordings:
-        status = recording.status.value
-        status_counts[status] = status_counts.get(status, 0) + 1
-
-    topics = {rec.display_name for rec in recordings if rec.display_name}
-
-    return {
-        "total_recordings": len(recordings),
-        "total_duration_minutes": total_duration,
-        "total_duration_formatted": format_duration(total_duration),
-        "total_video_size_bytes": total_video_size,
-        "total_video_size_formatted": format_file_size(total_video_size),
-        "total_chat_size_bytes": total_chat_size,
-        "total_chat_size_formatted": format_file_size(total_chat_size),
-        "status_counts": status_counts,
-        "topics_count": len(topics),
-        "topics": list(topics),
-    }

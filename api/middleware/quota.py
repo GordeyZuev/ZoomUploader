@@ -33,8 +33,7 @@ class QuotaMiddleware(BaseHTTPMiddleware):
                     # Проверяем квоты
                     await self._check_quotas(request, user.id, quota_type)
 
-        response = await call_next(request)
-        return response
+        return await call_next(request)
 
     def _get_quota_type(self, path: str) -> str | None:
         """Определить тип квоты для пути."""
@@ -56,15 +55,14 @@ class QuotaMiddleware(BaseHTTPMiddleware):
             if not allowed:
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=error_msg or "Monthly recordings quota exceeded"
+                    detail=error_msg or "Monthly recordings quota exceeded",
                 )
 
         elif quota_type == "tasks":
             allowed, error_msg = await quota_service.check_concurrent_tasks_quota(user_id)
             if not allowed:
                 raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=error_msg or "Concurrent tasks quota exceeded"
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=error_msg or "Concurrent tasks quota exceeded"
                 )
 
 
@@ -102,4 +100,3 @@ async def decrement_tasks_quota(session: AsyncSession, user_id: int, count: int 
     current_count = usage.concurrent_tasks_count if usage else 0
     new_count = max(0, current_count - count)
     await quota_service.set_concurrent_tasks_count(user_id, new_count)
-

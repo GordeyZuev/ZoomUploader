@@ -1,12 +1,8 @@
 """Authentication response schemas"""
 
 from datetime import datetime
-from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, EmailStr, Field
-
-if TYPE_CHECKING:
-    pass
 
 
 class TokenResponse(BaseModel):

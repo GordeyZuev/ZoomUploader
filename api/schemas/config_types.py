@@ -38,9 +38,7 @@ class ProcessingConfigData(BaseModel):
 class TranscriptionConfigData(BaseModel):
     """Конфигурация для транскрибации."""
 
-    provider: Literal["fireworks", "deepseek", "openai"] = Field(
-        "fireworks", description="Провайдер транскрибации"
-    )
+    provider: Literal["fireworks", "deepseek", "openai"] = Field("fireworks", description="Провайдер транскрибации")
     model: str = Field("whisper-v3-turbo", description="Модель для транскрибации")
     language: str = Field("ru", description="Язык аудио")
     generate_subtitles: bool = Field(True, description="Генерировать субтитры")
@@ -94,7 +92,9 @@ class VideoMappingConfigData(BaseModel):
     )
     default_thumbnail: str = Field("media/templates/thumbnails/default.png", description="Миниатюра по умолчанию")
     date_format: str = Field("DD.MM.YYYY", description="Формат даты")
-    thumbnail_directory: str = Field("media/templates/thumbnails/", description="Директория для глобальных template миниатюр")
+    thumbnail_directory: str = Field(
+        "media/templates/thumbnails/", description="Директория для глобальных template миниатюр"
+    )
 
     @field_validator("mapping_rules")
     @classmethod
@@ -167,4 +167,3 @@ def validate_config_by_type(config_type: str, config_data: dict[str, Any]) -> Ba
 
     schema_class = CONFIG_TYPE_SCHEMAS[config_type]
     return schema_class.model_validate(config_data)
-

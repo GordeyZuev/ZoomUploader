@@ -41,10 +41,7 @@ class ConfigHelper:
         Raises:
             ValueError: Если credentials не найдены
         """
-        creds = await self.cred_service.get_zoom_credentials(
-            user_id=self.user_id,
-            account_name=account_name
-        )
+        creds = await self.cred_service.get_zoom_credentials(user_id=self.user_id, account_name=account_name)
 
         return ZoomConfig(
             account=creds.get("account", ""),
@@ -89,10 +86,7 @@ class ConfigHelper:
         Raises:
             ValueError: Если credentials не найдены
         """
-        api_key = await self.cred_service.get_api_key_credentials(
-            user_id=self.user_id,
-            platform="fireworks"
-        )
+        api_key = await self.cred_service.get_api_key_credentials(user_id=self.user_id, platform="fireworks")
 
         # Используем конфигурацию по умолчанию, но с пользовательским API key
         config = FireworksConfig.from_file()
@@ -111,10 +105,7 @@ class ConfigHelper:
         Raises:
             ValueError: Если credentials не найдены
         """
-        api_key = await self.cred_service.get_api_key_credentials(
-            user_id=self.user_id,
-            platform="deepseek"
-        )
+        api_key = await self.cred_service.get_api_key_credentials(user_id=self.user_id, platform="deepseek")
 
         # Используем конфигурацию по умолчанию, но с пользовательским API key
         config = DeepSeekConfig.from_file()
@@ -147,11 +138,7 @@ class ConfigHelper:
         """
         return await self.cred_service.get_vk_credentials(self.user_id)
 
-    async def get_credentials_for_platform(
-        self,
-        platform: str,
-        account_name: str | None = None
-    ) -> dict[str, Any]:
+    async def get_credentials_for_platform(self, platform: str, account_name: str | None = None) -> dict[str, Any]:
         """
         Универсальный метод для получения credentials любой платформы.
 
@@ -166,9 +153,7 @@ class ConfigHelper:
             ValueError: Если credentials не найдены
         """
         return await self.cred_service.get_decrypted_credentials(
-            user_id=self.user_id,
-            platform=platform,
-            account_name=account_name
+            user_id=self.user_id, platform=platform, account_name=account_name
         )
 
     async def has_credentials_for_platform(self, platform: str) -> bool:

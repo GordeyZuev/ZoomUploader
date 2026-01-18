@@ -13,25 +13,17 @@ logger = get_logger()
 class ZoomAPIError(Exception):
     """Базовая ошибка Zoom API."""
 
-    pass
-
 
 class ZoomAuthenticationError(ZoomAPIError):
     """Ошибка аутентификации."""
-
-    pass
 
 
 class ZoomRequestError(ZoomAPIError):
     """Ошибка выполнения запроса."""
 
-    pass
-
 
 class ZoomResponseError(ZoomAPIError):
     """Ошибка ответа API."""
-
-    pass
 
 
 class ZoomAPI:
@@ -105,11 +97,8 @@ class ZoomAPI:
                         f"Сырые данные от Zoom API (get_recordings):\n{json.dumps(data, indent=2, ensure_ascii=False)}"
                     )
                     return data
-                else:
-                    logger.error(
-                        f"Ошибка API для аккаунта {self.config.account}: {response.status_code} - {response.text}"
-                    )
-                    raise ZoomResponseError(f"Ошибка API: {response.status_code} - {response.text}")
+                logger.error(f"Ошибка API для аккаунта {self.config.account}: {response.status_code} - {response.text}")
+                raise ZoomResponseError(f"Ошибка API: {response.status_code} - {response.text}")
 
         except httpx.RequestError as e:
             error_type = type(e).__name__
@@ -155,13 +144,12 @@ class ZoomAPI:
                         f"Сырые данные от Zoom API (get_recording_details для meeting_id={meeting_id}):\n{json.dumps(data, indent=2, ensure_ascii=False)}"
                     )
                     return data
-                else:
-                    logger.error(
-                        f"Ошибка API для аккаунта {self.config.account} "
-                        f"при получении деталей записи {meeting_id}: "
-                        f"{response.status_code} - {response.text}"
-                    )
-                    raise ZoomResponseError(f"Ошибка API: {response.status_code} - {response.text}")
+                logger.error(
+                    f"Ошибка API для аккаунта {self.config.account} "
+                    f"при получении деталей записи {meeting_id}: "
+                    f"{response.status_code} - {response.text}"
+                )
+                raise ZoomResponseError(f"Ошибка API: {response.status_code} - {response.text}")
 
         except httpx.RequestError as e:
             error_type = type(e).__name__

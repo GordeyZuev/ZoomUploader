@@ -2,8 +2,8 @@
 
 import asyncio
 import json
-import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from google.auth.transport.requests import Request
@@ -17,6 +17,7 @@ from logger import get_logger
 from ...config_factory import YouTubeConfig
 from ...core.base import BaseUploader, UploadResult
 from ...credentials_provider import CredentialProvider, FileCredentialProvider
+from .token_handler import TokenRefreshError, requires_valid_token
 
 logger = get_logger()
 
@@ -79,8 +80,7 @@ class YouTubeUploader(BaseUploader):
 
                 elif not refreshed_successfully:
                     logger.error(
-                        "YouTube credentials expired and cannot be refreshed. "
-                        "User must re-authorize via OAuth flow."
+                        "YouTube credentials expired and cannot be refreshed. User must re-authorize via OAuth flow."
                     )
                     return False
 
@@ -94,6 +94,7 @@ class YouTubeUploader(BaseUploader):
             logger.error(f"YouTube authentication error: {e}")
             return False
 
+    @requires_valid_token(max_retries=1)
     async def upload_video(
         self,
         video_path: str,
@@ -134,11 +135,11 @@ class YouTubeUploader(BaseUploader):
                 "defaultAudioLanguage": self.config.default_language,
             }
 
-            if "tags" in kwargs and kwargs["tags"]:
+            if kwargs.get("tags"):
                 snippet["tags"] = kwargs["tags"][:500]
                 logger.debug(f"Added {len(snippet['tags'])} tags")
 
-            if "category_id" in kwargs and kwargs["category_id"]:
+            if kwargs.get("category_id"):
                 snippet["categoryId"] = str(kwargs["category_id"])
                 logger.debug(f"Set category_id: {snippet['categoryId']}")
 
@@ -147,7 +148,7 @@ class YouTubeUploader(BaseUploader):
                 "selfDeclaredMadeForKids": kwargs.get("made_for_kids", False),
             }
 
-            if "publish_at" in kwargs and kwargs["publish_at"]:
+            if kwargs.get("publish_at"):
                 status["publishAt"] = kwargs["publish_at"]
                 if status["privacyStatus"] != "private":
                     logger.warning("Setting privacy to 'private' for scheduled video")
@@ -183,8 +184,8 @@ class YouTubeUploader(BaseUploader):
                         try:
                             if task_id in progress.task_ids:
                                 progress.update(task_id, completed=upload_progress, total=100)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.warning(f"Ignored exception: {e}")
 
             if "id" in response:
                 video_id = response["id"]
@@ -200,7 +201,9 @@ class YouTubeUploader(BaseUploader):
 
                         from .playlist_manager import YouTubePlaylistManager
 
-                        playlist_manager = YouTubePlaylistManager(self.service, self.config)
+                        playlist_manager = YouTubePlaylistManager(
+                            self.service, self.config, self.credentials, self.credential_provider
+                        )
                         success = await playlist_manager.add_video_to_playlist(playlist_id, video_id)
                         if success:
                             result.metadata["playlist_id"] = playlist_id
@@ -211,11 +214,13 @@ class YouTubeUploader(BaseUploader):
                         logger.error(f"Playlist addition error: {e}")
                         result.metadata["playlist_error"] = str(e)
 
-                if thumbnail_path and os.path.exists(thumbnail_path):
+                if thumbnail_path and Path(thumbnail_path).exists():
                     try:
                         from .thumbnail_manager import YouTubeThumbnailManager
 
-                        thumbnail_manager = YouTubeThumbnailManager(self.service, self.config)
+                        thumbnail_manager = YouTubeThumbnailManager(
+                            self.service, self.config, self.credentials, self.credential_provider
+                        )
                         await asyncio.sleep(5)
                         success = await thumbnail_manager.set_thumbnail(video_id, thumbnail_path)
                         if success:
@@ -227,10 +232,12 @@ class YouTubeUploader(BaseUploader):
                         result.metadata["thumbnail_error"] = str(e)
 
                 return result
-            else:
-                logger.error(f"Upload error: {response}")
-                return None
+            logger.error(f"Upload error: {response}")
+            return None
 
+        except TokenRefreshError as e:
+            logger.error(f"Token error: {e}")
+            return None
         except HttpError as e:
             logger.error(f"YouTube API error: {e}")
             return None
@@ -238,6 +245,7 @@ class YouTubeUploader(BaseUploader):
             logger.error(f"Video upload error: {e}")
             return None
 
+    @requires_valid_token(max_retries=1)
     async def upload_caption(
         self,
         video_id: str,
@@ -251,7 +259,7 @@ class YouTubeUploader(BaseUploader):
             if not await self.authenticate():
                 return False
 
-        if not os.path.exists(caption_path):
+        if not Path(caption_path).exists():
             logger.error(f"Caption file not found: {caption_path}")
             return False
 
@@ -285,6 +293,9 @@ class YouTubeUploader(BaseUploader):
             logger.error(f"Failed to upload captions: {response}")
             return False
 
+        except TokenRefreshError as e:
+            logger.error(f"Token error during caption upload: {e}")
+            return False
         except HttpError as e:
             logger.error(f"YouTube Captions API error: {e}")
             return False
@@ -292,6 +303,7 @@ class YouTubeUploader(BaseUploader):
             logger.error(f"Caption upload error: {e}")
             return False
 
+    @requires_valid_token(max_retries=1)
     async def get_video_info(self, video_id: str) -> dict[str, Any] | None:
         """Get video information."""
         if not self._authenticated:
@@ -313,10 +325,14 @@ class YouTubeUploader(BaseUploader):
                 }
             return None
 
+        except TokenRefreshError as e:
+            logger.error(f"Token error during get_video_info: {e}")
+            return None
         except Exception as e:
             logger.error(f"Error getting video info: {e}")
             return None
 
+    @requires_valid_token(max_retries=1)
     async def delete_video(self, video_id: str) -> bool:
         """Delete video."""
         if not self._authenticated:
@@ -329,6 +345,9 @@ class YouTubeUploader(BaseUploader):
             logger.info(f"Video deleted: {video_id}")
             return True
 
+        except TokenRefreshError as e:
+            logger.error(f"Token error during delete_video: {e}")
+            return False
         except Exception as e:
             logger.error(f"Video deletion error: {e}")
             return False

@@ -148,12 +148,11 @@ class SubtitleGenerator:
                     except (ValueError, IndexError) as e:
                         logger.warning(f"⚠️ Ошибка парсинга строки {line_num} в файле {file_path}: {line[:50]}... - {e}")
                         continue
-                else:
-                    # Логируем только первые несколько нераспознанных строк, чтобы не засорять лог
-                    if line_num <= 5:
-                        logger.debug(
-                            f"Строка не соответствует формату: line_num={line_num} | preview={line[:50]}... | file={file_path}"
-                        )
+                # Логируем только первые несколько нераспознанных строк, чтобы не засорять лог
+                elif line_num <= 5:
+                    logger.debug(
+                        f"Строка не соответствует формату: line_num={line_num} | preview={line[:50]}... | file={file_path}"
+                    )
 
         logger.info(f"📊 Парсинг завершен: обработано {total_lines} строк, распарсено {parsed_lines} слов")
 
@@ -356,7 +355,7 @@ class SubtitleGenerator:
         return output_path
 
     def generate_from_transcription(
-        self, transcription_path: str, output_dir: str | None = None, formats: list[str] = None
+        self, transcription_path: str, output_dir: str | None = None, formats: list[str] | None = None
     ) -> dict[str, str]:
         """
         Генерирует субтитры из файла транскрипции.
@@ -388,14 +387,11 @@ class SubtitleGenerator:
                 entries = self.parse_transcription_file(segments_path)
             else:
                 raise FileNotFoundError(f"В папке нет segments.txt: {transcription_path}")
+        elif Path(transcription_path).name == "segments.txt":
+            logger.info(f"📝 Используем segments.txt: {transcription_path}")
+            entries = self.parse_transcription_file(transcription_path)
         else:
-            if Path(transcription_path).name == "segments.txt":
-                logger.info(f"📝 Используем segments.txt: {transcription_path}")
-                entries = self.parse_transcription_file(transcription_path)
-            else:
-                raise FileNotFoundError(
-                    f"Ожидается segments.txt или папка с segments.txt, получено: {transcription_path}"
-                )
+            raise FileNotFoundError(f"Ожидается segments.txt или папка с segments.txt, получено: {transcription_path}")
 
         if not entries:
             raise ValueError(f"Не удалось извлечь записи из файла транскрипции: {transcription_path}")

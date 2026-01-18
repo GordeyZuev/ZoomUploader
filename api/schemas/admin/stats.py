@@ -13,9 +13,7 @@ class AdminOverviewStats(BaseModel):
     total_recordings: int = Field(..., description="Всего записей")
     total_storage_gb: float = Field(..., description="Всего использовано хранилища (GB)")
     total_plans: int = Field(..., description="Всего тарифных планов")
-    users_by_plan: dict[str, int] = Field(
-        ..., description="Распределение пользователей по планам"
-    )
+    users_by_plan: dict[str, int] = Field(..., description="Распределение пользователей по планам")
 
 
 class UserQuotaDetails(BaseModel):
@@ -61,4 +59,3 @@ class AdminQuotaStats(BaseModel):
     total_storage_gb: float
     total_overage_cost: Decimal
     plans: list[PlanUsageStats]
-

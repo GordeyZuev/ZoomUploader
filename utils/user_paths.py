@@ -126,7 +126,7 @@ class UserPathManager:
         Get the size of the user's storage in gigabytes.
         """
         bytes_size = self.get_user_storage_size(user_id)
-        return bytes_size / (1024 ** 3)
+        return bytes_size / (1024**3)
 
 
 # Global instance of the path manager

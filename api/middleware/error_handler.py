@@ -51,7 +51,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "msg": error.get("msg"),
             "input": error.get("input"),
         }
-        if "ctx" in error and error["ctx"]:
+        if error.get("ctx"):
             error_dict["ctx"] = {k: str(v) for k, v in error["ctx"].items()}
         errors.append(error_dict)
 
@@ -79,7 +79,7 @@ async def response_validation_exception_handler(request: Request, exc: ResponseV
         if "input" in error:
             # Don't expose full input in production
             error_dict["input_summary"] = f"{type(error['input']).__name__}" if not DEBUG else error["input"]
-        if "ctx" in error and error["ctx"]:
+        if error.get("ctx"):
             error_dict["ctx"] = {k: str(v) for k, v in error["ctx"].items()}
         errors.append(error_dict)
 

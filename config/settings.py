@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field
@@ -121,12 +122,11 @@ class ZoomConfig:
 def load_config_from_file(config_file: str) -> dict:
     """Загрузка конфигураций Zoom из файла (совместимость)"""
     import json
-    import os
 
-    if not os.path.exists(config_file):
+    if not Path(config_file).exists():
         return {}
 
-    with open(config_file, encoding="utf-8") as f:
+    with Path(config_file).open(encoding="utf-8") as f:
         data = json.load(f)
 
     configs = {}
@@ -152,13 +152,6 @@ def load_config_from_file(config_file: str) -> dict:
             )
 
     return configs
-
-
-def get_config_by_account(account: str, configs: dict) -> ZoomConfig:
-    """Получение конфигурации по аккаунту (совместимость)"""
-    if account not in configs:
-        raise ValueError(f"Конфигурация для аккаунта {account} не найдена")
-    return configs[account]
 
 
 class AppSettings(BaseSettings):

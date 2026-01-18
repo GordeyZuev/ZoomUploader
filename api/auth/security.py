@@ -70,8 +70,7 @@ class JWTHelper:
         to_encode = subject.copy()
         to_encode.update({"exp": expire, "type": "access"})
 
-        encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
-        return encoded_jwt
+        return jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
     @staticmethod
     def create_refresh_token(subject: dict[str, Any], expires_delta: timedelta | None = None) -> str:
@@ -93,8 +92,7 @@ class JWTHelper:
         to_encode = subject.copy()
         to_encode.update({"exp": expire, "type": "refresh"})
 
-        encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
-        return encoded_jwt
+        return jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
     @staticmethod
     def decode_token(token: str) -> dict[str, Any] | None:
@@ -108,8 +106,7 @@ class JWTHelper:
             Декодированные данные или None при ошибке
         """
         try:
-            payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
-            return payload
+            return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         except Exception:
             return None
 

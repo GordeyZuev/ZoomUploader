@@ -11,8 +11,8 @@ __all__ = [
     # Model configs
     "BASE_MODEL_CONFIG",
     "ORM_MODEL_CONFIG",
+    "clean_and_deduplicate_strings",
     # Validators
     "validate_regex_pattern",
     "validate_regex_patterns",
-    "clean_and_deduplicate_strings",
 ]

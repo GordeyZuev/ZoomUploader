@@ -128,7 +128,7 @@ async def initialize_output_targets_from_config(
     query = select(OutputPresetModel).where(
         OutputPresetModel.id.in_(preset_ids),
         OutputPresetModel.user_id == recording.user_id,
-        OutputPresetModel.is_active
+        OutputPresetModel.is_active,
     )
     result = await session.execute(query)
     presets = result.scalars().all()
@@ -257,7 +257,7 @@ async def ensure_output_targets(
     query = select(OutputPresetModel).where(
         OutputPresetModel.id.in_(preset_ids),
         OutputPresetModel.user_id == recording.user_id,
-        OutputPresetModel.is_active
+        OutputPresetModel.is_active,
     )
     result = await session.execute(query)
     presets = result.scalars().all()
@@ -285,4 +285,3 @@ async def ensure_output_targets(
         await session.flush()
 
     return list(recording.outputs) + new_targets
-

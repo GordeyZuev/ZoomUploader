@@ -18,22 +18,18 @@ class CredentialProvider(ABC):
     @abstractmethod
     async def load_credentials(self) -> dict[str, Any] | None:
         """Load credentials data."""
-        pass
 
     @abstractmethod
     async def save_credentials(self, credentials_data: dict[str, Any]) -> bool:
         """Save credentials data."""
-        pass
 
     @abstractmethod
     async def get_google_credentials(self, scopes: list[str]) -> Credentials | None:
         """Get Google OAuth2 Credentials object."""
-        pass
 
     @abstractmethod
     async def update_google_credentials(self, credentials: Credentials) -> bool:
         """Update Google OAuth2 credentials after refresh."""
-        pass
 
 
 class FileCredentialProvider(CredentialProvider):
@@ -49,7 +45,7 @@ class FileCredentialProvider(CredentialProvider):
             return None
 
         try:
-            with open(path, encoding="utf-8") as f:
+            with path.open(encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
             logger.error(f"Failed to load credentials from {self.credentials_file}: {e}")
@@ -58,7 +54,7 @@ class FileCredentialProvider(CredentialProvider):
     async def save_credentials(self, credentials_data: dict[str, Any]) -> bool:
         """Save credentials to file."""
         try:
-            with open(self.credentials_file, "w", encoding="utf-8") as f:
+            with Path(self.credentials_file).open("w", encoding="utf-8") as f:
                 json.dump(credentials_data, f, ensure_ascii=False, indent=2)
             return True
         except Exception as e:
@@ -74,8 +70,7 @@ class FileCredentialProvider(CredentialProvider):
         try:
             if isinstance(data, dict) and "token" in data:
                 return Credentials.from_authorized_user_info(data["token"], scopes)
-            else:
-                return Credentials.from_authorized_user_info(data, scopes)
+            return Credentials.from_authorized_user_info(data, scopes)
         except Exception as e:
             logger.warning(f"Failed to parse credentials from file: {e}")
             return None
@@ -118,8 +113,7 @@ class DatabaseCredentialProvider(CredentialProvider):
                 logger.warning(f"Credential {self.credential_id} not found or empty")
                 return None
 
-            decrypted = self.encryption.decrypt_credentials(credential.encrypted_data)
-            return decrypted
+            return self.encryption.decrypt_credentials(credential.encrypted_data)
         except Exception as e:
             logger.error(f"Failed to load credential {self.credential_id} from DB: {e}")
             return None
@@ -237,27 +231,26 @@ class DatabaseCredentialProvider(CredentialProvider):
             }
 
             url = "https://oauth.vk.com/access_token"
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, data=data) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.error(f"VK token refresh failed: status={response.status} error={error_text}")
-                        return None
+            async with aiohttp.ClientSession() as session, session.post(url, data=data) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"VK token refresh failed: status={response.status} error={error_text}")
+                    return None
 
-                    token_data = await response.json()
+                token_data = await response.json()
 
-                    if "error" in token_data:
-                        logger.error(f"VK token refresh error: {token_data['error']}")
-                        return None
+                if "error" in token_data:
+                    logger.error(f"VK token refresh error: {token_data['error']}")
+                    return None
 
-                    await self.update_vk_credentials(
-                        access_token=token_data["access_token"],
-                        expires_in=token_data.get("expires_in", 86400),
-                        refresh_token=token_data.get("refresh_token"),
-                    )
+                await self.update_vk_credentials(
+                    access_token=token_data["access_token"],
+                    expires_in=token_data.get("expires_in", 86400),
+                    refresh_token=token_data.get("refresh_token"),
+                )
 
-                    logger.info("VK token refreshed and updated in database")
-                    return token_data
+                logger.info("VK token refreshed and updated in database")
+                return token_data
 
         except Exception as e:
             logger.error(f"Failed to refresh VK token: {e}")
@@ -289,8 +282,6 @@ def create_credential_provider(
         if not encryption_service or not credential_repository:
             raise ValueError("encryption_service and credential_repository required for DB provider")
         return DatabaseCredentialProvider(credential_id, encryption_service, credential_repository)
-    elif credentials_file:
+    if credentials_file:
         return FileCredentialProvider(credentials_file)
-    else:
-        raise ValueError("Either credential_id or credentials_file must be provided")
-
+    raise ValueError("Either credential_id or credentials_file must be provided")

@@ -30,4 +30,3 @@ async def get_current_admin(
             detail="Admin access required",
         )
     return current_user
-

@@ -8,9 +8,9 @@ from .profile import (
 )
 
 __all__ = [
-    "UserProfileUpdate",
+    "AccountDeleteResponse",
     "ChangePasswordRequest",
     "DeleteAccountRequest",
     "PasswordChangeResponse",
-    "AccountDeleteResponse",
+    "UserProfileUpdate",
 ]

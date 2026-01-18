@@ -7,14 +7,15 @@ from api.celery_app import celery_app
 from api.helpers.schedule_converter import get_next_run_time, schedule_to_cron
 from api.repositories.automation_repos import AutomationJobRepository
 from api.repositories.recording_repo import RecordingRepository
+from api.tasks.base import AutomationTask
 from database.manager import DatabaseManager
 from models.recording import ProcessingStatus
 
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(bind=True, name="automation.run_job")
-def run_automation_job_task(self, job_id: int, user_id: int):
+@celery_app.task(bind=True, base=AutomationTask, name="automation.run_job")
+def run_automation_job_task(self, job_id: int, user_id: int):  # noqa: ARG001
     """
     Execute automation job:
     1. Sync source recordings
@@ -41,13 +42,12 @@ def run_automation_job_task(self, job_id: int, user_id: int):
                 sync_config = job.sync_config
                 processing_config = job.processing_config
 
-                # Step 1: Sync source via PipelineManager
+                # Step 1: Sync source via RecordingService
                 from datetime import datetime, timedelta
 
-                # Get credentials for source
                 from api.repositories.auth_repos import UserCredentialRepository
                 from api.repositories.template_repos import InputSourceRepository
-                from pipeline_manager import PipelineManager
+                from api.services.recording.service import RecordingService
 
                 source_repo = InputSourceRepository(session)
                 source = await source_repo.find_by_id(job.source_id, user_id)
@@ -65,6 +65,7 @@ def run_automation_job_task(self, job_id: int, user_id: int):
 
                 # Decrypt credentials
                 from utils.encryption import decrypt_credentials
+
                 creds_data = decrypt_credentials(credential.encrypted_data)
 
                 # Calculate date range
@@ -72,17 +73,17 @@ def run_automation_job_task(self, job_id: int, user_id: int):
                 to_date = datetime.now().strftime("%Y-%m-%d")
                 from_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
 
-                # Sync via PipelineManager
-                pipeline = PipelineManager(user_id=user_id)
-                synced_count = await pipeline.sync_zoom_recordings(creds_data, from_date, to_date)
+                # Sync via RecordingService
+                recording_repo = RecordingRepository(session)
+                recording_service = RecordingService(repo=recording_repo)
+                synced_count = await recording_service._sync_zoom_recordings(creds_data, from_date, to_date)
 
                 logger.info(f"Job {job_id}: Synced {synced_count} new recordings")
 
                 # Step 2: Get INITIALIZED recordings (newly synced)
                 recording_repo = RecordingRepository(session)
                 new_recordings = await recording_repo.get_by_filters(
-                    user_id=user_id,
-                    status=ProcessingStatus.INITIALIZED.value
+                    user_id=user_id, status=ProcessingStatus.INITIALIZED.value
                 )
 
                 # Step 3: Process recordings if auto_process is enabled
@@ -94,9 +95,7 @@ def run_automation_job_task(self, job_id: int, user_id: int):
 
                     # Process all INITIALIZED recordings (template-driven)
                     auto_upload = processing_config.get("auto_upload", True)
-                    manual_override = {
-                        "upload": {"auto_upload": auto_upload}
-                    } if auto_upload else None
+                    manual_override = {"upload": {"auto_upload": auto_upload}} if auto_upload else None
 
                     for recording in new_recordings:
                         task = process_recording_task.delay(
@@ -105,13 +104,12 @@ def run_automation_job_task(self, job_id: int, user_id: int):
                             manual_override=manual_override,
                         )
 
-                        processed_recordings.append({
-                            "recording_id": recording.id,
-                            "task_id": str(task.id)
-                        })
+                        processed_recordings.append({"recording_id": recording.id, "task_id": str(task.id)})
                         processed_count += 1
 
-                logger.info(f"Job {job_id}: Processed {processed_count} recordings, started {len(processed_recordings)} pipelines")
+                logger.info(
+                    f"Job {job_id}: Processed {processed_count} recordings, started {len(processed_recordings)} pipelines"
+                )
 
                 # Step 4: Update job stats
                 cron_expr, _ = schedule_to_cron(job.schedule)
@@ -125,22 +123,18 @@ def run_automation_job_task(self, job_id: int, user_id: int):
                     "synced_count": synced_count,
                     "processed_count": len(processed_recordings),
                     "processed_recordings": processed_recordings,
-                    "next_run_at": next_run.isoformat()
+                    "next_run_at": next_run.isoformat(),
                 }
 
             except Exception as e:
                 logger.error(f"Job {job_id} failed: {e}", exc_info=True)
-                return {
-                    "status": "error",
-                    "job_id": job_id,
-                    "error": str(e)
-                }
+                return {"status": "error", "job_id": job_id, "error": str(e)}
 
     return asyncio.run(_run())
 
 
-@celery_app.task(name="automation.dry_run")
-def dry_run_automation_job_task(job_id: int, user_id: int):
+@celery_app.task(bind=True, base=AutomationTask, name="automation.dry_run")
+def dry_run_automation_job_task(self, job_id: int, user_id: int):  # noqa: ARG001
     """
     Preview what the job would do without executing.
     Returns estimated counts without actually processing.
@@ -164,8 +158,7 @@ def dry_run_automation_job_task(job_id: int, user_id: int):
                 # Estimate current INITIALIZED recordings count
                 recording_repo = RecordingRepository(session)
                 current_recordings = await recording_repo.get_by_filters(
-                    user_id=user_id,
-                    status=ProcessingStatus.INITIALIZED.value
+                    user_id=user_id, status=ProcessingStatus.INITIALIZED.value
                 )
                 current_count = len(current_recordings)
 
@@ -179,7 +172,7 @@ def dry_run_automation_job_task(job_id: int, user_id: int):
                     "estimated_new_recordings": estimated_new,
                     "current_initialized_count": current_count,
                     "total_to_process": total_to_process,
-                    "estimated_duration_minutes": estimated_duration
+                    "estimated_duration_minutes": estimated_duration,
                 }
 
             except Exception as e:
@@ -187,4 +180,3 @@ def dry_run_automation_job_task(job_id: int, user_id: int):
                 return {"status": "error", "error": str(e)}
 
     return asyncio.run(_run())
-

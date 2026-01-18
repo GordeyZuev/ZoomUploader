@@ -1,6 +1,6 @@
-import os
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 from logger import get_logger
 
@@ -72,7 +72,7 @@ class SegmentProcessor:
             segment_description = f"Segment {segment_index} of {title}"
 
             output_filename = f"{title}_part_{segment_index:02d}.{self.config.output_format}"
-            output_path = os.path.join(self.config.output_dir, output_filename)
+            output_path = Path(self.config.output_dir) / output_filename
 
             segment = VideoSegment(
                 start_time=current_start,
@@ -101,7 +101,7 @@ class SegmentProcessor:
                 segment_title = f"{title} - Part {i}"
 
             output_filename = f"{title}_part_{i:02d}.{self.config.output_format}"
-            output_path = os.path.join(self.config.output_dir, output_filename)
+            output_path = Path(self.config.output_dir) / output_filename
 
             segment = VideoSegment(
                 start_time=start_time,
@@ -119,7 +119,7 @@ class SegmentProcessor:
     def create_single_segment(self, start_time: float, end_time: float, title: str) -> VideoSegment:
         """Create a single segment."""
         output_filename = f"{title}.{self.config.output_format}"
-        output_path = os.path.join(self.config.output_dir, output_filename)
+        output_path = Path(self.config.output_dir) / output_filename
 
         return VideoSegment(
             start_time=start_time,

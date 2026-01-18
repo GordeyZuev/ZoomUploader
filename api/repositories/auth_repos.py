@@ -243,4 +243,3 @@ class UserCredentialRepository:
         if db_credential:
             db_credential.last_used_at = datetime.utcnow()
             await self.session.commit()
-

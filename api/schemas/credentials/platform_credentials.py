@@ -9,9 +9,7 @@ class YouTubeClientSecretsWeb(BaseModel):
     client_id: str = Field(..., description="Google OAuth client ID")
     client_secret: str = Field(..., description="Google OAuth client secret")
     project_id: str | None = Field(None, description="Google Cloud project ID")
-    auth_uri: str = Field(
-        default="https://accounts.google.com/o/oauth2/auth", description="Authorization URI"
-    )
+    auth_uri: str = Field(default="https://accounts.google.com/o/oauth2/auth", description="Authorization URI")
     token_uri: str = Field(default="https://oauth2.googleapis.com/token", description="Token URI")
     auth_provider_x509_cert_url: str | None = Field(None, description="Auth provider cert URL")
     redirect_uris: list[str] | None = Field(None, description="Redirect URIs")
@@ -23,9 +21,7 @@ class YouTubeClientSecretsInstalled(BaseModel):
     client_id: str = Field(..., description="Google OAuth client ID")
     client_secret: str = Field(..., description="Google OAuth client secret")
     project_id: str | None = Field(None, description="Google Cloud project ID")
-    auth_uri: str = Field(
-        default="https://accounts.google.com/o/oauth2/auth", description="Authorization URI"
-    )
+    auth_uri: str = Field(default="https://accounts.google.com/o/oauth2/auth", description="Authorization URI")
     token_uri: str = Field(default="https://oauth2.googleapis.com/token", description="Token URI")
     auth_provider_x509_cert_url: str | None = Field(None, description="Auth provider cert URL")
     redirect_uris: list[str] | None = Field(None, description="Redirect URIs")
@@ -52,9 +48,7 @@ class YouTubeCredentialsManual(BaseModel):
     2. Simple format with just token data
     """
 
-    client_secrets: dict | None = Field(
-        None, description="Client secrets (can contain 'web' or 'installed' key)"
-    )
+    client_secrets: dict | None = Field(None, description="Client secrets (can contain 'web' or 'installed' key)")
     token: YouTubeToken | None = Field(None, description="Token data")
 
     @field_validator("client_secrets")
@@ -149,4 +143,3 @@ class ZoomCredentialsManual(BaseModel):
                 "Either Server-to-Server credentials (account_id, client_id, client_secret) "
                 "or OAuth credentials (access_token) must be provided"
             )
-

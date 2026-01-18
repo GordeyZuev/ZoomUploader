@@ -1,7 +1,7 @@
 """VK video uploader implementation."""
 
 import asyncio
-import os
+from pathlib import Path
 from typing import Any
 
 import aiohttp
@@ -10,6 +10,7 @@ from logger import get_logger
 
 from ...config_factory import VKConfig
 from ...core.base import BaseUploader, UploadResult
+from ..youtube.token_handler import TokenRefreshError, requires_valid_vk_token
 
 logger = get_logger()
 
@@ -54,6 +55,7 @@ class VKUploader(BaseUploader):
             if expiry_str:
                 try:
                     from datetime import datetime
+
                     expiry = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
                     now = datetime.utcnow()
                     if expiry <= now or (expiry - now).total_seconds() < 300:
@@ -88,8 +90,7 @@ class VKUploader(BaseUploader):
         """
         if not self.config.access_token:
             logger.error(
-                "VK access_token not found. Use OAuth 2.0 flow via API "
-                "(GET /oauth/vk/authorize) to obtain credentials."
+                "VK access_token not found. Use OAuth 2.0 flow via API (GET /oauth/vk/authorize) to obtain credentials."
             )
             return False
 
@@ -104,16 +105,23 @@ class VKUploader(BaseUploader):
                     if response.status == 200:
                         data = await response.json()
                         if "error" in data:
-                            logger.error(f"VK API Error: {data['error']}")
+                            error_info = data["error"]
+                            error_code = error_info.get("error_code")
+                            error_msg = error_info.get("error_msg", "Unknown error")
+
+                            # Ошибки токена - это ожидаемая ситуация, не ERROR
+                            if error_code in (5, 28):  # Invalid token or expired
+                                logger.warning(f"VK token invalid or expired: {error_msg}")
+                            else:
+                                logger.error(f"VK API Error [{error_code}]: {error_msg}")
                             return False
                         self._authenticated = True
                         logger.info("VK authentication successful")
                         return True
-                    else:
-                        logger.error(f"HTTP Error: {response.status}")
-                        return False
+                    logger.warning(f"VK API HTTP error: {response.status}")
+                    return False
         except Exception as e:
-            logger.error(f"VK token validation error: {e}")
+            logger.error(f"VK token validation exception: {e}")
             return False
 
     async def upload_video(
@@ -167,7 +175,7 @@ class VKUploader(BaseUploader):
                 result = self._create_result(video_id=video_id, video_url=video_url, title=title, platform="vk")
                 result.metadata["owner_id"] = owner_id
 
-                if thumbnail_path and os.path.exists(thumbnail_path):
+                if thumbnail_path and Path(thumbnail_path).exists():
                     try:
                         from .thumbnail_manager import VKThumbnailManager
 
@@ -184,9 +192,8 @@ class VKUploader(BaseUploader):
                         result.metadata["thumbnail_error"] = str(e)
 
                 return result
-            else:
-                logger.error("Failed to get video ID after upload")
-                return None
+            logger.error("Failed to get video ID after upload")
+            return None
 
         except Exception as e:
             logger.error(f"VK video upload error: {e}")
@@ -233,9 +240,8 @@ class VKUploader(BaseUploader):
         if response:
             logger.info(f"Video deleted: {video_id}")
             return True
-        else:
-            logger.error(f"Video deletion error: {video_id}")
-            return False
+        logger.error(f"Video deletion error: {video_id}")
+        return False
 
     async def _get_upload_url(self, name: str, description: str = "", album_id: str | None = None, **kwargs) -> str:
         """Get video upload URL."""
@@ -289,30 +295,30 @@ class VKUploader(BaseUploader):
                                 try:
                                     if task_id in progress.task_ids:
                                         progress.update(task_id, completed=100, total=100)
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    logger.warning(f"Ignored exception: {e}")
 
                             return result_data
-                        else:
-                            logger.error(f"HTTP Upload Error: {response.status}")
-                            return None
+                        logger.error(f"HTTP Upload Error: {response.status}")
+                        return None
                 finally:
                     if video_file:
                         try:
                             video_file.close()
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.warning(f"Ignored exception: {e}")
         except Exception as e:
             logger.error(f"File upload error: {e}")
             if video_file:
                 try:
                     video_file.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Ignored exception: {e}")
             return None
 
+    @requires_valid_vk_token(max_retries=1)
     async def _make_request(self, method: str, params: dict[str, Any]) -> dict[str, Any] | None:
-        """Execute VK API request using POST to avoid issues with long URLs."""
+        """Execute VK API request with automatic token refresh."""
         params["access_token"] = self.config.access_token
         params["v"] = "5.131"
 
@@ -321,14 +327,27 @@ class VKUploader(BaseUploader):
                 async with session.post(f"{self.base_url}/{method}", data=params) as response:
                     if response.status == 200:
                         data = await response.json()
+
+                        # Return full response to allow decorator to check for token errors
                         if "error" in data:
-                            logger.error(f"VK API Error: {data['error']}")
+                            error_info = data["error"]
+                            error_code = error_info.get("error_code")
+
+                            # Token errors - let decorator handle them
+                            if error_code in (5, 28):
+                                return data
+
+                            # Other errors
+                            logger.error(f"VK API Error: {error_info}")
                             return None
+
                         return data.get("response")
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"HTTP Error: {response.status}, Response: {error_text[:500]}")
-                        return None
+
+                    error_text = await response.text()
+                    logger.error(f"HTTP Error: {response.status}, Response: {error_text[:500]}")
+                    return None
+        except TokenRefreshError:
+            raise
         except Exception as e:
             logger.error(f"VK API request error: {e}")
             return None

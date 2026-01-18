@@ -37,7 +37,7 @@ class AudioDetector:
                 *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
 
-            stdout, stderr = await process.communicate()
+            _stdout, stderr = await process.communicate()
 
             if process.returncode != 0:
                 error_msg = stderr.decode()
@@ -122,7 +122,7 @@ class AudioDetector:
                 *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
 
-            stdout, stderr = await process.communicate()
+            stdout, _stderr = await process.communicate()
 
             if process.returncode == 0:
                 data = json.loads(stdout.decode())

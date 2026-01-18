@@ -3,11 +3,11 @@
 import asyncio
 from pathlib import Path
 
-from celery import Task
 from celery.exceptions import SoftTimeLimitExceeded
 
 from api.celery_app import celery_app
 from api.repositories.recording_repos import RecordingAsyncRepository
+from api.tasks.base import ProcessingTask
 from database.config import DatabaseConfig
 from database.manager import DatabaseManager
 from logger import get_logger
@@ -16,26 +16,6 @@ from video_download_module.downloader import ZoomDownloader
 from video_processing_module.video_processor import VideoProcessor
 
 logger = get_logger()
-
-
-class ProcessingTask(Task):
-    """Base class for processing tasks with multi-tenancy support."""
-
-    def on_failure(self, exc, task_id, args, kwargs, einfo):
-        """Handling task failure."""
-        user_id = kwargs.get("user_id", "unknown")
-        recording_id = kwargs.get("recording_id", "unknown")
-        logger.error(f"Task {task_id} for user {user_id}, recording {recording_id} failed: {exc!r}")
-
-    def on_retry(self, exc, task_id, args, kwargs, einfo):
-        """Handling retry."""
-        user_id = kwargs.get("user_id", "unknown")
-        logger.warning(f"Task {task_id} for user {user_id} retrying: {exc}")
-
-    def on_success(self, retval, task_id, args, kwargs):
-        """Handling successful completion."""
-        user_id = kwargs.get("user_id", "unknown")
-        logger.info(f"Task {task_id} for user {user_id} completed successfully")
 
 
 @celery_app.task(
@@ -67,21 +47,18 @@ def download_recording_task(
     try:
         logger.info(f"[Task {self.request.id}] Downloading recording {recording_id} for user {user_id}")
 
-        self.update_state(
-            state='PROCESSING',
-            meta={'progress': 10, 'status': 'Initializing download...', 'step': 'download'}
-        )
+        # Update progress with user_id for multi-tenancy validation
+        self.update_progress(user_id=user_id, progress=10, status="Initializing download...", step="download")
 
-        result = asyncio.run(
-            _async_download_recording(self, recording_id, user_id, force, manual_override)
-        )
+        result = asyncio.run(_async_download_recording(self, recording_id, user_id, force, manual_override))
 
-        return {
-            "task_id": self.request.id,
-            "status": "completed",
-            "recording_id": recording_id,
-            "result": result,
-        }
+        # Return result with user_id for access validation
+        return self.build_result(
+            user_id=user_id,
+            status="completed",
+            recording_id=recording_id,
+            result=result,
+        )
 
     except SoftTimeLimitExceeded:
         logger.error(f"[Task {self.request.id}] Soft time limit exceeded")
@@ -107,9 +84,7 @@ async def _async_download_recording(
 
     async with db_manager.async_session() as session:
         # Resolve config
-        full_config, recording = await resolve_full_config(
-            session, recording_id, user_id, manual_override
-        )
+        full_config, recording = await resolve_full_config(session, recording_id, user_id, manual_override)
 
         download_config = full_config.get("download", {})
 
@@ -136,14 +111,16 @@ async def _async_download_recording(
         if not force and recording.status == ProcessingStatus.DOWNLOADED and recording.local_video_path:
             if Path(recording.local_video_path).exists():
                 return {
-                    "success": True,
-                    "message": "Already downloaded",
-                    "local_video_path": recording.local_video_path,
-                }
+                "success": True,
+                "message": "Already downloaded",
+                "local_video_path": recording.local_video_path,
+            }
 
-        task_self.update_state(
-            state='PROCESSING',
-            meta={'progress': 30, 'status': 'Downloading from Zoom...', 'step': 'download'}
+        task_self.update_progress(
+            user_id=user_id,
+            progress=30,
+            status="Downloading from Zoom...",
+            step="download",
         )
 
         # Create downloader
@@ -153,43 +130,45 @@ async def _async_download_recording(
         # Convert to MeetingRecording
         meeting_id = recording.source.source_key if recording.source else str(recording.id)
         file_size = recording.source.meta.get("file_size", 0) if recording.source and recording.source.meta else 0
-        download_access_token = recording.source.meta.get("download_access_token") if recording.source and recording.source.meta else None
-        passcode = recording.source.meta.get("recording_play_passcode") if recording.source and recording.source.meta else None
+        download_access_token = (
+            recording.source.meta.get("download_access_token") if recording.source and recording.source.meta else None
+        )
+        passcode = (
+            recording.source.meta.get("recording_play_passcode") if recording.source and recording.source.meta else None
+        )
         password = recording.source.meta.get("password") if recording.source and recording.source.meta else None
         account = recording.source.meta.get("account") if recording.source and recording.source.meta else None
 
-        meeting_recording = MeetingRecording({
-            "id": meeting_id,
-            "uuid": meeting_id,
-            "topic": recording.display_name,
-            "start_time": recording.start_time.isoformat(),
-            "duration": recording.duration or 0,
-            "account": account or "default",
-            "recording_files": [{
-                "file_type": "MP4",
-                "file_size": file_size,
-                "download_url": download_url,
-                "recording_type": "shared_screen_with_speaker_view",
-                "download_access_token": download_access_token,
-            }],
-            "password": password,
-            "recording_play_passcode": passcode,
-        })
+        meeting_recording = MeetingRecording(
+            {
+                "id": meeting_id,
+                "uuid": meeting_id,
+                "topic": recording.display_name,
+                "start_time": recording.start_time.isoformat(),
+                "duration": recording.duration or 0,
+                "account": account or "default",
+                "recording_files": [
+                    {
+                        "file_type": "MP4",
+                        "file_size": file_size,
+                        "download_url": download_url,
+                        "recording_type": "shared_screen_with_speaker_view",
+                        "download_access_token": download_access_token,
+                    }
+                ],
+                "password": password,
+                "recording_play_passcode": passcode,
+            }
+        )
         meeting_recording.db_id = recording.id
 
-        task_self.update_state(
-            state='PROCESSING',
-            meta={'progress': 50, 'status': 'Saving video file...', 'step': 'download'}
-        )
+        task_self.update_progress(user_id, 50, "Saving video file...", step="download")
 
         # Download
         success = await downloader.download_recording(meeting_recording, force_download=force)
 
         if success:
-            task_self.update_state(
-                state='PROCESSING',
-                meta={'progress': 90, 'status': 'Updating database...', 'step': 'download'}
-            )
+            task_self.update_progress(user_id, 90, "Updating database...", step="download")
 
             recording.local_video_path = meeting_recording.local_video_path
             recording.status = ProcessingStatus.DOWNLOADED
@@ -200,8 +179,7 @@ async def _async_download_recording(
                 "success": True,
                 "local_video_path": recording.local_video_path,
             }
-        else:
-            raise Exception("Download failed")
+        raise Exception("Download failed")
 
 
 @celery_app.task(
@@ -237,21 +215,16 @@ def trim_video_task(
     try:
         logger.info(f"[Task {self.request.id}] Trimming video {recording_id} for user {user_id}")
 
-        self.update_state(
-            state='PROCESSING',
-            meta={'progress': 10, 'status': 'Initializing video trimming...', 'step': 'trim'}
-        )
+        self.update_progress(user_id, 10, "Initializing video trimming...", step="trim")
 
-        result = asyncio.run(
-            _async_process_video(self, recording_id, user_id, manual_override)
-        )
+        result = asyncio.run(_async_process_video(self, recording_id, user_id, manual_override))
 
-        return {
-            "task_id": self.request.id,
-            "status": "completed",
-            "recording_id": recording_id,
-            "result": result,
-        }
+        return self.build_result(
+            user_id=user_id,
+            status="completed",
+            recording_id=recording_id,
+            result=result,
+        )
 
     except SoftTimeLimitExceeded:
         logger.error(f"[Task {self.request.id}] Soft time limit exceeded")
@@ -276,9 +249,7 @@ async def _async_process_video(
 
     async with db_manager.async_session() as session:
         # Resolve config from hierarchy
-        full_config, recording = await resolve_full_config(
-            session, recording_id, user_id, manual_override
-        )
+        full_config, recording = await resolve_full_config(session, recording_id, user_id, manual_override)
 
         processing_config = full_config.get("processing", {})
 
@@ -301,10 +272,7 @@ async def _async_process_video(
         if not Path(recording.local_video_path).exists():
             raise ValueError(f"Video file not found: {recording.local_video_path}")
 
-        task_self.update_state(
-            state='PROCESSING',
-            meta={'progress': 20, 'status': 'Analyzing video...', 'step': 'process'}
-        )
+        task_self.update_progress(user_id, 20, "Analyzing video...", step="process")
 
         # Create processor with ProcessingConfig
         from video_processing_module.config import ProcessingConfig
@@ -319,10 +287,7 @@ async def _async_process_video(
         )
         processor = VideoProcessor(config)
 
-        task_self.update_state(
-            state='PROCESSING',
-            meta={'progress': 40, 'status': 'Processing with FFmpeg...', 'step': 'process'}
-        )
+        task_self.update_progress(user_id, 40, "Processing with FFmpeg...", step="process")
 
         # Process video with audio detection
         success, processed_path = await processor.process_video_with_audio_detection(
@@ -331,16 +296,17 @@ async def _async_process_video(
             start_time=recording.start_time.isoformat(),
         )
 
+        # Ensure processed_path is a string (not Path object)
+        if processed_path:
+            processed_path = str(processed_path)
+
         if success and processed_path:
-            task_self.update_state(
-                state='PROCESSING',
-                meta={'progress': 60, 'status': 'Extracting audio from processed video...', 'step': 'extract_audio'}
-            )
+            task_self.update_progress(user_id, 60, "Extracting audio from processed video...", step="extract_audio")
 
             # Extract audio from processed video
             import subprocess
 
-            from utils.file_utils import sanitize_filename
+            from utils.formatting import sanitize_filename
 
             audio_dir = f"media/user_{user_id}/audio/processed"
             Path(audio_dir).mkdir(parents=True, exist_ok=True)
@@ -362,12 +328,17 @@ async def _async_process_video(
             # FFmpeg command for extracting audio (64k, 16kHz, mono)
             extract_cmd = [
                 "ffmpeg",
-                "-i", processed_path,
+                "-i",
+                processed_path,
                 "-vn",  # without video
-                "-acodec", "libmp3lame",
-                "-ab", "64k",
-                "-ar", "16000",
-                "-ac", "1",  # mono
+                "-acodec",
+                "libmp3lame",
+                "-ab",
+                "64k",
+                "-ar",
+                "16000",
+                "-ac",
+                "1",  # mono
                 "-y",  # overwrite if exists
                 audio_path,
             ]
@@ -378,7 +349,7 @@ async def _async_process_video(
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                 )
-                stdout, stderr = await extract_process.communicate()
+                _stdout, stderr = await extract_process.communicate()
 
                 if extract_process.returncode == 0 and Path(audio_path).exists():
                     recording.processed_audio_path = str(audio_path)
@@ -388,10 +359,7 @@ async def _async_process_video(
             except Exception as e:
                 logger.warning(f"⚠️ Error extracting audio: {e}")
 
-            task_self.update_state(
-                state='PROCESSING',
-                meta={'progress': 90, 'status': 'Updating database...', 'step': 'process'}
-            )
+            task_self.update_progress(user_id, 90, "Updating database...", step="process")
 
             recording.processed_video_path = processed_path
             recording.status = ProcessingStatus.PROCESSED
@@ -404,8 +372,7 @@ async def _async_process_video(
                 "processed_video_path": processed_path,
                 "audio_path": audio_path if Path(audio_path).exists() else None,
             }
-        else:
-            raise Exception("Processing failed")
+        raise Exception("Processing failed")
 
 
 @celery_app.task(
@@ -443,21 +410,16 @@ def transcribe_recording_task(
     try:
         logger.info(f"[Task {self.request.id}] Transcribing recording {recording_id} for user {user_id}")
 
-        self.update_state(
-            state='PROCESSING',
-            meta={'progress': 10, 'status': 'Initializing transcription...', 'step': 'transcribe'}
-        )
+        self.update_progress(user_id, 10, "Initializing transcription...", step="transcribe")
 
-        result = asyncio.run(
-            _async_transcribe_recording(self, recording_id, user_id, manual_override)
-        )
+        result = asyncio.run(_async_transcribe_recording(self, recording_id, user_id, manual_override))
 
-        return {
-            "task_id": self.request.id,
-            "status": "completed",
-            "recording_id": recording_id,
-            "result": result,
-        }
+        return self.build_result(
+            user_id=user_id,
+            status="completed",
+            recording_id=recording_id,
+            result=result,
+        )
 
     except SoftTimeLimitExceeded:
         logger.error(f"[Task {self.request.id}] Soft time limit exceeded")
@@ -494,9 +456,7 @@ async def _async_transcribe_recording(
 
     async with db_manager.async_session() as session:
         # Resolve config from hierarchy
-        full_config, recording = await resolve_full_config(
-            session, recording_id, user_id, manual_override
-        )
+        full_config, recording = await resolve_full_config(session, recording_id, user_id, manual_override)
 
         transcription_config = full_config.get("transcription", {})
 
@@ -524,7 +484,11 @@ async def _async_transcribe_recording(
                 audio_files = []
         else:
             # Fallback: search in directory (for old records without processed_audio_path)
-            audio_dir = Path(recording.transcription_dir).parent.parent / "audio" / "processed" if recording.transcription_dir else None
+            audio_dir = (
+                Path(recording.transcription_dir).parent.parent / "audio" / "processed"
+                if recording.transcription_dir
+                else None
+            )
             audio_files = []
             if audio_dir and audio_dir.exists():
                 for ext in ("*.mp3", "*.wav", "*.m4a"):
@@ -546,26 +510,18 @@ async def _async_transcribe_recording(
         if not Path(audio_path).exists():
             raise ValueError(f"Audio/video file not found: {audio_path}")
 
-        task_self.update_state(
-            state='PROCESSING',
-            meta={'progress': 20, 'status': 'Loading transcription service...', 'step': 'transcribe'}
-        )
+        task_self.update_progress(user_id, 20, "Loading transcription service...", step="transcribe")
 
         # Load ADMIN credentials (only Fireworks)
         fireworks_config = FireworksConfig.from_file("config/fireworks_creds.json")
         fireworks_service = FireworksTranscriptionService(fireworks_config)
 
-        task_self.update_state(
-            state='PROCESSING',
-            meta={'progress': 30, 'status': 'Transcribing audio...', 'step': 'transcribe'}
-        )
+        task_self.update_progress(user_id, 30, "Transcribing audio...", step="transcribe")
 
         # Compose prompt: user_prompt (from config) + display_name
         from transcription_module.service import TranscriptionService
 
-        fireworks_prompt = TranscriptionService._compose_fireworks_prompt(
-            user_prompt, recording.display_name
-        )
+        fireworks_prompt = TranscriptionService._compose_fireworks_prompt(user_prompt, recording.display_name)
 
         # Transcription through Fireworks API (ONLY transcription, WITHOUT topic extraction)
         # Use language and temperature from resolved config
@@ -575,10 +531,7 @@ async def _async_transcribe_recording(
             prompt=fireworks_prompt,
         )
 
-        task_self.update_state(
-            state='PROCESSING',
-            meta={'progress': 70, 'status': 'Saving transcription...', 'step': 'transcribe'}
-        )
+        task_self.update_progress(user_id, 70, "Saving transcription...", step="transcribe")
 
         # Save only master.json (WITHOUT topics.json)
         transcription_manager = get_transcription_manager()
@@ -631,10 +584,7 @@ async def _async_transcribe_recording(
         # Generate cache files (segments.txt, words.txt)
         transcription_manager.generate_cache_files(recording_id, user_id=user_id)
 
-        task_self.update_state(
-            state='PROCESSING',
-            meta={'progress': 90, 'status': 'Updating database...', 'step': 'transcribe'}
-        )
+        task_self.update_progress(user_id, 90, "Updating database...", step="transcribe")
 
         # Update recording in DB (without topics)
         recording.transcription_dir = str(transcription_dir)
@@ -648,6 +598,7 @@ async def _async_transcribe_recording(
 
         # Update aggregated status based on processing_stages (aggregate status)
         from api.helpers.status_manager import update_aggregate_status
+
         update_aggregate_status(recording)
 
         await recording_repo.update(recording)
@@ -719,6 +670,7 @@ def process_recording_task(
                 presets = []
                 if preset_ids_list:
                     from api.repositories.template_repos import OutputPresetRepository
+
                     preset_repo = OutputPresetRepository(session)
                     for preset_id in preset_ids_list:
                         preset = await preset_repo.find_by_id(preset_id, user_id)
@@ -728,6 +680,7 @@ def process_recording_task(
                 return full_config, output_config, recording, presets
 
         import asyncio
+
         full_config, output_config, recording, presets = asyncio.run(_resolve_config_and_presets())
 
         # Skip blank records
@@ -741,6 +694,7 @@ def process_recording_task(
             async def _mark_skipped():
                 async with db_manager.async_session() as session:
                     from api.repositories.recording_repos import RecordingAsyncRepository
+
                     recording_repo = RecordingAsyncRepository(session)
                     rec = await recording_repo.get_by_id(recording_id, user_id)
                     if rec:
@@ -750,12 +704,12 @@ def process_recording_task(
 
             asyncio.run(_mark_skipped())
 
-            return {
-                "task_id": self.request.id,
-                "status": "skipped",
-                "reason": "blank_record",
-                "recording_id": recording_id,
-            }
+            return self.build_result(
+                user_id=user_id,
+                status="skipped",
+                reason="blank_record",
+                recording_id=recording_id,
+            )
 
         logger.info(
             f"[Task {self.request.id}] Resolved config for recording {recording_id}: "
@@ -800,13 +754,11 @@ def process_recording_task(
         # STEP 1: Download
         if download:
             try:
-                self.update_state(
-                    state='PROCESSING',
-                    meta={
-                        'progress': int((current_step / total_steps) * 100),
-                        'status': 'Downloading from Zoom...',
-                        'step': 'download'
-                    }
+                self.update_progress(
+                    user_id,
+                    int((current_step / total_steps) * 100),
+                    "Downloading from Zoom...",
+                    step="download",
                 )
 
                 # Call async function directly (bypass Celery task wrapper to avoid .run() issues)
@@ -818,43 +770,37 @@ def process_recording_task(
                 results["download"] = download_result
                 current_step += 1
             except Exception as e:
-                results["errors"].append(f"Download failed: {str(e)}")
+                results["errors"].append(f"Download failed: {e!s}")
                 logger.error(f"Download step failed: {e}")
 
         # STEP 2: Process
         if process:
             try:
-                self.update_state(
-                    state='PROCESSING',
-                    meta={
-                        'progress': int((current_step / total_steps) * 100),
-                        'status': 'Processing video...',
-                        'step': 'process'
-                    }
+                self.update_progress(
+                    user_id,
+                    int((current_step / total_steps) * 100),
+                    "Processing video...",
+                    step="process",
                 )
 
                 # Call async function directly (bypass Celery task wrapper to avoid .run() issues)
-                process_result = asyncio.run(
-                    _async_process_video(self, recording_id, user_id, manual_override)
-                )
+                process_result = asyncio.run(_async_process_video(self, recording_id, user_id, manual_override))
 
                 results["steps_completed"].append("process")
                 results["process"] = process_result
                 current_step += 1
             except Exception as e:
-                results["errors"].append(f"Processing failed: {str(e)}")
+                results["errors"].append(f"Processing failed: {e!s}")
                 logger.error(f"Processing step failed: {e}")
 
         # STEP 3: Transcribe
         if transcribe:
             try:
-                self.update_state(
-                    state='PROCESSING',
-                    meta={
-                        'progress': int((current_step / total_steps) * 100),
-                        'status': 'Transcribing...',
-                        'step': 'transcribe'
-                    }
+                self.update_progress(
+                    user_id,
+                    int((current_step / total_steps) * 100),
+                    "Transcribing...",
+                    step="transcribe",
                 )
 
                 # Call async function directly (bypass Celery task wrapper to avoid .run() issues)
@@ -866,58 +812,50 @@ def process_recording_task(
                 results["transcribe"] = transcribe_result
                 current_step += 1
             except Exception as e:
-                results["errors"].append(f"Transcription failed: {str(e)}")
+                results["errors"].append(f"Transcription failed: {e!s}")
                 logger.error(f"Transcription step failed: {e}")
 
         # STEP 4: Extract Topics
         if extract_topics:
             try:
-                self.update_state(
-                    state='PROCESSING',
-                    meta={
-                        'progress': int((current_step / total_steps) * 100),
-                        'status': 'Extracting topics...',
-                        'step': 'extract_topics'
-                    }
+                self.update_progress(
+                    user_id,
+                    int((current_step / total_steps) * 100),
+                    "Extracting topics...",
+                    step="extract_topics",
                 )
 
                 # Call async function directly
-                topics_result = asyncio.run(
-                    _async_extract_topics(self, recording_id, user_id, granularity, None)
-                )
+                topics_result = asyncio.run(_async_extract_topics(self, recording_id, user_id, granularity, None))
 
                 results["steps_completed"].append("extract_topics")
                 results["extract_topics"] = topics_result
                 current_step += 1
             except Exception as e:
-                results["errors"].append(f"Topic extraction failed: {str(e)}")
+                results["errors"].append(f"Topic extraction failed: {e!s}")
                 logger.error(f"Topic extraction step failed: {e}")
 
         # STEP 5: Generate Subtitles
         if generate_subs:
             try:
-                self.update_state(
-                    state='PROCESSING',
-                    meta={
-                        'progress': int((current_step / total_steps) * 100),
-                        'status': 'Generating subtitles...',
-                        'step': 'generate_subtitles'
-                    }
+                self.update_progress(
+                    user_id,
+                    int((current_step / total_steps) * 100),
+                    "Generating subtitles...",
+                    step="generate_subtitles",
                 )
 
                 # Get subtitle formats from config
                 subtitle_formats = transcription.get("subtitle_formats", ["srt", "vtt"])
 
                 # Call async function directly
-                subtitles_result = asyncio.run(
-                    _async_generate_subtitles(self, recording_id, user_id, subtitle_formats)
-                )
+                subtitles_result = asyncio.run(_async_generate_subtitles(self, recording_id, user_id, subtitle_formats))
 
                 results["steps_completed"].append("generate_subtitles")
                 results["generate_subtitles"] = subtitles_result
                 current_step += 1
             except Exception as e:
-                results["errors"].append(f"Subtitle generation failed: {str(e)}")
+                results["errors"].append(f"Subtitle generation failed: {e!s}")
                 logger.error(f"Subtitle generation step failed: {e}")
 
         # STEP 6: Upload
@@ -938,13 +876,11 @@ def process_recording_task(
             upload_task_ids = []
             for platform in platforms:
                 try:
-                    self.update_state(
-                        state='PROCESSING',
-                        meta={
-                            'progress': int((current_step / total_steps) * 100),
-                            'status': f'Uploading to {platform}...',
-                            'step': 'upload'
-                        }
+                    self.update_progress(
+                        user_id,
+                        int((current_step / total_steps) * 100),
+                        f"Uploading to {platform}...",
+                        step="upload",
                     )
 
                     preset_id = preset_map.get(platform)
@@ -954,14 +890,16 @@ def process_recording_task(
                         recording_id, user_id, platform, preset_id, None, metadata_override
                     )
 
-                    upload_task_ids.append({
-                        "platform": platform,
-                        "task_id": upload_task.id,
-                        "preset_id": preset_id,
-                    })
+                    upload_task_ids.append(
+                        {
+                            "platform": platform,
+                            "task_id": upload_task.id,
+                            "preset_id": preset_id,
+                        }
+                    )
                     logger.info(f"Upload task for {platform} launched: {upload_task.id}")
                 except Exception as e:
-                    results["errors"].append(f"Failed to launch upload to {platform}: {str(e)}")
+                    results["errors"].append(f"Failed to launch upload to {platform}: {e!s}")
                     logger.error(f"Failed to launch upload to {platform}: {e}")
 
             if upload_task_ids:
@@ -980,12 +918,12 @@ def process_recording_task(
         else:
             results["status"] = "failed"
 
-        return {
-            "task_id": self.request.id,
-            "status": "completed",
-            "recording_id": recording_id,
-            "result": results,
-        }
+        return self.build_result(
+            user_id=user_id,
+            status="completed",
+            recording_id=recording_id,
+            result=results,
+        )
 
     except Exception as exc:
         logger.error(f"[Task {self.request.id}] Full pipeline failed: {exc!r}", exc_info=True)
@@ -1025,21 +963,16 @@ def extract_topics_task(
     try:
         logger.info(f"[Task {self.request.id}] Extracting topics for recording {recording_id}, user {user_id}")
 
-        self.update_state(
-            state='PROCESSING',
-            meta={'progress': 10, 'status': 'Initializing topic extraction...', 'step': 'extract_topics'}
-        )
+        self.update_progress(user_id, 10, "Initializing topic extraction...", step="extract_topics")
 
-        result = asyncio.run(
-            _async_extract_topics(self, recording_id, user_id, granularity, version_id)
-        )
+        result = asyncio.run(_async_extract_topics(self, recording_id, user_id, granularity, version_id))
 
-        return {
-            "task_id": self.request.id,
-            "status": "completed",
-            "recording_id": recording_id,
-            "result": result,
-        }
+        return self.build_result(
+            user_id=user_id,
+            status="completed",
+            recording_id=recording_id,
+            result=result,
+        )
 
     except SoftTimeLimitExceeded:
         logger.error(f"[Task {self.request.id}] Soft time limit exceeded")
@@ -1076,14 +1009,9 @@ async def _async_extract_topics(
         # Check presence of transcription
         transcription_manager = get_transcription_manager()
         if not transcription_manager.has_master(recording_id, user_id=user_id):
-            raise ValueError(
-                f"Transcription not found for recording {recording_id}. Please run transcription first."
-            )
+            raise ValueError(f"Transcription not found for recording {recording_id}. Please run transcription first.")
 
-        task_self.update_state(
-            state='PROCESSING',
-            meta={'progress': 20, 'status': 'Loading transcription...', 'step': 'extract_topics'}
-        )
+        task_self.update_progress(user_id, 20, "Loading transcription...", step="extract_topics")
 
         # Ensure presence of segments.txt
         segments_path = transcription_manager.ensure_segments_txt(recording_id, user_id=user_id)
@@ -1096,10 +1024,7 @@ async def _async_extract_topics(
         # Strategy 1: DeepSeek (primary model)
         try:
             logger.info(f"[Topics] Trying primary model: deepseek for recording {recording_id}")
-            task_self.update_state(
-                state='PROCESSING',
-                meta={'progress': 40, 'status': 'Extracting topics (deepseek)...', 'step': 'extract_topics'}
-            )
+            task_self.update_progress(user_id, 40, "Extracting topics (deepseek)...", step="extract_topics")
 
             deepseek_config = DeepSeekConfig.from_file("config/deepseek_creds.json")
             topic_extractor = TopicExtractor(deepseek_config)
@@ -1119,10 +1044,7 @@ async def _async_extract_topics(
             # Strategy 2: Fireworks DeepSeek (fallback)
             try:
                 logger.info(f"[Topics] Trying fallback model: fireworks_deepseek for recording {recording_id}")
-                task_self.update_state(
-                    state='PROCESSING',
-                    meta={'progress': 50, 'status': 'Extracting topics (fallback)...', 'step': 'extract_topics'}
-                )
+                task_self.update_progress(user_id, 50, "Extracting topics (fallback)...", step="extract_topics")
 
                 deepseek_config = DeepSeekConfig.from_file("config/deepseek_fireworks_creds.json")
                 topic_extractor = TopicExtractor(deepseek_config)
@@ -1142,10 +1064,7 @@ async def _async_extract_topics(
         if not topics_result:
             raise ValueError("Failed to extract topics: no result returned")
 
-        task_self.update_state(
-            state='PROCESSING',
-            meta={'progress': 80, 'status': 'Saving topics...', 'step': 'extract_topics'}
-        )
+        task_self.update_progress(user_id, 80, "Saving topics...", step="extract_topics")
 
         # Generate version_id if not specified
         if not version_id:
@@ -1188,6 +1107,7 @@ async def _async_extract_topics(
 
         # Update aggregated status
         from api.helpers.status_manager import update_aggregate_status
+
         update_aggregate_status(recording)
 
         await recording_repo.update(recording)
@@ -1231,21 +1151,16 @@ def generate_subtitles_task(
 
         formats = formats or ["srt", "vtt"]
 
-        self.update_state(
-            state='PROCESSING',
-            meta={'progress': 20, 'status': 'Initializing subtitle generation...', 'step': 'generate_subtitles'}
-        )
+        self.update_progress(user_id, 20, "Initializing subtitle generation...", step="generate_subtitles")
 
-        result = asyncio.run(
-            _async_generate_subtitles(self, recording_id, user_id, formats)
-        )
+        result = asyncio.run(_async_generate_subtitles(self, recording_id, user_id, formats))
 
-        return {
-            "task_id": self.request.id,
-            "status": "completed",
-            "recording_id": recording_id,
-            "result": result,
-        }
+        return self.build_result(
+            user_id=user_id,
+            status="completed",
+            recording_id=recording_id,
+            result=result,
+        )
 
     except Exception as exc:
         logger.error(f"[Task {self.request.id}] Error generating subtitles: {exc!r}", exc_info=True)
@@ -1269,14 +1184,9 @@ async def _async_generate_subtitles(task_self, recording_id: int, user_id: int, 
         # Check presence of transcription
         transcription_manager = get_transcription_manager()
         if not transcription_manager.has_master(recording_id, user_id=user_id):
-            raise ValueError(
-                f"Transcription not found for recording {recording_id}. Please run transcription first."
-            )
+            raise ValueError(f"Transcription not found for recording {recording_id}. Please run transcription first.")
 
-        task_self.update_state(
-            state='PROCESSING',
-            meta={'progress': 40, 'status': 'Generating subtitles...', 'step': 'generate_subtitles'}
-        )
+        task_self.update_progress(user_id, 40, "Generating subtitles...", step="generate_subtitles")
 
         # Generate subtitles
         subtitle_paths = transcription_manager.generate_subtitles(
@@ -1285,10 +1195,7 @@ async def _async_generate_subtitles(task_self, recording_id: int, user_id: int, 
             user_id=user_id,
         )
 
-        task_self.update_state(
-            state='PROCESSING',
-            meta={'progress': 90, 'status': 'Saving results...', 'step': 'generate_subtitles'}
-        )
+        task_self.update_progress(user_id, 90, "Saving results...", step="generate_subtitles")
 
         # Update recording in DB
         recording.mark_stage_completed(
@@ -1298,6 +1205,7 @@ async def _async_generate_subtitles(task_self, recording_id: int, user_id: int, 
 
         # Update aggregated status
         from api.helpers.status_manager import update_aggregate_status
+
         update_aggregate_status(recording)
 
         await recording_repo.update(recording)
@@ -1346,10 +1254,7 @@ def batch_transcribe_recording_task(
             f"[Task {self.request.id}] Batch transcription polling | recording={recording_id} | user={user_id} | batch_id={batch_id}"
         )
 
-        self.update_state(
-            state='PROCESSING',
-            meta={'progress': 10, 'status': 'Waiting for batch transcription...', 'step': 'batch_transcribe'}
-        )
+        self.update_progress(user_id, 10, "Waiting for batch transcription...", step="batch_transcribe")
 
         result = asyncio.run(
             _async_poll_batch_transcription(
@@ -1362,13 +1267,13 @@ def batch_transcribe_recording_task(
             )
         )
 
-        return {
-            "task_id": self.request.id,
-            "status": "completed",
-            "recording_id": recording_id,
-            "batch_id": batch_id,
-            "result": result,
-        }
+        return self.build_result(
+            user_id=user_id,
+            status="completed",
+            recording_id=recording_id,
+            batch_id=batch_id,
+            result=result,
+        )
 
     except TimeoutError as exc:
         logger.error(
@@ -1435,15 +1340,13 @@ async def _async_poll_batch_transcription(
 
             # Update progress (approximately)
             progress = min(20 + int((elapsed / max_wait_time) * 60), 80)
-            task_self.update_state(
-                state='PROCESSING',
-                meta={
-                    'progress': progress,
-                    'status': f'Batch transcribing... ({status}, {elapsed:.0f}s)',
-                    'step': 'batch_transcribe',
-                    'batch_id': batch_id,
-                    'attempt': attempt,
-                }
+            task_self.update_progress(
+                user_id,
+                progress,
+                f"Batch transcribing... ({status}, {elapsed:.0f}s)",
+                step="batch_transcribe",
+                batch_id=batch_id,
+                attempt=attempt,
             )
 
             if status == "completed":
@@ -1451,10 +1354,7 @@ async def _async_poll_batch_transcription(
                     f"[Batch Transcription] Completed ✅ | batch_id={batch_id} | elapsed={elapsed:.1f}s | attempts={attempt}"
                 )
 
-                task_self.update_state(
-                    state='PROCESSING',
-                    meta={'progress': 85, 'status': 'Parsing batch result...', 'step': 'batch_transcribe'}
-                )
+                task_self.update_progress(user_id, 85, "Parsing batch result...", step="batch_transcribe")
 
                 # Get result
                 transcription_result = await fireworks_service.get_batch_result(batch_id)
@@ -1462,10 +1362,7 @@ async def _async_poll_batch_transcription(
                 # Save transcription (as usual)
                 transcription_manager = TranscriptionManager()
 
-                task_self.update_state(
-                    state='PROCESSING',
-                    meta={'progress': 90, 'status': 'Saving transcription...', 'step': 'batch_transcribe'}
-                )
+                task_self.update_progress(user_id, 90, "Saving transcription...", step="batch_transcribe")
 
                 # Save master.json
                 words = transcription_result.get("words", [])
@@ -1500,6 +1397,7 @@ async def _async_poll_batch_transcription(
 
                 # Update aggregated status
                 from api.helpers.status_manager import update_aggregate_status
+
                 update_aggregate_status(recording)
 
                 await recording_repo.update(recording)

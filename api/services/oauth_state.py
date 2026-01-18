@@ -79,7 +79,9 @@ class OAuthStateManager:
 
         try:
             metadata = json.loads(data)
-            logger.debug(f"OAuth state validated: user_id={metadata.get('user_id')} platform={metadata.get('platform')}")
+            logger.debug(
+                f"OAuth state validated: user_id={metadata.get('user_id')} platform={metadata.get('platform')}"
+            )
             return metadata
         except json.JSONDecodeError:
             logger.error(f"Failed to parse OAuth state metadata: {state[:8]}...")
@@ -97,4 +99,3 @@ class OAuthStateManager:
         keys = await self.redis.keys(pattern)
         logger.debug(f"Active OAuth states: {len(keys)}")
         return 0
-

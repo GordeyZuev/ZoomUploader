@@ -5,6 +5,7 @@ Revises: 004
 Create Date: 2026-01-04 23:04:00.000000
 
 """
+
 import sqlalchemy as sa
 
 from alembic import op
@@ -44,4 +45,3 @@ def downgrade() -> None:
 
     # Drop column
     op.drop_column("user_credentials", "account_name")
-

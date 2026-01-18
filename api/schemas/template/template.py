@@ -76,7 +76,9 @@ class RecordingTemplateCreate(RecordingTemplateBase):
             )
 
             if not has_rule:
-                raise ValueError("matching_rules должны содержать хоть одно правило (exact_matches, keywords, patterns или source_ids)")
+                raise ValueError(
+                    "matching_rules должны содержать хоть одно правило (exact_matches, keywords, patterns или source_ids)"
+                )
 
         # Если есть output_config с auto_upload=True, нужен processing_config
         if self.output_config and self.output_config.auto_upload:
@@ -89,7 +91,6 @@ class RecordingTemplateCreate(RecordingTemplateBase):
                 raise ValueError("title_template требует output_config с preset_ids")
 
         return self
-
 
 
 class RecordingTemplateUpdate(BaseModel):

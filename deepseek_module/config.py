@@ -175,14 +175,13 @@ class DeepSeekConfig(BaseSettings):
 
         if self.seed is not None:
             params["seed"] = self.seed
-        else:
-            if (self.top_k is not None or self.reasoning_effort is not None) and not use_fireworks_extras:
-                base = (self.base_url or "").lower()
-                if "fireworks.ai" in base:
-                    logger.debug(
-                        "⚠️ Fireworks-специфичные параметры (top_k, reasoning_effort) "
-                        "не передаются, так как OpenAI клиент их не поддерживает. "
-                        "Используются только стандартные параметры OpenAI API."
-                    )
+        elif (self.top_k is not None or self.reasoning_effort is not None) and not use_fireworks_extras:
+            base = (self.base_url or "").lower()
+            if "fireworks.ai" in base:
+                logger.debug(
+                    "⚠️ Fireworks-специфичные параметры (top_k, reasoning_effort) "
+                    "не передаются, так как OpenAI клиент их не поддерживает. "
+                    "Используются только стандартные параметры OpenAI API."
+                )
 
         return params

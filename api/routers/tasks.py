@@ -1,36 +1,45 @@
 """Celery task status endpoints"""
 
-from celery.result import AsyncResult
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from api.celery_app import celery_app
+from api.auth.dependencies import get_current_user
 from api.schemas.task import TaskCancelResponse, TaskStatusResponse
+from api.services.task_access_service import TaskAccessService
+from database.auth_models import UserModel
 
 router = APIRouter(prefix="/api/v1/tasks", tags=["Tasks"])
 
 
 @router.get("/{task_id}", response_model=TaskStatusResponse)
-async def get_task_status(task_id: str) -> TaskStatusResponse:
+async def get_task_status(
+    task_id: str,
+    current_user: UserModel = Depends(get_current_user),
+) -> TaskStatusResponse:
     """
-    Получить статус задачи по ID.
+    Get task status by ID.
 
     Args:
-        task_id: ID задачи из Celery
+        task_id: ID of task from Celery
+        current_user: Current authenticated user
 
     Returns:
-        Информация о статусе задачи с прогрессом
+        Information about task status with progress
 
-    Статусы задачи:
-        - PENDING: задача в очереди, еще не началась
-        - PROCESSING: задача выполняется (с прогрессом 0-100)
-        - SUCCESS: задача завершена успешно
-        - FAILURE: задача завершена с ошибкой
-        - RETRY: задача будет повторена
+    Task statuses:
+        - PENDING: task is in queue, not yet started
+        - PROCESSING: task is being executed (with progress 0-100)
+        - SUCCESS: task completed successfully
+        - FAILURE: task completed with an error
+        - RETRY: task will be retried
+
+    Security:
+        Validates that the task belongs to the current user
     """
-    task = AsyncResult(task_id, app=celery_app)
+    # Validate user access to task (multi-tenancy isolation)
+    task = TaskAccessService.validate_task_access(task_id, current_user.id)
 
     if task.state == "PENDING":
-        # Задача в очереди
+        # Task in queue
         return TaskStatusResponse(
             task_id=task_id,
             state="PENDING",
@@ -40,8 +49,8 @@ async def get_task_status(task_id: str) -> TaskStatusResponse:
             error=None,
         )
 
-    elif task.state == "PROCESSING":
-        # Задача выполняется
+    if task.state == "PROCESSING":
+        # Task is being executed
         info = task.info or {}
         return TaskStatusResponse(
             task_id=task_id,
@@ -52,8 +61,8 @@ async def get_task_status(task_id: str) -> TaskStatusResponse:
             error=None,
         )
 
-    elif task.state == "SUCCESS":
-        # Задача завершена успешно
+    if task.state == "SUCCESS":
+        # Task completed successfully
         return TaskStatusResponse(
             task_id=task_id,
             state="SUCCESS",
@@ -63,8 +72,8 @@ async def get_task_status(task_id: str) -> TaskStatusResponse:
             error=None,
         )
 
-    elif task.state == "FAILURE":
-        # Задача завершена с ошибкой
+    if task.state == "FAILURE":
+        # Task completed with an error
         error_info = str(task.info) if task.info else "Unknown error"
         return TaskStatusResponse(
             task_id=task_id,
@@ -75,8 +84,8 @@ async def get_task_status(task_id: str) -> TaskStatusResponse:
             error=error_info,
         )
 
-    elif task.state == "RETRY":
-        # Задача будет повторена
+    if task.state == "RETRY":
+        # Task will be retried
         info = task.info or {}
         return TaskStatusResponse(
             task_id=task_id,
@@ -87,34 +96,41 @@ async def get_task_status(task_id: str) -> TaskStatusResponse:
             error=str(info),
         )
 
-    else:
-        # Неизвестный статус
-        return TaskStatusResponse(
-            task_id=task_id,
-            state=task.state,
-            status=f"Unknown state: {task.state}",
-            progress=0,
-            result=None,
-            error=None,
-        )
+    # Unknown status
+    return TaskStatusResponse(
+        task_id=task_id,
+        state=task.state,
+        status=f"Unknown state: {task.state}",
+        progress=0,
+        result=None,
+        error=None,
+    )
 
 
 @router.delete("/{task_id}", response_model=TaskCancelResponse)
-async def cancel_task(task_id: str) -> TaskCancelResponse:
+async def cancel_task(
+    task_id: str,
+    current_user: UserModel = Depends(get_current_user),
+) -> TaskCancelResponse:
     """
-    Отменить задачу.
+    Cancel task.
 
     Args:
-        task_id: ID задачи из Celery
+        task_id: ID of task from Celery
+        current_user: Current authenticated user
 
     Returns:
-        Результат отмены
+        Result of cancellation
 
     Note:
-        - Задачи, которые уже выполняются, могут не отменится сразу
-        - PENDING задачи будут отменены
+        - Tasks that are already being executed may not be cancelled immediately
+        - PENDING tasks will be cancelled
+
+    Security:
+        Validates that the task belongs to the current user
     """
-    task = AsyncResult(task_id, app=celery_app)
+    # Validate user access to task (multi-tenancy isolation)
+    task = TaskAccessService.validate_task_access(task_id, current_user.id)
 
     if task.state in ["SUCCESS", "FAILURE"]:
         raise HTTPException(
@@ -122,7 +138,7 @@ async def cancel_task(task_id: str) -> TaskCancelResponse:
             detail=f"Cannot cancel task in state {task.state}",
         )
 
-    # Отменяем задачу
+    # Cancel task
     task.revoke(terminate=True, signal="SIGKILL")
 
     return TaskCancelResponse(

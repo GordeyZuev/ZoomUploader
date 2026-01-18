@@ -243,19 +243,16 @@ async def create_credentials(
             existing_decrypted = encryption.decrypt_credentials(existing_cred.encrypted_data)
             # Сравниваем ключевые поля
             if request.platform == "zoom":
-                if (
-                    existing_decrypted.get("account_id") == request.credentials.get("account_id")
-                    and existing_decrypted.get("client_id") == request.credentials.get("client_id")
-                ):
+                if existing_decrypted.get("account_id") == request.credentials.get(
+                    "account_id"
+                ) and existing_decrypted.get("client_id") == request.credentials.get("client_id"):
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"Credentials with same account_id and client_id already exist "
                         f"(credential_id: {existing_cred.id}, account: {existing_cred.account_name})",
                     )
             elif request.platform == "youtube":
-                existing_client_id = (
-                    existing_decrypted.get("client_secrets", {}).get("installed", {}).get("client_id")
-                )
+                existing_client_id = existing_decrypted.get("client_secrets", {}).get("installed", {}).get("client_id")
                 new_client_id = request.credentials.get("client_secrets", {}).get("installed", {}).get("client_id")
                 if existing_client_id and existing_client_id == new_client_id:
                     raise HTTPException(

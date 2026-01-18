@@ -29,7 +29,6 @@ class PlatformConfig(BaseSettings, ABC):
     @abstractmethod
     def validate(self) -> bool:
         """Валидация конфигурации"""
-        pass
 
 
 class YouTubeConfig(PlatformConfig):

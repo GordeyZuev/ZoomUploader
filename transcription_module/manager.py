@@ -12,12 +12,9 @@ logger = get_logger(__name__)
 class TranscriptionManager:
     """Manage transcription files (master.json, topics.json, cache)"""
 
-    def __init__(self, base_dir: str | Path | None = None):
-        """
-        Args:
-            base_dir: Базовая директория для хранения транскрибаций (deprecated, используйте user_id)
-        """
-        self.base_dir = Path(base_dir) if base_dir else None
+    def __init__(self):
+        """Initialize transcription manager."""
+        pass
 
     def get_dir(self, recording_id: int, user_id: int | None = None) -> Path:
         """
@@ -35,6 +32,7 @@ class TranscriptionManager:
 
         # Используем UserPathManager для изоляции по пользователям
         from utils.user_paths import get_path_manager
+
         path_manager = get_path_manager()
         return path_manager.get_transcription_dir(user_id, recording_id)
 
@@ -400,4 +398,3 @@ def get_transcription_manager() -> TranscriptionManager:
     if _transcription_manager is None:
         _transcription_manager = TranscriptionManager()
     return _transcription_manager
-

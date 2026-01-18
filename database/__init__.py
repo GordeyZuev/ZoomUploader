@@ -27,27 +27,27 @@ from .template_models import (
 __all__ = [
     # Core models
     "Base",
-    "RecordingModel",
-    "SourceMetadataModel",
-    "OutputTargetModel",
-    "ProcessingStageModel",
-    # Auth models
-    "UserModel",
-    "UserCredentialModel",
-    "RefreshTokenModel",
-    # Subscription models
-    "SubscriptionPlanModel",
-    "UserSubscriptionModel",
-    "QuotaUsageModel",
-    "QuotaChangeHistoryModel",
-    # Config models
-    "UserConfigModel",
     # Template models
     "BaseConfigModel",
-    "InputSourceModel",
-    "OutputPresetModel",
-    "RecordingTemplateModel",
+    "DatabaseConfig",
     # Manager and config
     "DatabaseManager",
-    "DatabaseConfig",
+    "InputSourceModel",
+    "OutputPresetModel",
+    "OutputTargetModel",
+    "ProcessingStageModel",
+    "QuotaChangeHistoryModel",
+    "QuotaUsageModel",
+    "RecordingModel",
+    "RecordingTemplateModel",
+    "RefreshTokenModel",
+    "SourceMetadataModel",
+    # Subscription models
+    "SubscriptionPlanModel",
+    # Config models
+    "UserConfigModel",
+    "UserCredentialModel",
+    # Auth models
+    "UserModel",
+    "UserSubscriptionModel",
 ]

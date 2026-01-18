@@ -30,9 +30,8 @@ bcrypt>=5.0.0
 cryptography>=42.0.0
 PyJWT>=2.8.0
 
-# CLI & UI
+# Logging & Config
 click>=8.0.0
-rich>=14.2.0
 loguru>=0.7.0
 python-dotenv>=1.1.1
 

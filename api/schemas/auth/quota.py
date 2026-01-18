@@ -60,4 +60,3 @@ class UserQuotaResponse(BaseModel):
 
     class Config:
         from_attributes = True
-

@@ -59,12 +59,8 @@ class ConfigResolver:
         if recording.template_id:
             template = await self.template_repo.find_by_id(recording.template_id, user_id)
             if template and template.processing_config:
-                logger.debug(
-                    f"Merging template '{template.name}' config for recording {recording.id}"
-                )
-                processing_config = self._merge_configs(
-                    processing_config, template.processing_config
-                )
+                logger.debug(f"Merging template '{template.name}' config for recording {recording.id}")
+                processing_config = self._merge_configs(processing_config, template.processing_config)
             else:
                 logger.warning(
                     f"Recording {recording.id} has template_id={recording.template_id} "
@@ -73,12 +69,8 @@ class ConfigResolver:
 
         # 3. Apply user overrides if they exist (highest priority)
         if recording.processing_preferences:
-            logger.debug(
-                f"Applying processing_preferences overrides for recording {recording.id}"
-            )
-            processing_config = self._merge_configs(
-                processing_config, recording.processing_preferences
-            )
+            logger.debug(f"Applying processing_preferences overrides for recording {recording.id}")
+            processing_config = self._merge_configs(processing_config, recording.processing_preferences)
 
         return processing_config
 
@@ -199,10 +191,7 @@ class ConfigResolver:
 
         # Apply manual override (highest priority)
         if recording.processing_preferences and "metadata_config" in recording.processing_preferences:
-            metadata_config = self._merge_configs(
-                metadata_config,
-                recording.processing_preferences["metadata_config"]
-            )
+            metadata_config = self._merge_configs(metadata_config, recording.processing_preferences["metadata_config"])
 
         return metadata_config
 
@@ -243,7 +232,9 @@ class ConfigResolver:
             f"[Metadata Resolution] Base preset '{preset.name}' (platform={preset.platform}) metadata keys: {list(final_metadata.keys())}"
         )
         if "description_template" in final_metadata:
-            logger.info(f"[Metadata Resolution] Preset has description_template: {final_metadata['description_template'][:100]}")
+            logger.info(
+                f"[Metadata Resolution] Preset has description_template: {final_metadata['description_template'][:100]}"
+            )
         else:
             logger.info("[Metadata Resolution] Preset does NOT have description_template")
 
@@ -261,18 +252,28 @@ class ConfigResolver:
                 #   "youtube": {...},  # Platform-specific overrides
                 #   "vk": {...},       # Platform-specific overrides
                 #   "common": {...},   # Common fields for all platforms
-                #   ...                # Top-level fields (backward compatibility)
+                #   "title_template": "...",  # Common fields (backward compatibility)
+                #   "thumbnail_path": "...",  # Common thumbnail for all platforms
+                #   ...                # Other top-level fields
                 # }
 
                 template_meta = template.metadata_config
                 platform_key = preset.platform.lower()  # "youtube" or "vk"
 
-                # Step 1: Merge common fields (if exists)
+                # Step 1: Merge common top-level fields (backward compatibility)
+                # These are fields that are not platform-specific keys ("youtube", "vk", "common")
+                platform_keys = {"youtube", "vk", "common"}
+                common_fields = {k: v for k, v in template_meta.items() if k not in platform_keys}
+                if common_fields:
+                    logger.info(f"[Metadata Resolution] Merging template common fields: {list(common_fields.keys())}")
+                    final_metadata = self._merge_configs(final_metadata, common_fields)
+
+                # Step 2: Merge 'common' block (if exists)
                 if "common" in template_meta:
                     logger.info("[Metadata Resolution] Merging template 'common' metadata")
                     final_metadata = self._merge_configs(final_metadata, template_meta["common"])
 
-                # Step 2: Merge platform-specific fields (if exists)
+                # Step 3: Merge platform-specific fields (if exists) - highest priority in template
                 if platform_key in template_meta:
                     logger.info(f"[Metadata Resolution] Merging template '{platform_key}' specific metadata")
                     final_metadata = self._merge_configs(final_metadata, template_meta[platform_key])
@@ -290,16 +291,16 @@ class ConfigResolver:
         # 3. Merge with manual override if exists
         if recording.processing_preferences and "metadata_config" in recording.processing_preferences:
             manual_meta = recording.processing_preferences["metadata_config"]
-            logger.debug(
-                "[Metadata Resolution] Applying manual override metadata_config"
-            )
+            logger.debug("[Metadata Resolution] Applying manual override metadata_config")
             final_metadata = self._merge_configs(final_metadata, manual_meta)
 
         logger.info(
             f"[Metadata Resolution] Final metadata keys for recording {recording.id}: {list(final_metadata.keys())}"
         )
         if "description_template" in final_metadata:
-            logger.info(f"[Metadata Resolution] Final description_template: {final_metadata['description_template'][:100]}")
+            logger.info(
+                f"[Metadata Resolution] Final description_template: {final_metadata['description_template'][:100]}"
+            )
         else:
             logger.info("[Metadata Resolution] Final metadata does NOT have description_template")
         return final_metadata
@@ -313,16 +314,16 @@ class ConfigResolver:
             logger.warning(f"Failed to get user config for user {user_id}: {e}")
             return {}
 
-    def _merge_configs(
-        self,
-        base: dict[str, Any],
-        override: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _merge_configs(self, base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
         """
         Deep merge two configuration dicts.
 
         Override values take precedence over base values.
         Nested dicts are merged recursively.
+
+        IMPORTANT: None values in override are IGNORED (do not overwrite base).
+        This ensures that templates with null fields don't erase preset defaults.
+        If you need to explicitly clear a value, use empty string "" instead of None.
 
         Args:
             base: Base configuration dict
@@ -337,6 +338,10 @@ class ConfigResolver:
         result = copy.deepcopy(base)
 
         for key, value in override.items():
+            # Skip None values - they don't override base (semantic: "use default from base")
+            if value is None:
+                continue
+
             if key in result and isinstance(result[key], dict) and isinstance(value, dict):
                 # Recursive merge for nested dicts
                 result[key] = self._merge_configs(result[key], value)
@@ -345,4 +350,3 @@ class ConfigResolver:
                 result[key] = copy.deepcopy(value)
 
         return result
-

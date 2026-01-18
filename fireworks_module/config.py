@@ -178,7 +178,9 @@ class FireworksConfig(BaseSettings):
 
         # Rule 4: max_speakers must be >= min_speakers
         if self.min_speakers is not None and self.max_speakers is not None and self.max_speakers < self.min_speakers:
-            raise ValueError(f"max_speakers ({self.max_speakers}) must be greater than or equal to min_speakers ({self.min_speakers})")
+            raise ValueError(
+                f"max_speakers ({self.max_speakers}) must be greater than or equal to min_speakers ({self.min_speakers})"
+            )
 
         return self
 

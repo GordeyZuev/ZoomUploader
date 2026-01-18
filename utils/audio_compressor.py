@@ -34,11 +34,11 @@ class AudioCompressor:
         Returns:
             Путь к сжатому файлу
         """
-        if not os.path.exists(input_path):
+        if not Path(input_path).exists():
             raise FileNotFoundError(f"Аудио файл не найден: {input_path}")
 
         # Проверяем размер исходного файла
-        file_size = os.path.getsize(input_path)
+        file_size = Path(input_path).stat().st_size
         file_size_mb = file_size / (1024 * 1024)
 
         logger.info(f"📊 Исходный файл: {file_size_mb:.2f} МБ")
@@ -54,7 +54,7 @@ class AudioCompressor:
             output_path = str(input_path_obj.parent / f"{input_path_obj.stem}_compressed.mp3")
 
         # Создаем директорию, если нужно
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        os.makedirs(Path(output_path).parent, exist_ok=True)
 
         # Команда FFmpeg для сжатия
         cmd = [
@@ -82,17 +82,17 @@ class AudioCompressor:
                 *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
 
-            stdout, stderr = await process.communicate()
+            _stdout, stderr = await process.communicate()
 
             if process.returncode != 0:
                 error_msg = stderr.decode() if stderr else "Неизвестная ошибка"
                 raise RuntimeError(f"Ошибка сжатия аудио: {error_msg}")
 
-            if not os.path.exists(output_path):
+            if not Path(output_path).exists():
                 raise RuntimeError(f"Сжатый файл не был создан: {output_path}")
 
             # Проверяем размер сжатого файла
-            compressed_size = os.path.getsize(output_path)
+            compressed_size = Path(output_path).stat().st_size
             compressed_size_mb = compressed_size / (1024 * 1024)
 
             logger.info(f"✅ Аудио сжато: {compressed_size_mb:.2f} МБ")
@@ -165,13 +165,13 @@ class AudioCompressor:
         Returns:
             Список путей к частям файла
         """
-        if not os.path.exists(audio_path):
+        if not Path(audio_path).exists():
             raise FileNotFoundError(f"Аудио файл не найден: {audio_path}")
 
         # Получаем информацию об аудио
         audio_info = await self.get_audio_info(audio_path)
         duration = audio_info["duration"]
-        file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
+        file_size_mb = Path(audio_path).stat().st_size / (1024 * 1024)
 
         logger.info(f"📊 Разбиение аудио: {file_size_mb:.2f} МБ, длительность: {duration:.1f}с")
 
@@ -202,9 +202,9 @@ class AudioCompressor:
 
         # Определяем директорию для частей
         if output_dir is None:
-            output_dir = os.path.dirname(audio_path)
+            output_dir = Path(audio_path).parent
         else:
-            os.makedirs(output_dir, exist_ok=True)
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
 
         input_path_obj = Path(audio_path)
 
@@ -219,7 +219,7 @@ class AudioCompressor:
                 part_duration = duration - start_time
 
             part_filename = f"{input_path_obj.stem}_part_{i + 1:03d}.mp3"
-            part_path = os.path.join(output_dir, part_filename)
+            part_path = Path(output_dir) / part_filename
 
             cmd = [
                 "ffmpeg",
@@ -250,16 +250,16 @@ class AudioCompressor:
                     *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
                 )
 
-                stdout, stderr = await process.communicate()
+                _stdout, stderr = await process.communicate()
 
                 if process.returncode != 0:
                     error_msg = stderr.decode() if stderr else "Неизвестная ошибка"
                     raise RuntimeError(f"Ошибка создания части {i + 1}: {error_msg}")
 
-                if not os.path.exists(part_path):
+                if not Path(part_path).exists():
                     raise RuntimeError(f"Часть {i + 1} не была создана: {part_path}")
 
-                part_size_mb = os.path.getsize(part_path) / (1024 * 1024)
+                part_size_mb = Path(part_path).stat().st_size / (1024 * 1024)
 
                 # Проверяем, что часть не превышает лимит
                 if part_size_mb > self.max_file_size_mb:
@@ -270,7 +270,7 @@ class AudioCompressor:
                     )
                     logger.error(f"❌ {error_msg}")
                     raise ValueError(error_msg)
-                elif part_size_mb > self.max_file_size_mb * 0.95:
+                if part_size_mb > self.max_file_size_mb * 0.95:
                     logger.warning(
                         f"⚠️ Часть {i + 1}/{num_parts} близка к лимиту: "
                         f"{part_size_mb:.2f} МБ (лимит: {self.max_file_size_mb} МБ)"
@@ -304,9 +304,9 @@ class AudioCompressor:
             # Удаляем все созданные части
             for part in parts:
                 try:
-                    os.remove(part)
-                except Exception:
-                    pass
+                    Path(part).unlink()
+                except Exception as e:
+                    logger.warning(f"Ignored exception: {e}")
             # Выбрасываем первую ошибку
             raise RuntimeError(f"Ошибки при создании частей: {errors[0][1]}") from errors[0][1]
 

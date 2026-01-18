@@ -2,34 +2,13 @@
 
 import asyncio
 
-from celery import Task
-
 from api.celery_app import celery_app
 from api.repositories.template_repos import InputSourceRepository
+from api.tasks.base import SyncTask
 from database.manager import DatabaseManager
 from logger import get_logger
 
 logger = get_logger()
-
-
-class SyncTask(Task):
-    """Base class for sync tasks with multi-tenancy support."""
-
-    def on_failure(self, exc, task_id, args, kwargs, einfo):
-        """Handling task failure."""
-        user_id = kwargs.get("user_id", "unknown")
-        source_ids = kwargs.get("source_ids", kwargs.get("source_id", "unknown"))
-        logger.error(f"Sync task {task_id} for user {user_id}, sources {source_ids} failed: {exc!r}")
-
-    def on_retry(self, exc, task_id, args, kwargs, einfo):
-        """Handling retry."""
-        user_id = kwargs.get("user_id", "unknown")
-        logger.warning(f"Sync task {task_id} for user {user_id} retrying: {exc}")
-
-    def on_success(self, retval, task_id, args, kwargs):
-        """Handling successful completion."""
-        user_id = kwargs.get("user_id", "unknown")
-        logger.info(f"Sync task {task_id} for user {user_id} completed successfully")
 
 
 @celery_app.task(
@@ -61,10 +40,7 @@ def sync_single_source_task(
     try:
         logger.info(f"[Task {self.request.id}] Syncing source {source_id} for user {user_id}")
 
-        self.update_state(
-            state='PROCESSING',
-            meta={'progress': 10, 'status': f'Syncing source {source_id}...', 'step': 'sync'}
-        )
+        self.update_progress(user_id, 10, f"Syncing source {source_id}...", step="sync")
 
         try:
             loop = asyncio.get_event_loop()
@@ -76,11 +52,8 @@ def sync_single_source_task(
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-        result = loop.run_until_complete(
-            _async_sync_single_source(self, source_id, user_id, from_date, to_date)
-        )
-
-        return result
+        result = loop.run_until_complete(_async_sync_single_source(self, source_id, user_id, from_date, to_date))
+        return self.build_result(user_id=user_id, **result)
 
     except Exception as e:
         logger.error(f"Sync task failed for source {source_id}: {e}", exc_info=True)
@@ -116,9 +89,11 @@ def bulk_sync_sources_task(
     try:
         logger.info(f"[Task {self.request.id}] Batch syncing {len(source_ids)} sources for user {user_id}")
 
-        self.update_state(
-            state='PROCESSING',
-            meta={'progress': 5, 'status': f'Starting batch sync of {len(source_ids)} sources...', 'step': 'batch_sync'}
+        self.update_progress(
+            user_id,
+            5,
+            f"Starting batch sync of {len(source_ids)} sources...",
+            step="batch_sync",
         )
 
         try:
@@ -131,11 +106,8 @@ def bulk_sync_sources_task(
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-        result = loop.run_until_complete(
-            _async_batch_sync_sources(self, source_ids, user_id, from_date, to_date)
-        )
-
-        return result
+        result = loop.run_until_complete(_async_batch_sync_sources(self, source_ids, user_id, from_date, to_date))
+        return self.build_result(user_id=user_id, **result)
 
     except Exception as e:
         logger.error(f"Batch sync task failed for sources {source_ids}: {e}", exc_info=True)
@@ -156,10 +128,7 @@ async def _async_sync_single_source(
     db_manager = DatabaseManager(db_config)
 
     async with db_manager.async_session() as session:
-        task.update_state(
-            state='PROCESSING',
-            meta={'progress': 20, 'status': f'Loading source {source_id}...', 'step': 'sync'}
-        )
+        task.update_progress(user_id, 20, f"Loading source {source_id}...", step="sync")
 
         # Import here to avoid circular imports
         from api.routers.input_sources import _sync_single_source
@@ -169,10 +138,7 @@ async def _async_sync_single_source(
         if result["status"] == "success":
             await session.commit()
 
-            task.update_state(
-                state='PROCESSING',
-                meta={'progress': 90, 'status': 'Sync completed', 'step': 'sync'}
-            )
+            task.update_progress(user_id, 90, "Sync completed", step="sync")
 
             # Get source for additional information
             repo = InputSourceRepository(session)
@@ -187,12 +153,11 @@ async def _async_sync_single_source(
                 "recordings_saved": result.get("recordings_saved", 0),
                 "recordings_updated": result.get("recordings_updated", 0),
             }
-        else:
-            return {
-                "status": "error",
-                "source_id": source_id,
-                "error": result.get("error", "Unknown error"),
-            }
+        return {
+            "status": "error",
+            "source_id": source_id,
+            "error": result.get("error", "Unknown error"),
+        }
 
 
 async def _async_batch_sync_sources(
@@ -216,14 +181,12 @@ async def _async_batch_sync_sources(
 
         for idx, source_id in enumerate(source_ids):
             progress = 10 + int((idx / len(source_ids)) * 80)
-            task.update_state(
-                state='PROCESSING',
-                meta={
-                    'progress': progress,
-                    'status': f'Syncing source {idx + 1}/{len(source_ids)}...',
-                    'step': 'batch_sync',
-                    'current_source': source_id,
-                }
+            task.update_progress(
+                user_id,
+                progress,
+                f"Syncing source {idx + 1}/{len(source_ids)}...",
+                step="batch_sync",
+                current_source=source_id,
             )
 
             # Get source for name
@@ -238,32 +201,38 @@ async def _async_batch_sync_sources(
 
                 if result["status"] == "success":
                     successful += 1
-                    results.append({
-                        "source_id": source_id,
-                        "source_name": source_name,
-                        "status": "success",
-                        "recordings_found": result.get("recordings_found"),
-                        "recordings_saved": result.get("recordings_saved"),
-                        "recordings_updated": result.get("recordings_updated"),
-                    })
+                    results.append(
+                        {
+                            "source_id": source_id,
+                            "source_name": source_name,
+                            "status": "success",
+                            "recordings_found": result.get("recordings_found"),
+                            "recordings_saved": result.get("recordings_saved"),
+                            "recordings_updated": result.get("recordings_updated"),
+                        }
+                    )
                 else:
                     failed += 1
-                    results.append({
-                        "source_id": source_id,
-                        "source_name": source_name,
-                        "status": "error",
-                        "error": result.get("error", "Unknown error"),
-                    })
+                    results.append(
+                        {
+                            "source_id": source_id,
+                            "source_name": source_name,
+                            "status": "error",
+                            "error": result.get("error", "Unknown error"),
+                        }
+                    )
 
             except Exception as e:
                 logger.error(f"Unexpected error during sync of source {source_id}: {e}", exc_info=True)
                 failed += 1
-                results.append({
-                    "source_id": source_id,
-                    "source_name": source_name,
-                    "status": "error",
-                    "error": str(e),
-                })
+                results.append(
+                    {
+                        "source_id": source_id,
+                        "source_name": source_name,
+                        "status": "error",
+                        "error": str(e),
+                    }
+                )
 
         await session.commit()
 
@@ -275,4 +244,3 @@ async def _async_batch_sync_sources(
             "failed": failed,
             "results": results,
         }
-

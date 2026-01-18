@@ -44,7 +44,6 @@ class TopicsDisplayConfig(BaseModel):
         return v
 
 
-
 # ============================================================================
 # YouTube-специфичные схемы
 # ============================================================================
@@ -70,6 +69,18 @@ class YouTubePresetMetadata(BaseModel):
 
     model_config = BASE_MODEL_CONFIG
 
+    # Content templates (added for preset-level control)
+    title_template: str | None = Field(
+        None,
+        max_length=500,
+        description="Шаблон заголовка с переменными (напр. '{display_name} | {themes}')",
+    )
+    description_template: str | None = Field(
+        None,
+        max_length=5000,
+        description="Шаблон описания с переменными (напр. '{summary}\\n\\n{topics}')",
+    )
+
     # Privacy settings
     privacy: YouTubePrivacy = Field(YouTubePrivacy.UNLISTED, description="Статус приватности")
     made_for_kids: bool = Field(False, description="Контент для детей (COPPA)")
@@ -79,6 +90,14 @@ class YouTubePresetMetadata(BaseModel):
     category_id: str = Field("27", description="Категория YouTube (27 = Education)")
     license: YouTubeLicense = Field(YouTubeLicense.YOUTUBE, description="Тип лицензии")
     default_language: str | None = Field(None, description="Язык по умолчанию", examples=["ru", "en"])
+
+    # Platform organization
+    playlist_id: str | None = Field(None, description="ID плейлиста YouTube для автозагрузки видео")
+    tags: list[str] | None = Field(None, max_length=500, description="Теги видео (макс 500)")
+    thumbnail_path: str | None = Field(None, description="Путь к файлу thumbnail (обложка видео)")
+
+    # Scheduling
+    publish_at: str | None = Field(None, description="ISO 8601 дата/время публикации (для отложенной публикации)")
 
     # Topics display
     topics_display: TopicsDisplayConfig | None = Field(None, description="Настройки отображения тем в description")
@@ -103,7 +122,6 @@ class YouTubePresetMetadata(BaseModel):
         return v
 
 
-
 # ============================================================================
 # VK-специфичные схемы
 # ============================================================================
@@ -123,6 +141,18 @@ class VKPresetMetadata(BaseModel):
 
     model_config = BASE_MODEL_CONFIG
 
+    # Content templates (added for preset-level control)
+    title_template: str | None = Field(
+        None,
+        max_length=500,
+        description="Шаблон заголовка с переменными (напр. '{display_name}')",
+    )
+    description_template: str | None = Field(
+        None,
+        max_length=5000,
+        description="Шаблон описания с переменными (напр. '{summary}\\n\\n{topics}')",
+    )
+
     # Privacy settings
     privacy_view: VKPrivacyLevel = Field(
         VKPrivacyLevel.ALL,
@@ -135,6 +165,8 @@ class VKPresetMetadata(BaseModel):
 
     # Group settings (optional - может быть в template)
     group_id: int | None = Field(None, gt=0, description="ID группы VK (можно задать в template metadata_config)")
+    album_id: str | None = Field(None, description="ID альбома VK")
+    thumbnail_path: str | None = Field(None, description="Путь к файлу thumbnail (обложка видео)")
 
     # Topics display
     topics_display: TopicsDisplayConfig | None = Field(None, description="Настройки отображения тем в description")
@@ -143,6 +175,7 @@ class VKPresetMetadata(BaseModel):
     disable_comments: bool = Field(False, description="Полностью отключить комментарии")
     repeat: bool = Field(False, description="Зациклить воспроизведение")
     compression: bool = Field(False, description="Сжатие видео на стороне VK")
+    wallpost: bool = Field(False, description="Опубликовать запись на стене при загрузке")
 
     @field_validator("group_id")
     @classmethod
@@ -150,7 +183,6 @@ class VKPresetMetadata(BaseModel):
         if v is not None and v <= 0:
             raise ValueError("group_id должен быть положительным")
         return v
-
 
 
 # ============================================================================

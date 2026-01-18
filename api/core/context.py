@@ -52,4 +52,3 @@ class ServiceContext:
             Новый ServiceContext
         """
         return cls(session=session, user_id=user_id)
-

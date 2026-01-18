@@ -32,14 +32,7 @@ async def sync_job_to_beat(session: AsyncSession, job: AutomationJobModel) -> No
 
         result = await session.execute(
             crontab_query,
-            {
-                "minute": minute,
-                "hour": hour,
-                "day": day,
-                "month": month,
-                "dow": day_of_week,
-                "tz": timezone
-            }
+            {"minute": minute, "hour": hour, "day": day, "month": month, "dow": day_of_week, "tz": timezone},
         )
         crontab_id = result.scalar_one_or_none()
 
@@ -51,14 +44,7 @@ async def sync_job_to_beat(session: AsyncSession, job: AutomationJobModel) -> No
             """)
             result = await session.execute(
                 select_crontab,
-                {
-                    "minute": minute,
-                    "hour": hour,
-                    "day": day,
-                    "month": month,
-                    "dow": day_of_week,
-                    "tz": timezone
-                }
+                {"minute": minute, "hour": hour, "day": day, "month": month, "dow": day_of_week, "tz": timezone},
             )
             crontab_id = result.scalar_one()
 
@@ -82,8 +68,8 @@ async def sync_job_to_beat(session: AsyncSession, job: AutomationJobModel) -> No
                 "task": "automation.run_job",
                 "crontab_id": crontab_id,
                 "args": args_json,
-                "enabled": job.is_active
-            }
+                "enabled": job.is_active,
+            },
         )
 
         await session.commit()
@@ -134,4 +120,3 @@ async def sync_all_jobs_to_beat(session: AsyncSession) -> None:
     except Exception as e:
         logger.error(f"Failed to sync jobs to Beat: {e}")
         raise
-

@@ -31,4 +31,3 @@ class CredentialPlatform(str, Enum):
     OPENAI = "openai"
     TELEGRAM = "telegram"
     RUTUBE = "rutube"
-

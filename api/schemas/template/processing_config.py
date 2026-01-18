@@ -26,7 +26,6 @@ class TemplateProcessingConfig(BaseModel):
     )
 
 
-
 class TranscriptionProcessingConfig(BaseModel):
     """
     Объединенные настройки обработки (плоская структура).
@@ -50,7 +49,6 @@ class TranscriptionProcessingConfig(BaseModel):
 
     # Subtitles
     enable_subtitles: bool = Field(True, description="Включить генерацию субтитров")
-
 
 
 # Обновляем forward reference

@@ -30,11 +30,7 @@ class CredentialService:
         self.encryption = get_encryption()
 
     async def get_decrypted_credentials(
-        self,
-        user_id: int,
-        platform: str,
-        account_name: str | None = None,
-        raise_if_not_found: bool = True
+        self, user_id: int, platform: str, account_name: str | None = None, raise_if_not_found: bool = True
     ) -> dict[str, Any] | None:
         """
         Получить расшифрованные учетные данные для платформы.
@@ -69,17 +65,15 @@ class CredentialService:
         try:
             decrypted = self.encryption.decrypt_credentials(credential.encrypted_data)
             account_str = f" (account: {account_name})" if account_name else ""
-            logger.debug(f"Successfully decrypted credentials for platform '{platform}'{account_str} for user {user_id}")
+            logger.debug(
+                f"Successfully decrypted credentials for platform '{platform}'{account_str} for user {user_id}"
+            )
             return decrypted
         except Exception as e:
             logger.error(f"Failed to decrypt credentials for platform '{platform}': {e}")
             raise ValueError(f"Failed to decrypt credentials: {e}") from e
 
-    async def get_zoom_credentials(
-        self,
-        user_id: int,
-        account_name: str | None = None
-    ) -> dict[str, str]:
+    async def get_zoom_credentials(self, user_id: int, account_name: str | None = None) -> dict[str, str]:
         """
         Получить учетные данные Zoom.
 
@@ -246,4 +240,3 @@ class CredentialService:
         if credential:
             await self.repo.update_last_used(credential.id)
             logger.debug(f"Updated last_used_at for platform '{platform}' for user {user_id}")
-

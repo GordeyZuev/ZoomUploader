@@ -115,7 +115,9 @@ class BulkSyncRequest(BaseModel):
 
     model_config = BASE_MODEL_CONFIG
 
-    source_ids: list[int] = Field(..., min_length=1, max_length=50, description="Список ID источников для синхронизации")
+    source_ids: list[int] = Field(
+        ..., min_length=1, max_length=50, description="Список ID источников для синхронизации"
+    )
     from_date: str = Field("2024-01-01", description="Дата начала в формате YYYY-MM-DD")
     to_date: str | None = Field(None, description="Дата окончания в формате YYYY-MM-DD (опционально)")
 

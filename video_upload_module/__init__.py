@@ -13,15 +13,15 @@ from .platforms import VKUploader, YouTubeUploader
 __all__ = [
     # Core classes
     "BaseUploader",
-    "UploadResult",
-    "UploadManager",
+    "PlatformConfig",
     # Configuration
     "UploadConfig",
-    "YouTubeConfig",
-    "VKConfig",
-    "PlatformConfig",
     "UploadConfigFactory",
+    "UploadManager",
+    "UploadResult",
+    "VKConfig",
+    "VKUploader",
+    "YouTubeConfig",
     # Platform uploaders
     "YouTubeUploader",
-    "VKUploader",
 ]

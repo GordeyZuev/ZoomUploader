@@ -14,10 +14,7 @@ class TranscriptionServiceFactory:
     """Create TranscriptionService with user credentials"""
 
     @staticmethod
-    async def create_for_user(
-        session: AsyncSession,
-        user_id: int
-    ) -> TranscriptionService:
+    async def create_for_user(session: AsyncSession, user_id: int) -> TranscriptionService:
         """
         Создать TranscriptionService для пользователя.
 
@@ -39,14 +36,12 @@ class TranscriptionServiceFactory:
 
         if not has_deepseek:
             raise ValueError(
-                f"DeepSeek credentials not found for user {user_id}. "
-                "Please add DeepSeek API key to continue."
+                f"DeepSeek credentials not found for user {user_id}. Please add DeepSeek API key to continue."
             )
 
         if not has_fireworks:
             raise ValueError(
-                f"Fireworks credentials not found for user {user_id}. "
-                "Please add Fireworks API key to continue."
+                f"Fireworks credentials not found for user {user_id}. Please add Fireworks API key to continue."
             )
 
         # Получаем конфигурации
@@ -55,16 +50,11 @@ class TranscriptionServiceFactory:
 
         logger.info(f"Created TranscriptionService for user {user_id}")
 
-        return TranscriptionService(
-            deepseek_config=deepseek_config,
-            fireworks_config=fireworks_config
-        )
+        return TranscriptionService(deepseek_config=deepseek_config, fireworks_config=fireworks_config)
 
     @staticmethod
     async def create_with_fallback(
-        session: AsyncSession,
-        user_id: int,
-        use_default_on_missing: bool = False
+        session: AsyncSession, user_id: int, use_default_on_missing: bool = False
     ) -> TranscriptionService:
         """
         Создать TranscriptionService с fallback на default credentials.
@@ -87,8 +77,7 @@ class TranscriptionServiceFactory:
                 raise
 
             logger.warning(
-                f"Failed to get user credentials: {e}. "
-                f"Falling back to default credentials from config files."
+                f"Failed to get user credentials: {e}. Falling back to default credentials from config files."
             )
 
             # Fallback на credentials из файлов
@@ -96,7 +85,5 @@ class TranscriptionServiceFactory:
             from fireworks_module import FireworksConfig
 
             return TranscriptionService(
-                deepseek_config=DeepSeekConfig.from_file(),
-                fireworks_config=FireworksConfig.from_file()
+                deepseek_config=DeepSeekConfig.from_file(), fireworks_config=FireworksConfig.from_file()
             )
-

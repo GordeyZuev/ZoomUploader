@@ -288,8 +288,9 @@ Bulk операции поддерживают **два режима выбор�
 | `is_mapped` | bool | Только записи с mapping к template |
 | `failed` | bool | Только failed записи |
 | `exclude_blank` | bool | Исключить blank records (default: true) |
-| `from_date` | str | Дата начала (ISO 8601) |
-| `to_date` | str | Дата окончания (ISO 8601) |
+| `search` | str | Поиск по display_name (case-insensitive) |
+| `from_date` | str | Дата начала (>=). Поддерживаемые форматы: `YYYY-MM-DD`, `DD-MM-YYYY`, `DD/MM/YYYY`, `DD-MM-YY`, `DD/MM/YY` |
+| `to_date` | str | Дата окончания (<=). Поддерживаемые форматы: `YYYY-MM-DD`, `DD-MM-YYYY`, `DD/MM/YYYY`, `DD-MM-YY`, `DD/MM/YY` |
 | `order_by` | str | Поле сортировки: created_at, updated_at, id |
 | `order` | str | Направление: asc, desc |
 
@@ -421,6 +422,48 @@ POST /api/v1/recordings/bulk/upload
   },
   "platforms": ["youtube", "vk"],
   "limit": 50
+}
+```
+
+---
+
+### Сценарий 6: Обработка записей за период (фильтр по датам)
+
+```bash
+# Обработать все записи за декабрь 2024 (формат YYYY-MM-DD)
+POST /api/v1/recordings/bulk/process
+{
+  "filters": {
+    "is_mapped": true,
+    "status": ["INITIALIZED"],
+    "from_date": "2024-12-01",
+    "to_date": "2024-12-31"
+  },
+  "limit": 100
+}
+
+# Альтернативные форматы дат (DD-MM-YYYY, DD/MM/YYYY)
+POST /api/v1/recordings/bulk/process
+{
+  "filters": {
+    "is_mapped": true,
+    "from_date": "01-12-2024",  # DD-MM-YYYY
+    "to_date": "31/12/2024"     # DD/MM/YYYY
+  },
+  "limit": 100
+}
+
+# Комбинация фильтров: конкретный шаблон + поиск + период
+POST /api/v1/recordings/bulk/process
+{
+  "filters": {
+    "template_id": 13,
+    "search": "Python",
+    "from_date": "2024-01-01",
+    "to_date": "2024-12-31",
+    "exclude_blank": true
+  },
+  "limit": 100
 }
 ```
 
